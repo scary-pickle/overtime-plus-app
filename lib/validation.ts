@@ -72,10 +72,10 @@ export const usualShiftSchema = z.object({
 export const overtimeLogSchema = z.object({
   id: z.string(),
   date: z.string().datetime(),
-  rosteredStart: z.string().regex(timePattern).optional(),
-  rosteredFinish: z.string().regex(timePattern).optional(),
-  actualStart: z.string().regex(timePattern, 'Invalid time format (HH:mm)'),
-  actualFinish: z.string().regex(timePattern, 'Invalid time format (HH:mm)'),
+  rosteredStart: z.union([z.string().regex(timePattern), z.literal('N/A')]).optional(),
+  rosteredFinish: z.union([z.string().regex(timePattern), z.literal('N/A')]).optional(),
+  actualStart: z.union([z.string().regex(timePattern, 'Invalid time format (HH:mm)'), z.literal('N/A')]),
+  actualFinish: z.union([z.string().regex(timePattern, 'Invalid time format (HH:mm)'), z.literal('N/A')]),
   mealBreakMinutes: z.number().min(0).default(0),
   minutesOvertime: z.number().min(0),
   category: z.enum(['Overtime', 'Oncall', 'HP Emergency Clinical on Call', 'HPDO Priority on Call', 'Recall Offsite', 'Recall Onsite', 'Recall Offsite Normal Duties (QPSOOE award)', 'Recall Telephone Advice (Medical)', 'Change shift', 'Change shift - cancel leave']),
@@ -88,6 +88,11 @@ export const overtimeLogSchema = z.object({
   updatedAt: z.string().datetime()
 }).refine(
   (data) => {
+    // Skip validation if either actual start or finish is N/A
+    if (data.actualStart === 'N/A' || data.actualFinish === 'N/A') {
+      return true;
+    }
+    
     // For midnight crossing, we need to check if the shift duration is reasonable
     // Allow finish time to be earlier than start time (crosses midnight)
     // but ensure the total duration is reasonable (not more than 24 hours)
@@ -110,6 +115,11 @@ export const overtimeLogSchema = z.object({
   }
 ).refine(
   (data) => {
+    // Skip validation if either actual start or finish is N/A
+    if (data.actualStart === 'N/A' || data.actualFinish === 'N/A') {
+      return true;
+    }
+    
     // Ensure minimum shift duration (handles midnight crossing)
     const startMinutes = timeToMinutes(data.actualStart);
     let finishMinutes = timeToMinutes(data.actualFinish);
@@ -139,7 +149,10 @@ export const exportBatchSchema = z.object({
 });
 
 // Helper function to convert time string to minutes
-function timeToMinutes(timeStr: string): number {
+function timeToMinutes(timeStr: string | 'N/A'): number {
+  if (timeStr === 'N/A') {
+    return 0; // Return 0 for N/A values
+  }
   const [hours, minutes] = timeStr.split(':').map(Number);
   return hours * 60 + minutes;
 }

@@ -111,11 +111,17 @@ export class ProfileStorage {
 
   // Helper to validate profile completeness
   isProfileComplete(profile: Profile): boolean {
-    const requiredFields: (keyof Profile)[] = [
+    // Base required fields for all users
+    const baseRequiredFields: (keyof Profile)[] = [
       'fullName', 'payrollNumber', 'orgUnitNo', 'orgUnitName', 'location',
-      'payLevel', 'delegateName', 'delegatePosition',
+      'delegateName', 'delegatePosition',
       'delegateAreaCode', 'delegatePhone', 'employeeInitial', 'email'
     ];
+
+    // For SMO users, payLevel is optional
+    const requiredFields = profile.isSMO 
+      ? baseRequiredFields 
+      : [...baseRequiredFields, 'payLevel'];
 
     return requiredFields.every(field => {
       const value = profile[field];

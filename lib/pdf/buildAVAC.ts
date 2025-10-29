@@ -22,8 +22,18 @@ function getTextPositionAndSize(box: { x: number; y: number; width?: number; hei
   // For rotated text (90 degrees), we want bottom alignment within the box
   const width = box.width || 50; // Default width if not provided
   const height = box.height || 20; // Default height if not provided
+  
+  // For 90-degree rotated text, we need to center it properly
+  // The text should be horizontally centered and vertically bottom-aligned
   const textX = box.x + width/2; // Horizontal center of the box
-  const textY = box.y + 2; // Small padding from the bottom edge of the box
+  
+  // Use E1 positioning for all text (3 units East from bottom)
+  const eastOffset = 2 + 3; // E1: +3 units East from bottom
+  
+  // For 90-degree rotated text, the X coordinate controls horizontal position
+  // So we need to move the text East by adjusting the X coordinate
+  const textY = box.y + 2; // Bottom alignment (blue dot position)
+  const textXWithEast = box.x + width/2 + eastOffset; // East movement based on row
   
   // Calculate the maximum text dimensions that can fit in the box
   // When text is rotated 90 degrees, the text width becomes the height constraint
@@ -96,8 +106,9 @@ function getTextPositionAndSize(box: { x: number; y: number; width?: number; hei
       }
     }
     
+    // For multiline text, use normal positioning (not E1) to keep it within bounds
     return {
-      x: textX,
+      x: textX, // Use normal centered positioning for multiline
       y: textY,
       size: fontSize,
       lines: lines,
@@ -107,7 +118,7 @@ function getTextPositionAndSize(box: { x: number; y: number; width?: number; hei
   
   // Text fits in one line
   return { 
-    x: textX, 
+    x: textXWithEast, 
     y: textY, 
     size: fontSize,
     lines: [sanitizedText],
@@ -122,24 +133,35 @@ function drawTextInBox(page: any, text: string, box: { x: number; y: number; wid
   // Sanitize text to prevent encoding errors
   const sanitizedText = sanitizeTextForPDF(text);
   
-  // Simple positioning - center the text in the box
-  const width = box.width || 50; // Default width if not provided
-  const height = box.height || 20; // Default height if not provided
-  const textX = box.x + width / 2;
-  const textY = box.y + 2; // Small padding from bottom
+  // Use the smart text fitting logic
+  const textInfo = getTextPositionAndSize(
+    { x: box.x, y: box.y, width: box.width, height: box.height }, 
+    sanitizedText, 
+    font, 
+    options.maxFontSize || 12
+  );
   
-  // Use a simple font size
-  const fontSize = options.maxFontSize || 10;
+  console.log(`📝 Drawing text "${sanitizedText}" with smart fitting:`, {
+    fontSize: textInfo.size,
+    lines: textInfo.lines.length,
+    fits: textInfo.fits
+  });
   
-  console.log(`📝 Drawing text "${sanitizedText}" at (${textX}, ${textY}) with size ${fontSize}`);
-  
-  page.drawText(sanitizedText, {
-    x: textX,
-    y: textY,
-    size: fontSize,
-    font: font,
-    color: options.color || rgb(0, 0, 0),
-    rotate: degrees(90), // Rotate text 90 degrees clockwise
+  // Draw each line of text with proper spacing for rotated text
+  textInfo.lines.forEach((line, index) => {
+    // For rotated text, we need to offset each line horizontally (not vertically)
+    // Since text is rotated 90 degrees, "lines" are actually stacked horizontally
+    const lineSpacing = font.heightAtSize(textInfo.size) + 1; // Add 1pt spacing between lines
+    const lineX = textInfo.x + (index * lineSpacing);
+    
+    page.drawText(line, {
+      x: lineX,
+      y: textInfo.y,
+      size: textInfo.size,
+      font: font,
+      color: options.color || rgb(0, 0, 0),
+      rotate: degrees(90), // Rotate text 90 degrees clockwise
+    });
   });
 }
 
@@ -1278,25 +1300,29 @@ async function drawLogRow(
   // Draw rostered start
   const rosteredStartBox = avacCoordinates.table[`rosteredStart_row${rowNum}`];
   if (rosteredStartBox && log.rosteredStart) {
-    drawTextInBox(page, log.rosteredStart, rosteredStartBox, helvetica, { color: rgb(0, 0, 0) });
+    const rosteredStartText = log.rosteredStart === 'N/A' ? 'N/A' : log.rosteredStart;
+    drawTextInBox(page, rosteredStartText, rosteredStartBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw rostered finish
   const rosteredFinishBox = avacCoordinates.table[`rosteredFinish_row${rowNum}`];
   if (rosteredFinishBox && log.rosteredFinish) {
-    drawTextInBox(page, log.rosteredFinish, rosteredFinishBox, helvetica, { color: rgb(0, 0, 0) });
+    const rosteredFinishText = log.rosteredFinish === 'N/A' ? 'N/A' : log.rosteredFinish;
+    drawTextInBox(page, rosteredFinishText, rosteredFinishBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw actual start
   const actualStartBox = avacCoordinates.table[`actualStart_row${rowNum}`];
   if (actualStartBox) {
-    drawTextInBox(page, log.actualStart, actualStartBox, helvetica, { color: rgb(0, 0, 0) });
+    const actualStartText = log.actualStart === 'N/A' ? 'N/A' : log.actualStart;
+    drawTextInBox(page, actualStartText, actualStartBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw actual finish
   const actualFinishBox = avacCoordinates.table[`actualFinish_row${rowNum}`];
   if (actualFinishBox) {
-    drawTextInBox(page, log.actualFinish, actualFinishBox, helvetica, { color: rgb(0, 0, 0) });
+    const actualFinishText = log.actualFinish === 'N/A' ? 'N/A' : log.actualFinish;
+    drawTextInBox(page, actualFinishText, actualFinishBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw meal break minutes

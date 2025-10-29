@@ -16,6 +16,7 @@ import { useLogsStore } from '../../lib/state/logsStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
+import { NAButton } from '../../components/NAButton';
 import { computeMinutes, formatMinutes, getCurrentDate, getCurrentTime } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
 import { OvertimeLog } from '../../types';
@@ -47,6 +48,8 @@ export default function NewLogScreen() {
   const [actualFinish, setActualFinish] = useState('');
   const [rosteredStart, setRosteredStart] = useState('');
   const [rosteredFinish, setRosteredFinish] = useState('');
+  const [rosteredTimesNA, setRosteredTimesNA] = useState(false);
+  const [actualTimesNA, setActualTimesNA] = useState(false);
   const [mealBreakMinutes, setMealBreakMinutes] = useState(30);
   const [showMealBreakPicker, setShowMealBreakPicker] = useState(false);
   const [category, setCategory] = useState<typeof CATEGORIES[number]>('Overtime');
@@ -93,7 +96,8 @@ export default function NewLogScreen() {
 
   useEffect(() => {
     // Validate finish time in real-time
-    if (actualFinish && rosteredFinish) {
+    // Skip validation if rostered times are N/A
+    if (actualFinish && rosteredFinish && !rosteredTimesNA) {
       if (!validateFinishTime(actualFinish)) {
         setFinishTimeError('Finish time cannot be before rostered finish time');
       } else {
@@ -102,7 +106,7 @@ export default function NewLogScreen() {
     } else {
       setFinishTimeError('');
     }
-  }, [actualFinish, rosteredFinish]);
+  }, [actualFinish, rosteredFinish, rosteredTimesNA]);
 
   useEffect(() => {
     // Initialize concurrent employment from profile default
@@ -112,7 +116,7 @@ export default function NewLogScreen() {
   }, [profile]);
 
   const validateFinishTime = (finishTime: string) => {
-    if (!finishTime || !rosteredFinish) return true;
+    if (!finishTime || !rosteredFinish || rosteredFinish === 'N/A' || rosteredTimesNA) return true;
     
     // Convert times to minutes for comparison
     const finishMinutes = timeToMinutes(finishTime);
@@ -126,8 +130,36 @@ export default function NewLogScreen() {
     return hours * 60 + minutes;
   };
 
+  const handleRosteredTimesNA = () => {
+    const newNAStatus = !rosteredTimesNA;
+    setRosteredTimesNA(newNAStatus);
+    
+    if (newNAStatus) {
+      setRosteredStart('N/A');
+      setRosteredFinish('N/A');
+      // Clear any finish time validation errors when N/A is selected
+      setFinishTimeError('');
+    } else {
+      setRosteredStart('');
+      setRosteredFinish('');
+    }
+  };
+
+  const handleActualTimesNA = () => {
+    const newNAStatus = !actualTimesNA;
+    setActualTimesNA(newNAStatus);
+    
+    if (newNAStatus) {
+      setActualStart('N/A');
+      setActualFinish('N/A');
+    } else {
+      setActualStart('');
+      setActualFinish('');
+    }
+  };
+
   const calculateMinutes = () => {
-    if (!actualStart || !actualFinish) return;
+    if (!actualStart || !actualFinish || actualStart === 'N/A' || actualFinish === 'N/A') return;
     
     setIsCalculating(true);
     try {
@@ -151,7 +183,7 @@ export default function NewLogScreen() {
   };
 
   const hasRequiredFieldsForReady = () => {
-    return actualStart && actualFinish && rosteredStart && rosteredFinish;
+    return actualStart && actualFinish && (rosteredStart || rosteredTimesNA) && (rosteredFinish || rosteredTimesNA);
   };
 
   const handleSave = async (status: 'draft' | 'ready') => {
@@ -166,7 +198,7 @@ export default function NewLogScreen() {
       if (!hasRequiredFieldsForReady()) {
         Alert.alert(
           'Missing Required Fields', 
-          'To mark as ready, please enter:\n• Actual start and finish times\n• Rostered start and finish times'
+          'To mark as ready, please enter:\n• Actual start and finish times\n• Rostered start and finish times (or mark as N/A)'
         );
         return;
       }
@@ -389,9 +421,15 @@ export default function NewLogScreen() {
 
         {/* Rostered Times */}
         <View style={[styles.section, isDark && styles.darkCard]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-            Rostered Times
-          </Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+              Rostered Times
+            </Text>
+            <NAButton
+              onPress={handleRosteredTimesNA}
+              isActive={rosteredTimesNA}
+            />
+          </View>
           <View style={styles.timeRow}>
             <View style={styles.timeInput}>
               <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
@@ -400,6 +438,7 @@ export default function NewLogScreen() {
                 onChange={setRosteredStart}
                 placeholder="Select rostered start time"
                 inputId="rostered-start"
+                disabled={rosteredTimesNA}
               />
             </View>
             <View style={styles.timeInput}>
@@ -409,6 +448,7 @@ export default function NewLogScreen() {
                 onChange={setRosteredFinish}
                 placeholder="Select rostered finish time"
                 inputId="rostered-finish"
+                disabled={rosteredTimesNA}
               />
             </View>
           </View>
@@ -416,9 +456,15 @@ export default function NewLogScreen() {
 
         {/* Actual Times */}
         <View style={[styles.section, isDark && styles.darkCard]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-            Actual Times
-          </Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+              Actual Times
+            </Text>
+            <NAButton
+              onPress={handleActualTimesNA}
+              isActive={actualTimesNA}
+            />
+          </View>
           <View style={styles.timeRow}>
             <View style={styles.timeInput}>
               <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
@@ -427,6 +473,7 @@ export default function NewLogScreen() {
                 onChange={setActualStart}
                 placeholder="Select start time"
                 inputId="actual-start"
+                disabled={actualTimesNA}
               />
             </View>
             <View style={styles.timeInput}>
@@ -437,6 +484,7 @@ export default function NewLogScreen() {
                 placeholder="Select finish time"
                 inputId="actual-finish"
                 error={finishTimeError}
+                disabled={actualTimesNA}
               />
             </View>
           </View>
@@ -631,6 +679,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: '#333',
+    marginBottom: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
   darkText: {

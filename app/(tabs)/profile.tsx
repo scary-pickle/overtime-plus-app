@@ -246,9 +246,22 @@ export default function ProfileScreen() {
           
           {/* SMO Toggle */}
           <View style={styles.field}>
-            <View style={styles.smoToggleContainer}>
-              <Text style={[styles.label, isDark && styles.darkLabel]}>
-                Are you an SMO? (Senior Medical Officer)
+            <Text style={[styles.label, isDark && styles.darkLabel]}>
+              Are you an SMO? <Text style={[styles.required, isDark && styles.darkRequired]}>*</Text>
+            </Text>
+            <View style={[
+              styles.toggleContainer,
+              isDark && styles.darkToggleContainer,
+              !isEditing && styles.disabledToggleContainer,
+              !isEditing && isDark && styles.darkDisabledToggleContainer,
+            ]}>
+              <Text style={[
+                styles.toggleLabel,
+                isDark && styles.darkToggleLabel,
+                !isEditing && styles.disabledToggleLabel,
+                !isEditing && isDark && styles.darkDisabledToggleLabel,
+              ]}>
+                {isSMO ? 'Yes' : 'No'}
               </Text>
               <Switch
                 value={isSMO}
@@ -259,9 +272,10 @@ export default function ProfileScreen() {
                     setFormData(prev => ({ ...prev, payLevel: '' }));
                   }
                 }}
-                trackColor={{ false: '#767577', true: '#81b0ff' }}
-                thumbColor={isSMO ? '#f5dd4b' : '#f4f3f4'}
+                trackColor={{ false: '#e0e0e0', true: '#4CAF50' }}
+                thumbColor={isSMO ? '#fff' : '#f4f3f4'}
                 disabled={!isEditing}
+                style={styles.switch}
               />
             </View>
           </View>
@@ -714,5 +728,43 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 8,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#fff',
+    minHeight: 48,
+  },
+  darkToggleContainer: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  disabledToggleContainer: {
+    backgroundColor: '#f5f5f5',
+  },
+  darkDisabledToggleContainer: {
+    backgroundColor: '#2c2c2e',
+  },
+  toggleLabel: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  darkToggleLabel: {
+    color: '#fff',
+  },
+  disabledToggleLabel: {
+    color: '#666',
+  },
+  darkDisabledToggleLabel: {
+    color: '#999',
+  },
+  switch: {
+    transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }],
   },
 });

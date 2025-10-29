@@ -35,10 +35,10 @@ export type UsualShift = {
 export type OvertimeLog = {
   id: string;
   date: string; // ISO date
-  rosteredStart?: string;
-  rosteredFinish?: string;
-  actualStart: string;    // "18:30"
-  actualFinish: string;   // "20:45"
+  rosteredStart?: string | 'N/A';
+  rosteredFinish?: string | 'N/A';
+  actualStart: string | 'N/A';    // "18:30" or "N/A"
+  actualFinish: string | 'N/A';   // "20:45" or "N/A"
   mealBreakMinutes?: number;
   minutesOvertime: number;
   category: 'Overtime'|'Oncall'|'HP Emergency Clinical on Call'|'HPDO Priority on Call'|'Recall Offsite'|'Recall Onsite'|'Recall Offsite Normal Duties (QPSOOE award)'|'Recall Telephone Advice (Medical)'|'Change shift'|'Change shift - cancel leave';

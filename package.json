@@ -4,8 +4,8 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "dependencies": {
@@ -16,20 +16,22 @@
     "@react-navigation/native": "^7.1.8",
     "@react-navigation/stack": "^7.4.10",
     "dayjs": "^1.11.18",
-    "expo": "^54.0.20",
+    "expo": "54.0.21",
     "expo-asset": "^12.0.9",
     "expo-constants": "^18.0.10",
-    "expo-file-system": "^19.0.17",
+    "expo-dev-client": "~6.0.16",
+    "expo-file-system": "~19.0.17",
     "expo-linking": "^8.0.8",
     "expo-mail-composer": "~15.0.7",
     "expo-notifications": "^0.32.12",
-    "expo-router": "^6.0.13",
+    "expo-router": "~6.0.14",
     "expo-secure-store": "^15.0.7",
     "expo-sharing": "^14.0.7",
     "expo-sqlite": "^16.0.8",
     "expo-status-bar": "~3.0.8",
     "pdf-lib": "^1.17.1",
-    "react": "19.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
     "react-hook-form": "^7.65.0",
     "react-native": "0.81.5",
     "react-native-base64": "^0.2.2",
@@ -40,7 +42,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
-    "@types/react": "~19.1.0",
+    "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
   },
   "private": true

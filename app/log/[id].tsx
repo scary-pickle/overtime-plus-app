@@ -17,6 +17,7 @@ import { useLogsStore } from '../../lib/state/logsStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
+import { NAButton } from '../../components/NAButton';
 import { computeMinutes, formatMinutes, getCurrentDate, getCurrentTime } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
 import { OvertimeLog } from '../../types';
@@ -50,6 +51,8 @@ export default function EditLogScreen() {
   const [actualFinish, setActualFinish] = useState('');
   const [rosteredStart, setRosteredStart] = useState('');
   const [rosteredFinish, setRosteredFinish] = useState('');
+  const [rosteredTimesNA, setRosteredTimesNA] = useState(false);
+  const [actualTimesNA, setActualTimesNA] = useState(false);
   const [mealBreakMinutes, setMealBreakMinutes] = useState(30);
   const [showMealBreakPicker, setShowMealBreakPicker] = useState(false);
   const [category, setCategory] = useState<typeof CATEGORIES[number]>('Overtime');
@@ -73,6 +76,8 @@ export default function EditLogScreen() {
         setActualFinish(foundLog.actualFinish);
         setRosteredStart(foundLog.rosteredStart || '');
         setRosteredFinish(foundLog.rosteredFinish || '');
+        setRosteredTimesNA(foundLog.rosteredStart === 'N/A' || foundLog.rosteredFinish === 'N/A');
+        setActualTimesNA(foundLog.actualStart === 'N/A' || foundLog.actualFinish === 'N/A');
         setMealBreakMinutes(foundLog.mealBreakMinutes || 30);
         setCategory(foundLog.category);
         setComments(foundLog.comments || '');
@@ -99,7 +104,7 @@ export default function EditLogScreen() {
   }, [actualStart, actualFinish, mealBreakMinutes, rosteredStart, rosteredFinish]);
 
   const calculateMinutes = () => {
-    if (!actualStart || !actualFinish) return;
+    if (!actualStart || !actualFinish || actualStart === 'N/A' || actualFinish === 'N/A') return;
     
     setIsCalculating(true);
     try {
@@ -115,6 +120,32 @@ export default function EditLogScreen() {
       console.error('Calculation error:', error);
     } finally {
       setIsCalculating(false);
+    }
+  };
+
+  const handleRosteredTimesNA = () => {
+    const newNAStatus = !rosteredTimesNA;
+    setRosteredTimesNA(newNAStatus);
+    
+    if (newNAStatus) {
+      setRosteredStart('N/A');
+      setRosteredFinish('N/A');
+    } else {
+      setRosteredStart('');
+      setRosteredFinish('');
+    }
+  };
+
+  const handleActualTimesNA = () => {
+    const newNAStatus = !actualTimesNA;
+    setActualTimesNA(newNAStatus);
+    
+    if (newNAStatus) {
+      setActualStart('N/A');
+      setActualFinish('N/A');
+    } else {
+      setActualStart('');
+      setActualFinish('');
     }
   };
 
@@ -389,9 +420,15 @@ export default function EditLogScreen() {
 
             {/* Rostered Times */}
             <View style={[styles.section, isDark && styles.darkCard]}>
-              <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-                Rostered Times
-              </Text>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+                  Rostered Times
+                </Text>
+                <NAButton
+                  onPress={handleRosteredTimesNA}
+                  isActive={rosteredTimesNA}
+                />
+              </View>
               <View style={styles.timeRow}>
                 <View style={styles.timeInput}>
                   <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
@@ -400,6 +437,7 @@ export default function EditLogScreen() {
                     onChange={setRosteredStart}
                     placeholder="Select rostered start time"
                     inputId="rostered-start"
+                    disabled={rosteredTimesNA}
                   />
                 </View>
                 <View style={styles.timeInput}>
@@ -409,6 +447,7 @@ export default function EditLogScreen() {
                     onChange={setRosteredFinish}
                     placeholder="Select rostered finish time"
                     inputId="rostered-finish"
+                    disabled={rosteredTimesNA}
                   />
                 </View>
               </View>
@@ -416,9 +455,15 @@ export default function EditLogScreen() {
 
             {/* Actual Times */}
             <View style={[styles.section, isDark && styles.darkCard]}>
-              <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-                Actual Times
-              </Text>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+                  Actual Times
+                </Text>
+                <NAButton
+                  onPress={handleActualTimesNA}
+                  isActive={actualTimesNA}
+                />
+              </View>
               <View style={styles.timeRow}>
                 <View style={styles.timeInput}>
                   <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
@@ -427,6 +472,7 @@ export default function EditLogScreen() {
                     onChange={setActualStart}
                     placeholder="Select start time"
                     inputId="actual-start"
+                    disabled={actualTimesNA}
                   />
                 </View>
                 <View style={styles.timeInput}>
@@ -436,6 +482,7 @@ export default function EditLogScreen() {
                     onChange={setActualFinish}
                     placeholder="Select finish time"
                     inputId="actual-finish"
+                    disabled={actualTimesNA}
                   />
                 </View>
               </View>
@@ -618,6 +665,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: '#333',
+    marginBottom: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
   darkText: {

@@ -3,7 +3,10 @@ import { MinutesCalculation } from '../types';
 /**
  * Convert time string (HH:mm) to minutes since midnight
  */
-export function timeToMinutes(timeStr: string): number {
+export function timeToMinutes(timeStr: string | 'N/A'): number {
+  if (timeStr === 'N/A') {
+    return 0; // Return 0 for N/A values
+  }
   const [hours, minutes] = timeStr.split(':').map(Number);
   return hours * 60 + minutes;
 }
@@ -21,7 +24,12 @@ export function minutesToTime(minutes: number): string {
  * Calculate duration between two times in minutes
  * Handles midnight crossing by adding 24 hours to finish time if it's earlier than start time
  */
-export function calculateDuration(startTime: string, finishTime: string): number {
+export function calculateDuration(startTime: string | 'N/A', finishTime: string | 'N/A'): number {
+  // If either time is N/A, return 0 duration
+  if (startTime === 'N/A' || finishTime === 'N/A') {
+    return 0;
+  }
+  
   const startMinutes = timeToMinutes(startTime);
   let finishMinutes = timeToMinutes(finishTime);
   
@@ -62,16 +70,16 @@ export function formatMinutes(minutes: number): string {
  * Calculate overtime minutes based on actual vs rostered times
  */
 export function computeMinutes(
-  actualStart: string,
-  actualFinish: string,
-  rosteredStart?: string,
-  rosteredFinish?: string,
+  actualStart: string | 'N/A',
+  actualFinish: string | 'N/A',
+  rosteredStart?: string | 'N/A',
+  rosteredFinish?: string | 'N/A',
   mealBreakMinutes: number = 0
 ): MinutesCalculation {
   const actualDuration = calculateDuration(actualStart, actualFinish) - mealBreakMinutes;
   
   let rosteredDuration = 0;
-  if (rosteredStart && rosteredFinish) {
+  if (rosteredStart && rosteredFinish && rosteredStart !== 'N/A' && rosteredFinish !== 'N/A') {
     rosteredDuration = calculateDuration(rosteredStart, rosteredFinish) - mealBreakMinutes;
   }
   
@@ -115,7 +123,12 @@ export function isValidTime(time: string): boolean {
  * Check if finish time is after start time
  * Handles midnight crossing by allowing finish time to be earlier than start time
  */
-export function isFinishAfterStart(startTime: string, finishTime: string): boolean {
+export function isFinishAfterStart(startTime: string | 'N/A', finishTime: string | 'N/A'): boolean {
+  // If either time is N/A, return false
+  if (startTime === 'N/A' || finishTime === 'N/A') {
+    return false;
+  }
+  
   const startMinutes = timeToMinutes(startTime);
   let finishMinutes = timeToMinutes(finishTime);
   
@@ -131,7 +144,12 @@ export function isFinishAfterStart(startTime: string, finishTime: string): boole
  * Get time difference in minutes between two times
  * Handles midnight crossing by adding 24 hours to finish time if it's earlier than start time
  */
-export function getTimeDifference(startTime: string, finishTime: string): number {
+export function getTimeDifference(startTime: string | 'N/A', finishTime: string | 'N/A'): number {
+  // If either time is N/A, return 0
+  if (startTime === 'N/A' || finishTime === 'N/A') {
+    return 0;
+  }
+  
   const startMinutes = timeToMinutes(startTime);
   let finishMinutes = timeToMinutes(finishTime);
   

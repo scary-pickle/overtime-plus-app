@@ -1,5 +1,6 @@
 import { buildSMOAVACTest } from './buildSMOAVAC';
 import { generateSMOProfile, generateSMOLogs } from './smoTestData';
+import { database } from '../db/sqlite';
 
 /**
  * Test function to generate SMO AVAC with green overlay boxes
@@ -22,6 +23,21 @@ export async function testSMOAVACGeneration(): Promise<string> {
     
     // Generate the test PDF with green overlay boxes
     const fileUri = await buildSMOAVACTest(profile, logs);
+    
+    // Create an export batch entry so it appears in the exports screen
+    const batch = {
+      id: `test_batch_${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      pdfUri: fileUri,
+      countLogs: logs.length,
+      totalMinutes: logs.reduce((sum, log) => sum + (log.minutesOvertime || 0), 0),
+      submittedToEmail: undefined,
+      customName: 'SMO AVAC Test - Text Positioning'
+    };
+    
+    await database.createExportBatch(batch);
+    console.log('📝 Export batch created for test PDF');
+    console.log('📱 Note: Go to the Exports tab and pull down to refresh to see the test PDF');
     
     console.log('✅ SMO AVAC test PDF generated successfully:', fileUri);
     return fileUri;

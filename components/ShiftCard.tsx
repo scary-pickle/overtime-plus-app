@@ -102,6 +102,29 @@ export function ShiftCard({
     }
   };
 
+  const formatNextOccurrenceDate = (nextOccurrence: string) => {
+    try {
+      const date = new Date(nextOccurrence);
+      const today = new Date();
+      const diffTime = date.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 0) {
+        return 'Today';
+      } else if (diffDays === 1) {
+        return 'Tomorrow';
+      } else {
+        return date.toLocaleDateString('en-AU', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric'
+        });
+      }
+    } catch (error) {
+      return 'Invalid date';
+    }
+  };
+
   const isActive = () => {
     if (!shift.activeFrom) return false;
     
@@ -167,9 +190,15 @@ export function ShiftCard({
         
         <View style={styles.bottomRow}>
           <View style={styles.dateContainer}>
-            <Text style={[styles.dateLabel, isDark && styles.darkSecondaryText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
-              {formatDateRange(shift.activeFrom || '', shift.activeTo)}
-            </Text>
+            {nextOccurrence && nextOccurrence !== '9999-12-31' ? (
+              <Text style={[styles.dateLabel, isDark && styles.darkSecondaryText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
+                {formatNextOccurrenceDate(nextOccurrence)}
+              </Text>
+            ) : (
+              <Text style={[styles.dateLabel, isDark && styles.darkSecondaryText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
+                {formatDateRange(shift.activeFrom || '', shift.activeTo)}
+              </Text>
+            )}
             {nextOccurrence && formatNextOccurrence(nextOccurrence) !== '' && (
               <Text style={[styles.nextOccurrenceLabel, isDark && styles.darkNextOccurrence, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
                 Next: {formatNextOccurrence(nextOccurrence)}

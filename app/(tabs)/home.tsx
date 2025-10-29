@@ -254,7 +254,7 @@ export default function HomeScreen() {
                 try {
                   Alert.alert('Generating SMO AVAC Test...', 'Please wait while the test PDF is generated.');
                   const fileUri = await testSMOAVACGeneration();
-                  Alert.alert('Success!', `SMO AVAC test PDF generated:\n${fileUri}`);
+                  Alert.alert('Success!', 'SMO AVAC test PDF generated!\n\nGo to the Exports tab and pull down to refresh to view the PDF.');
                 } catch (error) {
                   Alert.alert('Error', `Failed to generate SMO AVAC test: ${error}`);
                 }

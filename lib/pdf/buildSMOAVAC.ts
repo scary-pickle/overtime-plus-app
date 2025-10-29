@@ -23,14 +23,24 @@ function sanitizeTextForPDF(text: string): string {
  * Calculate text position and size to fit within a box with proper text wrapping algorithm
  * Implements word boundary wrapping with font size optimization
  */
-function getTextPositionAndSize(box: { x: number; y: number; width?: number; height?: number }, text: string, font: any, maxFontSize: number = 12) {
+function getTextPositionAndSize(box: { x: number; y: number; width?: number; height?: number }, text: string, font: any, maxFontSize: number = 12, rowNumber?: number) {
   // Sanitize text to prevent encoding errors
   const sanitizedText = sanitizeTextForPDF(text);
   // For rotated text (90 degrees), we want bottom alignment within the box
   const width = box.width || 50; // Default width if not provided
   const height = box.height || 20; // Default height if not provided
+  
+  // For 90-degree rotated text, we need to center it properly
+  // The text should be horizontally centered and vertically bottom-aligned
   const textX = box.x + width/2; // Horizontal center of the box
-  const textY = box.y + 2; // Small padding from the bottom edge of the box
+  
+  // Use E1 positioning for all text (3 units East from bottom)
+  const eastOffset = 2 + 3; // E1: +3 units East from bottom
+  
+  // For 90-degree rotated text, the X coordinate controls horizontal position
+  // So we need to move the text East by adjusting the X coordinate
+  const textY = box.y + 2; // Bottom alignment (blue dot position)
+  const textXWithEast = box.x + width/2 + eastOffset; // East movement based on row
   
   // Calculate the maximum text dimensions that can fit in the box
   // When text is rotated 90 degrees, the text width becomes the height constraint
@@ -103,8 +113,9 @@ function getTextPositionAndSize(box: { x: number; y: number; width?: number; hei
       }
     }
     
+    // For multiline text, use normal positioning (not E1) to keep it within bounds
     return {
-      x: textX,
+      x: textX, // Use normal centered positioning for multiline
       y: textY,
       size: fontSize,
       lines: lines,
@@ -114,7 +125,7 @@ function getTextPositionAndSize(box: { x: number; y: number; width?: number; hei
   
   // Text fits in one line
   return { 
-    x: textX, 
+    x: textXWithEast, 
     y: textY, 
     size: fontSize,
     lines: [sanitizedText],
@@ -125,7 +136,7 @@ function getTextPositionAndSize(box: { x: number; y: number; width?: number; hei
 /**
  * Draw text with automatic wrapping and sizing within a box
  */
-function drawTextInBox(page: any, text: string, box: { left: number; top: number; width?: number; height?: number }, font: any, options: any = {}) {
+function drawTextInBox(page: any, text: string, box: { left: number; top: number; width?: number; height?: number }, font: any, options: any = {}, rowNumber?: number) {
   // Convert Preview coordinates to PDF coordinates
   const x = box.left;
   const y = page.getHeight() - (box.top + (box.height || 20));
@@ -137,7 +148,8 @@ function drawTextInBox(page: any, text: string, box: { left: number; top: number
     { x, y, width, height }, 
     text, 
     font, 
-    options.maxFontSize || 12
+    options.maxFontSize || 12,
+    rowNumber
   );
   
   console.log(`📝 Drawing text "${text}" with smart fitting:`, {
@@ -167,7 +179,7 @@ function drawTextInBox(page: any, text: string, box: { left: number; top: number
 /**
  * Draw a green overlay box for field verification
  */
-function drawFieldOverlay(page: any, box: { left: number; top: number; width?: number; height?: number }, label: string) {
+function drawFieldOverlay(page: any, box: { left: number; top: number; width?: number; height?: number }, label: string, font: any) {
   // Convert Preview coordinates to PDF coordinates
   const x = box.left;
   const y = page.getHeight() - (box.top + (box.height || 20));
@@ -190,10 +202,11 @@ function drawFieldOverlay(page: any, box: { left: number; top: number; width?: n
     x: x + 2,
     y: y + height - 2,
     size: 8,
-    font: page.doc.embedFont(StandardFonts.HelveticaBold),
+    font: font,
     color: rgb(0, 0.5, 0), // Dark green text
     rotate: degrees(90),
   });
+  
 }
 
 /**
@@ -375,7 +388,8 @@ export async function buildSMOAVAC(
       // Rostered Start
       const rosteredStartBox = smoCoordinates.fields.table[`rosteredStart_row${rowNum}`];
       if (rosteredStartBox && log.rosteredStart) {
-        drawTextInBox(page, log.rosteredStart, rosteredStartBox, helvetica, { 
+        const rosteredStartText = log.rosteredStart === 'N/A' ? 'N/A' : log.rosteredStart;
+        drawTextInBox(page, rosteredStartText, rosteredStartBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
@@ -383,7 +397,8 @@ export async function buildSMOAVAC(
       // Rostered Finish
       const rosteredFinishBox = smoCoordinates.fields.table[`rosteredFinish_row${rowNum}`];
       if (rosteredFinishBox && log.rosteredFinish) {
-        drawTextInBox(page, log.rosteredFinish, rosteredFinishBox, helvetica, { 
+        const rosteredFinishText = log.rosteredFinish === 'N/A' ? 'N/A' : log.rosteredFinish;
+        drawTextInBox(page, rosteredFinishText, rosteredFinishBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
@@ -391,7 +406,8 @@ export async function buildSMOAVAC(
       // Actual Start
       const actualStartBox = smoCoordinates.fields.table[`actualStart_row${rowNum}`];
       if (actualStartBox && log.actualStart) {
-        drawTextInBox(page, log.actualStart, actualStartBox, helvetica, { 
+        const actualStartText = log.actualStart === 'N/A' ? 'N/A' : log.actualStart;
+        drawTextInBox(page, actualStartText, actualStartBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
@@ -399,7 +415,8 @@ export async function buildSMOAVAC(
       // Actual Finish
       const actualFinishBox = smoCoordinates.fields.table[`actualFinish_row${rowNum}`];
       if (actualFinishBox && log.actualFinish) {
-        drawTextInBox(page, log.actualFinish, actualFinishBox, helvetica, { 
+        const actualFinishText = log.actualFinish === 'N/A' ? 'N/A' : log.actualFinish;
+        drawTextInBox(page, actualFinishText, actualFinishBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
@@ -581,7 +598,7 @@ export async function buildSMOAVACTest(
     
     // Employee Name
     if (smoCoordinates.fields.header.employeeName) {
-      drawFieldOverlay(page, smoCoordinates.fields.header.employeeName, 'Employee Name');
+      drawFieldOverlay(page, smoCoordinates.fields.header.employeeName, 'Employee Name', helveticaBold);
       drawTextInBox(page, profile.fullName, smoCoordinates.fields.header.employeeName, helvetica, { 
         color: rgb(0, 0, 0) 
       });
@@ -592,7 +609,7 @@ export async function buildSMOAVACTest(
       const boxKey = `orgUnitNo_box${i}` as keyof typeof smoCoordinates.fields.header;
       const box = smoCoordinates.fields.header[boxKey];
       if (box) {
-        drawFieldOverlay(page, box, `Org Unit ${i}`);
+        drawFieldOverlay(page, box, `Org Unit ${i}`, helveticaBold);
         if (profile.orgUnitNo && profile.orgUnitNo[i - 1]) {
           drawTextInBox(page, profile.orgUnitNo[i - 1], box, helvetica, { 
             color: rgb(0, 0, 0) 
@@ -603,7 +620,7 @@ export async function buildSMOAVACTest(
     
     // Organisation unit name
     if (smoCoordinates.fields.header.orgUnitName) {
-      drawFieldOverlay(page, smoCoordinates.fields.header.orgUnitName, 'Org Unit Name');
+      drawFieldOverlay(page, smoCoordinates.fields.header.orgUnitName, 'Org Unit Name', helveticaBold);
       drawTextInBox(page, profile.orgUnitName, smoCoordinates.fields.header.orgUnitName, helvetica, { 
         color: rgb(0, 0, 0) 
       });
@@ -611,7 +628,7 @@ export async function buildSMOAVACTest(
     
     // Location
     if (smoCoordinates.fields.header.location) {
-      drawFieldOverlay(page, smoCoordinates.fields.header.location, 'Location');
+      drawFieldOverlay(page, smoCoordinates.fields.header.location, 'Location', helveticaBold);
       drawTextInBox(page, profile.location, smoCoordinates.fields.header.location, helvetica, { 
         color: rgb(0, 0, 0) 
       });
@@ -620,24 +637,24 @@ export async function buildSMOAVACTest(
     // Draw table section overlays for first 3 rows
     console.log('📝 Drawing table section overlays...');
     
-    for (let rowNum = 1; rowNum <= 3; rowNum++) {
+    for (let rowNum = 1; rowNum <= 5; rowNum++) {
       console.log(`📝 Drawing row ${rowNum} overlays...`);
       
       // Personnel Assignment ID
       const personnelBox = smoCoordinates.fields.table[`personnelAssignmentNo_row${rowNum}`];
       if (personnelBox) {
-        drawFieldOverlay(page, personnelBox, `Personnel ID R${rowNum}`);
+        drawFieldOverlay(page, personnelBox, `Personnel ID R${rowNum}`, helveticaBold);
         if (profile.payrollNumber) {
           drawTextInBox(page, profile.payrollNumber, personnelBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
       
       // Concurrent Employment tickbox
       const tickbox = smoCoordinates.fields.table[`tickbox_row${rowNum}`];
       if (tickbox) {
-        drawFieldOverlay(page, tickbox, `Concurrent R${rowNum}`);
+        drawFieldOverlay(page, tickbox, `Concurrent R${rowNum}`, helveticaBold);
         // Draw 'X' if concurrent employment
         if (logs[rowNum - 1]?.concurrentEmployment) {
           page.drawText('X', {
@@ -654,67 +671,71 @@ export async function buildSMOAVACTest(
       // Date
       const dateBox = smoCoordinates.fields.table[`date_row${rowNum}`];
       if (dateBox) {
-        drawFieldOverlay(page, dateBox, `Date R${rowNum}`);
+        drawFieldOverlay(page, dateBox, `Date R${rowNum}`, helveticaBold);
         if (logs[rowNum - 1]) {
           const date = new Date(logs[rowNum - 1].date).toLocaleDateString('en-AU');
           drawTextInBox(page, date, dateBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
       
       // Rostered Start
       const rosteredStartBox = smoCoordinates.fields.table[`rosteredStart_row${rowNum}`];
       if (rosteredStartBox) {
-        drawFieldOverlay(page, rosteredStartBox, `Rostered Start R${rowNum}`);
+        drawFieldOverlay(page, rosteredStartBox, `Rostered Start R${rowNum}`, helveticaBold);
         if (logs[rowNum - 1]?.rosteredStart) {
-          drawTextInBox(page, logs[rowNum - 1].rosteredStart, rosteredStartBox, helvetica, { 
+          const rosteredStartText = logs[rowNum - 1].rosteredStart === 'N/A' ? 'N/A' : logs[rowNum - 1].rosteredStart;
+          drawTextInBox(page, rosteredStartText, rosteredStartBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
       
       // Rostered Finish
       const rosteredFinishBox = smoCoordinates.fields.table[`rosteredFinish_row${rowNum}`];
       if (rosteredFinishBox) {
-        drawFieldOverlay(page, rosteredFinishBox, `Rostered Finish R${rowNum}`);
+        drawFieldOverlay(page, rosteredFinishBox, `Rostered Finish R${rowNum}`, helveticaBold);
         if (logs[rowNum - 1]?.rosteredFinish) {
-          drawTextInBox(page, logs[rowNum - 1].rosteredFinish, rosteredFinishBox, helvetica, { 
+          const rosteredFinishText = logs[rowNum - 1].rosteredFinish === 'N/A' ? 'N/A' : logs[rowNum - 1].rosteredFinish;
+          drawTextInBox(page, rosteredFinishText, rosteredFinishBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
       
       // Actual Start
       const actualStartBox = smoCoordinates.fields.table[`actualStart_row${rowNum}`];
       if (actualStartBox) {
-        drawFieldOverlay(page, actualStartBox, `Actual Start R${rowNum}`);
+        drawFieldOverlay(page, actualStartBox, `Actual Start R${rowNum}`, helveticaBold);
         if (logs[rowNum - 1]?.actualStart) {
-          drawTextInBox(page, logs[rowNum - 1].actualStart, actualStartBox, helvetica, { 
+          const actualStartText = logs[rowNum - 1].actualStart === 'N/A' ? 'N/A' : logs[rowNum - 1].actualStart;
+          drawTextInBox(page, actualStartText, actualStartBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
       
       // Actual Finish
       const actualFinishBox = smoCoordinates.fields.table[`actualFinish_row${rowNum}`];
       if (actualFinishBox) {
-        drawFieldOverlay(page, actualFinishBox, `Actual Finish R${rowNum}`);
+        drawFieldOverlay(page, actualFinishBox, `Actual Finish R${rowNum}`, helveticaBold);
         if (logs[rowNum - 1]?.actualFinish) {
-          drawTextInBox(page, logs[rowNum - 1].actualFinish, actualFinishBox, helvetica, { 
+          const actualFinishText = logs[rowNum - 1].actualFinish === 'N/A' ? 'N/A' : logs[rowNum - 1].actualFinish;
+          drawTextInBox(page, actualFinishText, actualFinishBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
       
       // Meal Break
       const mealBreakBox = smoCoordinates.fields.table[`mealBreak_row${rowNum}`];
       if (mealBreakBox) {
-        drawFieldOverlay(page, mealBreakBox, `Meal Break R${rowNum}`);
+        drawFieldOverlay(page, mealBreakBox, `Meal Break R${rowNum}`, helveticaBold);
         if (logs[rowNum - 1]?.mealBreakMinutes) {
           drawTextInBox(page, logs[rowNum - 1].mealBreakMinutes.toString(), mealBreakBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
       
@@ -732,7 +753,7 @@ export async function buildSMOAVACTest(
       smoTickBoxes.forEach(({ key, label }) => {
         const box = smoCoordinates.fields.table[`${key}_row${rowNum}`];
         if (box) {
-          drawFieldOverlay(page, box, `${label} R${rowNum}`);
+          drawFieldOverlay(page, box, `${label} R${rowNum}`, helveticaBold);
           // Draw 'X' for demonstration
           page.drawText('X', {
             x: box.left + (box.width || 10) / 2 + 2,
@@ -748,22 +769,22 @@ export async function buildSMOAVACTest(
       // Comments
       const commentsBox = smoCoordinates.fields.table[`comments_row${rowNum}`];
       if (commentsBox) {
-        drawFieldOverlay(page, commentsBox, `Comments R${rowNum}`);
+        drawFieldOverlay(page, commentsBox, `Comments R${rowNum}`, helveticaBold);
         if (logs[rowNum - 1]?.comments) {
           drawTextInBox(page, logs[rowNum - 1].comments, commentsBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
       
       // Employee Initial
       const initialBox = smoCoordinates.fields.table[`employeeInitial_row${rowNum}`];
       if (initialBox) {
-        drawFieldOverlay(page, initialBox, `Initial R${rowNum}`);
+        drawFieldOverlay(page, initialBox, `Initial R${rowNum}`, helveticaBold);
         if (logs[rowNum - 1]?.initials) {
           drawTextInBox(page, logs[rowNum - 1].initials, initialBox, helvetica, { 
             color: rgb(0, 0, 0) 
-          });
+          }, rowNum);
         }
       }
     }
@@ -773,12 +794,12 @@ export async function buildSMOAVACTest(
     
     // Delegate's Signature
     if (smoCoordinates.fields.approval.delegateSignature) {
-      drawFieldOverlay(page, smoCoordinates.fields.approval.delegateSignature, 'Delegate Signature');
+      drawFieldOverlay(page, smoCoordinates.fields.approval.delegateSignature, 'Delegate Signature', helveticaBold);
     }
     
     // Delegate's full name
     if (smoCoordinates.fields.approval.delegateFullName) {
-      drawFieldOverlay(page, smoCoordinates.fields.approval.delegateFullName, 'Delegate Name');
+      drawFieldOverlay(page, smoCoordinates.fields.approval.delegateFullName, 'Delegate Name', helveticaBold);
       if (profile.delegateName) {
         drawTextInBox(page, profile.delegateName, smoCoordinates.fields.approval.delegateFullName, helvetica, { 
           color: rgb(0, 0, 0) 
@@ -788,7 +809,7 @@ export async function buildSMOAVACTest(
     
     // Delegate's position title
     if (smoCoordinates.fields.approval.delegatePosition) {
-      drawFieldOverlay(page, smoCoordinates.fields.approval.delegatePosition, 'Delegate Position');
+      drawFieldOverlay(page, smoCoordinates.fields.approval.delegatePosition, 'Delegate Position', helveticaBold);
       if (profile.delegatePosition) {
         drawTextInBox(page, profile.delegatePosition, smoCoordinates.fields.approval.delegatePosition, helvetica, { 
           color: rgb(0, 0, 0) 
@@ -798,7 +819,7 @@ export async function buildSMOAVACTest(
     
     // Contact telephone number
     if (smoCoordinates.fields.approval.contactPhone) {
-      drawFieldOverlay(page, smoCoordinates.fields.approval.contactPhone, 'Contact Phone');
+      drawFieldOverlay(page, smoCoordinates.fields.approval.contactPhone, 'Contact Phone', helveticaBold);
       if (profile.delegatePhone) {
         drawTextInBox(page, profile.delegatePhone, smoCoordinates.fields.approval.contactPhone, helvetica, { 
           color: rgb(0, 0, 0) 
@@ -808,7 +829,7 @@ export async function buildSMOAVACTest(
     
     // Approval Date
     if (smoCoordinates.fields.approval.approvalDate) {
-      drawFieldOverlay(page, smoCoordinates.fields.approval.approvalDate, 'Approval Date');
+      drawFieldOverlay(page, smoCoordinates.fields.approval.approvalDate, 'Approval Date', helveticaBold);
       const currentDate = new Date().toLocaleDateString('en-AU');
       drawTextInBox(page, currentDate, smoCoordinates.fields.approval.approvalDate, helvetica, { 
         color: rgb(0, 0, 0) 

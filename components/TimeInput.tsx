@@ -31,6 +31,10 @@ export function TimeInput({ value, onChange, placeholder = "Select time", disabl
 
   const formatDisplayTime = (timeString: string) => {
     if (!timeString) return placeholder;
+    
+    // Handle N/A values
+    if (timeString === 'N/A') return 'N/A';
+    
     const [hour, minute] = timeString.split(':').map(Number);
     
     // Convert to 12-hour format for display
@@ -55,7 +59,7 @@ export function TimeInput({ value, onChange, placeholder = "Select time", disabl
   };
 
   const getDateFromTimeString = (timeString: string): Date => {
-    if (!timeString) return new Date();
+    if (!timeString || timeString === 'N/A') return new Date();
     const [hour, minute] = timeString.split(':').map(Number);
     const date = new Date();
     date.setHours(hour, minute, 0, 0);

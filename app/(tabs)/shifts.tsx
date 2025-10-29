@@ -125,11 +125,12 @@ export default function ShiftsScreen() {
       (!shift.activeTo || shift.activeTo >= today)
     );
     
-    // Sort by next occurrence date
+    // Sort by day of week (Monday = 1, Tuesday = 2, ..., Sunday = 0)
     return activeShifts.sort((a, b) => {
-      const nextA = getNextShiftOccurrence(a);
-      const nextB = getNextShiftOccurrence(b);
-      return nextA.localeCompare(nextB);
+      // Convert Sunday (0) to 7 for proper ordering
+      const dayA = a.dayOfWeek === 0 ? 7 : a.dayOfWeek;
+      const dayB = b.dayOfWeek === 0 ? 7 : b.dayOfWeek;
+      return dayA - dayB;
     });
   };
 
@@ -143,9 +144,21 @@ export default function ShiftsScreen() {
   const activeShifts = getActiveShifts();
   const inactiveShifts = getInactiveShifts();
 
+  // Calculate the next shift once for all items
+  const today = new Date().toISOString().split('T')[0];
+  const nextShifts = activeShifts
+    .map(shift => ({
+      shift,
+      nextDate: getNextShiftOccurrence(shift)
+    }))
+    .filter(({ nextDate }) => nextDate !== '9999-12-31' && nextDate >= today)
+    .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
+  
+  const nextShiftId = nextShifts.length > 0 ? nextShifts[0].shift.id : null;
+
   const renderShiftItem = ({ item }: { item: UsualShift }) => {
     const nextOccurrence = getNextShiftOccurrence(item);
-    const isNextShift = activeShifts.indexOf(item) === 0; // First in sorted list
+    const isNextShift = nextShiftId === item.id;
     
     return (
       <ShiftCard
