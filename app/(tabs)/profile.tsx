@@ -29,6 +29,7 @@ export default function ProfileScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [selectedHospital, setSelectedHospital] = useState('');
   const [isDelegateAutoFilled, setIsDelegateAutoFilled] = useState(false);
+  const [isSMO, setIsSMO] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -38,12 +39,19 @@ export default function ProfileScreen() {
     if (profile) {
       setFormData(profile);
       setSelectedHospital(profile.location || '');
+      setIsSMO(profile.isSMO || false);
     }
   }, [profile]);
 
   const handleSave = async () => {
     if (!formData.fullName || !formData.payrollNumber || !formData.email) {
       Alert.alert('Required Fields', 'Please fill in all required fields.');
+      return;
+    }
+
+    // Validate pay level is required only when not SMO
+    if (!isSMO && !formData.payLevel) {
+      Alert.alert('Required Fields', 'Please fill in your pay level.');
       return;
     }
 
@@ -72,6 +80,7 @@ export default function ProfileScreen() {
       concurrentEmploymentDefault: formData.concurrentEmploymentDefault || false,
       email: formData.email || '',
       emailTemplate: formData.emailTemplate,
+      isSMO: isSMO,
     };
 
     console.log('Form data before saving:', {
@@ -234,7 +243,32 @@ export default function ProfileScreen() {
             />
           </View>
           {renderField('Payroll Number', 'payrollNumber', 'Enter payroll number', true)}
-          {renderField('Pay Level', 'payLevel', 'Enter pay level', true)}
+          
+          {/* SMO Toggle */}
+          <View style={styles.field}>
+            <View style={styles.smoToggleContainer}>
+              <Text style={[styles.label, isDark && styles.darkLabel]}>
+                Are you an SMO? (Senior Medical Officer)
+              </Text>
+              <Switch
+                value={isSMO}
+                onValueChange={(value) => {
+                  setIsSMO(value);
+                  // Clear pay level when switching to SMO
+                  if (value) {
+                    setFormData(prev => ({ ...prev, payLevel: '' }));
+                  }
+                }}
+                trackColor={{ false: '#767577', true: '#81b0ff' }}
+                thumbColor={isSMO ? '#f5dd4b' : '#f4f3f4'}
+                disabled={!isEditing}
+              />
+            </View>
+          </View>
+
+          {/* Pay Level - only show when not SMO */}
+          {!isSMO && renderField('Pay Level', 'payLevel', 'Enter pay level', true)}
+          
           {renderField('Employee Initial', 'employeeInitial', 'Auto-generated from full name', true)}
           {renderField('Email Address', 'email', 'your.name@health.qld.gov.au', true)}
         </View>
@@ -397,7 +431,7 @@ export default function ProfileScreen() {
           
           <TouchableOpacity
             style={[styles.settingRow, isDark && styles.darkSettingRow]}
-            onPress={() => router.push('/(tabs)/settings')}
+            onPress={() => router.push('/email-settings')}
           >
             <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
               Email Settings
@@ -674,5 +708,11 @@ const styles = StyleSheet.create({
   darkAutoFilledInput: {
     backgroundColor: '#1b2e1b',
     borderColor: '#81C784',
+  },
+  smoToggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
   },
 });

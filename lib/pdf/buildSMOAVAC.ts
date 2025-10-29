@@ -277,6 +277,282 @@ function generateSMOFileName(): string {
 }
 
 /**
+ * Build production SMO AVAC PDF without overlay boxes
+ */
+export async function buildSMOAVAC(
+  profile: Profile,
+  logs: OvertimeLog[],
+  customFileName?: string
+): Promise<string> {
+  try {
+    // Load the SMO AVAC template PDF
+    const templateBytes = await loadSMOAVACTemplate();
+    const pdfDoc = await PDFDocument.load(templateBytes);
+    const page = pdfDoc.getPages()[0];
+    
+    console.log('SMO template loaded, building production PDF...');
+    
+    // Load fonts
+    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    
+    // Draw header section
+    console.log('📝 Drawing header section...');
+    
+    // Employee Name
+    if (smoCoordinates.fields.header.employeeName) {
+      drawTextInBox(page, profile.fullName, smoCoordinates.fields.header.employeeName, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
+    
+    // Organisational Unit No. - 8 boxes
+    for (let i = 1; i <= 8; i++) {
+      const boxKey = `orgUnitNo_box${i}` as keyof typeof smoCoordinates.fields.header;
+      const box = smoCoordinates.fields.header[boxKey];
+      if (box && profile.orgUnitNo && profile.orgUnitNo[i - 1]) {
+        drawTextInBox(page, profile.orgUnitNo[i - 1], box, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+    }
+    
+    // Organisation unit name
+    if (smoCoordinates.fields.header.orgUnitName) {
+      drawTextInBox(page, profile.orgUnitName, smoCoordinates.fields.header.orgUnitName, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
+    
+    // Location
+    if (smoCoordinates.fields.header.location) {
+      drawTextInBox(page, profile.location, smoCoordinates.fields.header.location, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
+    
+    // Draw table section for first 3 rows
+    console.log('📝 Drawing table section...');
+    
+    for (let rowNum = 1; rowNum <= 3; rowNum++) {
+      console.log(`📝 Drawing row ${rowNum}...`);
+      
+      // Personnel Assignment ID
+      const personnelBox = smoCoordinates.fields.table[`personnelAssignmentNo_row${rowNum}`];
+      if (personnelBox && profile.payrollNumber) {
+        drawTextInBox(page, profile.payrollNumber, personnelBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+      
+      // Concurrent Employment tickbox
+      const tickbox = smoCoordinates.fields.table[`tickbox_row${rowNum}`];
+      if (tickbox && logs[rowNum - 1]?.concurrentEmployment) {
+        page.drawText('X', {
+          x: tickbox.left + (tickbox.width || 10) / 2 + 2,
+          y: page.getHeight() - (tickbox.top + (tickbox.height || 10) / 2) - 3,
+          size: 12,
+          font: helveticaBold,
+          color: rgb(0, 0, 0),
+          rotate: degrees(90),
+        });
+      }
+      
+      // Date
+      const dateBox = smoCoordinates.fields.table[`date_row${rowNum}`];
+      if (dateBox && logs[rowNum - 1]) {
+        const date = new Date(logs[rowNum - 1].date).toLocaleDateString('en-AU');
+        drawTextInBox(page, date, dateBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+      
+      // Rostered Start
+      const rosteredStartBox = smoCoordinates.fields.table[`rosteredStart_row${rowNum}`];
+      if (rosteredStartBox && logs[rowNum - 1]?.rosteredStart) {
+        drawTextInBox(page, logs[rowNum - 1].rosteredStart, rosteredStartBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+      
+      // Rostered Finish
+      const rosteredFinishBox = smoCoordinates.fields.table[`rosteredFinish_row${rowNum}`];
+      if (rosteredFinishBox && logs[rowNum - 1]?.rosteredFinish) {
+        drawTextInBox(page, logs[rowNum - 1].rosteredFinish, rosteredFinishBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+      
+      // Actual Start
+      const actualStartBox = smoCoordinates.fields.table[`actualStart_row${rowNum}`];
+      if (actualStartBox && logs[rowNum - 1]?.actualStart) {
+        drawTextInBox(page, logs[rowNum - 1].actualStart, actualStartBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+      
+      // Actual Finish
+      const actualFinishBox = smoCoordinates.fields.table[`actualFinish_row${rowNum}`];
+      if (actualFinishBox && logs[rowNum - 1]?.actualFinish) {
+        drawTextInBox(page, logs[rowNum - 1].actualFinish, actualFinishBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+      
+      // Meal Break
+      const mealBreakBox = smoCoordinates.fields.table[`mealBreak_row${rowNum}`];
+      if (mealBreakBox && logs[rowNum - 1]?.mealBreakMinutes) {
+        drawTextInBox(page, logs[rowNum - 1].mealBreakMinutes.toString(), mealBreakBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+      
+      // SMO-specific tick boxes
+      const smoTickBoxes = [
+        { key: 'vmoAdditionalHours', label: 'VMO Additional' },
+        { key: 'overtime', label: 'Overtime' },
+        { key: 'oncall', label: 'On-call' },
+        { key: 'physicalRecall', label: 'Physical Recall' },
+        { key: 'digitalRecall', label: 'Digital Recall' },
+        { key: 'extraShift', label: 'Extra Shift' },
+        { key: 'approvedForPayment', label: 'Approved Payment' }
+      ];
+      
+      smoTickBoxes.forEach(({ key, label }) => {
+        const box = smoCoordinates.fields.table[`${key}_row${rowNum}`];
+        if (box && logs[rowNum - 1]?.smoCategories?.[key as keyof typeof logs[rowNum - 1].smoCategories]) {
+          page.drawText('X', {
+            x: box.left + (box.width || 10) / 2 + 2,
+            y: page.getHeight() - (box.top + (box.height || 10) / 2) - 3,
+            size: 10,
+            font: helveticaBold,
+            color: rgb(0, 0, 0),
+            rotate: degrees(90),
+          });
+        }
+      });
+      
+      // Comments
+      const commentsBox = smoCoordinates.fields.table[`comments_row${rowNum}`];
+      if (commentsBox && logs[rowNum - 1]?.comments) {
+        drawTextInBox(page, logs[rowNum - 1].comments, commentsBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+      
+      // Employee Initial
+      const initialBox = smoCoordinates.fields.table[`employeeInitial_row${rowNum}`];
+      if (initialBox && logs[rowNum - 1]?.initials) {
+        drawTextInBox(page, logs[rowNum - 1].initials, initialBox, helvetica, { 
+          color: rgb(0, 0, 0) 
+        });
+      }
+    }
+    
+    // Draw approval section
+    console.log('📝 Drawing approval section...');
+    
+    // Delegate's full name
+    if (smoCoordinates.fields.approval.delegateFullName && profile.delegateName) {
+      drawTextInBox(page, profile.delegateName, smoCoordinates.fields.approval.delegateFullName, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
+    
+    // Delegate's position title
+    if (smoCoordinates.fields.approval.delegatePosition && profile.delegatePosition) {
+      drawTextInBox(page, profile.delegatePosition, smoCoordinates.fields.approval.delegatePosition, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
+    
+    // Contact telephone number
+    if (smoCoordinates.fields.approval.contactPhone && profile.delegatePhone) {
+      drawTextInBox(page, profile.delegatePhone, smoCoordinates.fields.approval.contactPhone, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
+    
+    // Approval Date
+    if (smoCoordinates.fields.approval.approvalDate) {
+      const currentDate = new Date().toLocaleDateString('en-AU');
+      drawTextInBox(page, currentDate, smoCoordinates.fields.approval.approvalDate, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
+    
+    // Save PDF to file
+    const pdfBytes = await pdfDoc.save();
+    const fileName = customFileName || generateSMOProductionFileName(profile);
+    
+    // Use cache directory
+    const fileUri = `${Paths.cache.uri}/${fileName}`;
+    
+    // Convert Uint8Array to base64 string
+    let base64String: string;
+    try {
+      const binaryString = String.fromCharCode(...pdfBytes);
+      base64String = btoa(binaryString);
+    } catch (error) {
+      console.log('btoa not available, using custom base64 encoding');
+      base64String = uint8ArrayToBase64(pdfBytes);
+    }
+    
+    await writeAsStringAsync(fileUri, base64String, { encoding: 'base64' });
+    
+    console.log(`SMO AVAC PDF generated: ${fileUri}`);
+    return fileUri;
+  } catch (error) {
+    console.error('Failed to build SMO AVAC PDF:', error);
+    throw new Error('Failed to generate SMO AVAC PDF');
+  }
+}
+
+/**
+ * Generate filename for production SMO AVAC
+ */
+function generateSMOProductionFileName(profile: Profile): string {
+  const dateStr = new Date().toISOString().split('T')[0];
+  const nameInfo = parseName(profile.fullName);
+  
+  if (nameInfo && nameInfo.firstName && nameInfo.lastName) {
+    const firstName = nameInfo.firstName.replace(/[^a-zA-Z0-9]/g, '_');
+    const lastName = nameInfo.lastName.replace(/[^a-zA-Z0-9]/g, '_');
+    return `SMO_AVAC_${firstName}_${lastName}_${dateStr}.pdf`;
+  } else if (nameInfo && nameInfo.firstName) {
+    const firstName = nameInfo.firstName.replace(/[^a-zA-Z0-9]/g, '_');
+    return `SMO_AVAC_${firstName}_${dateStr}.pdf`;
+  } else {
+    return `SMO_AVAC_${dateStr}.pdf`;
+  }
+}
+
+/**
+ * Parse first and last name from full name string
+ */
+function parseName(fullName: string): { firstName: string; lastName: string } | null {
+  if (!fullName || typeof fullName !== 'string') {
+    return null;
+  }
+  
+  const trimmedName = fullName.trim();
+  if (trimmedName.length === 0) {
+    return null;
+  }
+  
+  const nameParts = trimmedName.split(/\s+/);
+  
+  if (nameParts.length === 1) {
+    return { firstName: nameParts[0], lastName: '' };
+  }
+  
+  const firstName = nameParts[0];
+  const lastName = nameParts[nameParts.length - 1];
+  
+  return { firstName, lastName };
+}
+
+/**
  * Build SMO AVAC PDF with green overlay boxes for coordinate verification
  */
 export async function buildSMOAVACTest(

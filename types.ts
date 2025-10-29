@@ -16,6 +16,7 @@ export type Profile = {
   concurrentEmploymentDefault: boolean; // Default concurrent employment setting
   email: string; // User's QLD Health email address
   emailTemplate?: string; // Customizable email body template
+  isSMO: boolean; // Whether user is a Senior Medical Officer
 };
 
 export type UsualShift = {
@@ -44,6 +45,15 @@ export type OvertimeLog = {
   comments?: string;
   initials: string;       // from profile.fullName
   concurrentEmployment?: boolean; // Whether employee works more than one job at the same time
+  smoCategories?: {       // SMO-specific category checkboxes
+    vmoAdditionalHours?: boolean;
+    overtime?: boolean;
+    oncall?: boolean;
+    physicalRecall?: boolean;
+    digitalRecall?: boolean;
+    extraShift?: boolean;
+    approvedForPayment?: boolean;
+  };
   status: 'draft'|'ready'|'exported';
   exportBatchId?: string;
   source: 'manual'|'geofence-proposed'|'imported';

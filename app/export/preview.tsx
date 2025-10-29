@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { buildAVAC, validateLogsForPDF } from '../../lib/pdf/buildAVAC';
+import { buildSMOAVAC } from '../../lib/pdf/buildSMOAVAC';
 import { formatMinutes } from '../../lib/time';
 import InAppPDFViewer from '../../components/InAppPDFViewer';
 
@@ -64,7 +65,11 @@ export default function ExportPreviewScreen() {
     try {
       // Generate custom filename if provided
       const customFileName = customName.trim() ? `${customName.trim()}.pdf` : undefined;
-      const pdfUri = await buildAVAC(profile, readyLogs, customFileName);
+      
+      // Use SMO template if user is SMO, otherwise use regular template
+      const pdfUri = profile.isSMO 
+        ? await buildSMOAVAC(profile, readyLogs, customFileName)
+        : await buildAVAC(profile, readyLogs, customFileName);
       setPdfUri(pdfUri);
       
       if (!regenerate) {

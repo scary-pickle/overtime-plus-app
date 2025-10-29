@@ -11,10 +11,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useProfileStore } from '../../lib/state/profileStore';
-import { getDefaultEmailTemplate } from '../../lib/email/emailService';
+import { useRouter } from 'expo-router';
+import { useProfileStore } from '../lib/state/profileStore';
+import { getDefaultEmailTemplate } from '../lib/email/emailService';
 
-export default function SettingsScreen() {
+export default function EmailSettingsScreen() {
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
@@ -49,9 +51,9 @@ export default function SettingsScreen() {
       };
       
       await saveProfile(updatedProfile);
-      Alert.alert('Success', 'Settings saved successfully.');
+      Alert.alert('Success', 'Email settings saved successfully.');
     } catch (error) {
-      Alert.alert('Error', 'Failed to save settings. Please try again.');
+      Alert.alert('Error', 'Failed to save email settings. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -89,7 +91,7 @@ export default function SettingsScreen() {
       <View style={[styles.container, styles.centerContent, isDark && styles.darkContainer]}>
         <ActivityIndicator size="large" color="#007AFF" />
         <Text style={[styles.loadingText, isDark && styles.darkText]}>
-          Loading settings...
+          Loading email settings...
         </Text>
       </View>
     );
@@ -98,9 +100,19 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
       <View style={styles.content}>
-        <Text style={[styles.title, isDark && styles.darkText]}>
-          Email Settings
-        </Text>
+        {/* Header with back button */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : '#000'} />
+          </TouchableOpacity>
+          <Text style={[styles.title, isDark && styles.darkText]}>
+            Email Settings
+          </Text>
+          <View style={styles.headerSpacer} />
+        </View>
         
         <View style={[styles.section, isDark && styles.darkSection]}>
           <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
@@ -193,11 +205,24 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingTop: 10,
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 8,
+  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 24,
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 40, // Same width as back button to center the title
   },
   section: {
     backgroundColor: '#fff',

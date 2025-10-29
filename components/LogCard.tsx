@@ -94,10 +94,28 @@ export function LogCard({
       </View>
 
       <View style={styles.content}>
-        <View style={styles.row}>
-          <Text style={[styles.label, isDark && styles.darkSecondaryText]}>Category:</Text>
-          <Text style={[styles.value, isDark && styles.darkText]}>{log.category}</Text>
-        </View>
+        {/* Show SMO categories if present, otherwise show regular category */}
+        {log.smoCategories ? (
+          <View style={styles.row}>
+            <Text style={[styles.label, isDark && styles.darkSecondaryText]}>SMO Categories:</Text>
+            <View style={styles.smoCategoriesContainer}>
+              {Object.entries(log.smoCategories)
+                .filter(([_, value]) => value)
+                .map(([key, _]) => (
+                  <View key={key} style={[styles.smoCategoryBadge, isDark && styles.darkSmoCategoryBadge]}>
+                    <Text style={[styles.smoCategoryText, isDark && styles.darkSmoCategoryText]}>
+                      {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                    </Text>
+                  </View>
+                ))}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.row}>
+            <Text style={[styles.label, isDark && styles.darkSecondaryText]}>Category:</Text>
+            <Text style={[styles.value, isDark && styles.darkText]}>{log.category}</Text>
+          </View>
+        )}
         
         <View style={styles.row}>
           <Text style={[styles.label, isDark && styles.darkSecondaryText]}>Overtime:</Text>
@@ -323,5 +341,30 @@ const styles = StyleSheet.create({
   },
   darkDeleteButtonText: {
     color: '#ff6b6b',
+  },
+  smoCategoriesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    flex: 2,
+    justifyContent: 'flex-end',
+  },
+  smoCategoryBadge: {
+    backgroundColor: '#e3f2fd',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 4,
+    marginBottom: 4,
+  },
+  darkSmoCategoryBadge: {
+    backgroundColor: '#1a237e',
+  },
+  smoCategoryText: {
+    fontSize: 11,
+    color: '#1976d2',
+    fontWeight: '500',
+  },
+  darkSmoCategoryText: {
+    color: '#90caf9',
   },
 });

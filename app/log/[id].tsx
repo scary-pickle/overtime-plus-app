@@ -59,6 +59,7 @@ export default function EditLogScreen() {
   const [minutesCalculation, setMinutesCalculation] = useState<any>(null);
   const [wasExported, setWasExported] = useState(false);
   const [showExportedWarning, setShowExportedWarning] = useState(false);
+  const [smoCategories, setSmoCategories] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (id) {
@@ -76,6 +77,7 @@ export default function EditLogScreen() {
         setCategory(foundLog.category);
         setComments(foundLog.comments || '');
         setWasExported(foundLog.status === 'exported');
+        setSmoCategories(foundLog.smoCategories || {});
         
         // Show warning if log was previously exported
         if (foundLog.status === 'exported') {
@@ -166,6 +168,7 @@ export default function EditLogScreen() {
       category,
       comments: comments || undefined,
       initials: logInitials, // Update initials from current profile
+      smoCategories: profile?.isSMO ? smoCategories : undefined,
       status: wasExported ? 'ready' : log.status, // Convert exported logs back to ready
       updatedAt: new Date().toISOString(),
     };
@@ -207,51 +210,99 @@ export default function EditLogScreen() {
     );
   }
 
-  const renderCategorySelector = () => (
-    <View style={[styles.section, isDark && styles.darkCard]}>
-      <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-        Category
-      </Text>
-      <TouchableOpacity
-        style={[styles.categoryDropdown, isDark && styles.darkInput]}
-        onPress={() => setShowCategoryPicker(!showCategoryPicker)}
-      >
-        <Text style={[styles.categoryDropdownText, isDark && styles.darkText]}>
-          {category}
+  const renderSMOCategories = () => {
+    const smoCategoryOptions = [
+      { key: 'vmoAdditionalHours', label: 'VMO Additional Hours' },
+      { key: 'overtime', label: 'Overtime' },
+      { key: 'oncall', label: 'On-call' },
+      { key: 'physicalRecall', label: 'Physical Recall' },
+      { key: 'digitalRecall', label: 'Digital Recall' },
+      { key: 'extraShift', label: 'Extra Shift' },
+      { key: 'approvedForPayment', label: 'Approved for Payment' },
+    ];
+
+    return (
+      <View style={[styles.section, isDark && styles.darkCard]}>
+        <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+          SMO Categories (Select all that apply)
         </Text>
-        <Text style={[styles.dropdownArrow, isDark && styles.darkText]}>
-          {showCategoryPicker ? '▲' : '▼'}
+        {smoCategoryOptions.map((option) => (
+          <TouchableOpacity
+            key={option.key}
+            style={[styles.smoCategoryOption, isDark && styles.darkSmoCategoryOption]}
+            onPress={() => {
+              setSmoCategories(prev => ({
+                ...prev,
+                [option.key]: !prev[option.key]
+              }));
+            }}
+          >
+            <View style={[styles.checkbox, smoCategories[option.key] && styles.checkboxChecked]}>
+              {smoCategories[option.key] && (
+                <Text style={styles.checkmark}>✓</Text>
+              )}
+            </View>
+            <Text style={[styles.smoCategoryLabel, isDark && styles.darkText]}>
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  const renderCategorySelector = () => {
+    // Show SMO categories if user is SMO, otherwise show regular dropdown
+    if (profile?.isSMO) {
+      return renderSMOCategories();
+    }
+
+    return (
+      <View style={[styles.section, isDark && styles.darkCard]}>
+        <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+          Category
         </Text>
-      </TouchableOpacity>
-      
-      {showCategoryPicker && (
-        <View style={[styles.categoryPickerContainer, isDark && styles.darkPickerContainer]}>
-          {CATEGORIES.map((cat) => (
-            <TouchableOpacity
-              key={cat}
-              style={[
-                styles.categoryOption,
-                category === cat && styles.selectedCategoryOption,
-                isDark && styles.darkCategoryOption,
-              ]}
-              onPress={() => {
-                setCategory(cat);
-                setShowCategoryPicker(false);
-              }}
-            >
-              <Text style={[
-                styles.categoryOptionText,
-                category === cat && styles.selectedCategoryOptionText,
-                isDark && styles.darkText,
-              ]}>
-                {cat}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </View>
-  );
+        <TouchableOpacity
+          style={[styles.categoryDropdown, isDark && styles.darkInput]}
+          onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+        >
+          <Text style={[styles.categoryDropdownText, isDark && styles.darkText]}>
+            {category}
+          </Text>
+          <Text style={[styles.dropdownArrow, isDark && styles.darkText]}>
+            {showCategoryPicker ? '▲' : '▼'}
+          </Text>
+        </TouchableOpacity>
+        
+        {showCategoryPicker && (
+          <View style={[styles.categoryPickerContainer, isDark && styles.darkPickerContainer]}>
+            {CATEGORIES.map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.categoryOption,
+                  category === cat && styles.selectedCategoryOption,
+                  isDark && styles.darkCategoryOption,
+                ]}
+                onPress={() => {
+                  setCategory(cat);
+                  setShowCategoryPicker(false);
+                }}
+              >
+                <Text style={[
+                  styles.categoryOptionText,
+                  category === cat && styles.selectedCategoryOptionText,
+                  isDark && styles.darkText,
+                ]}>
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
 
   const renderCalculation = () => {
     if (!minutesCalculation) return null;
@@ -765,5 +816,41 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     marginTop: 50,
+  },
+  smoCategoryOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  darkSmoCategoryOption: {
+    borderBottomColor: '#2c2c2e',
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  checkboxChecked: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  smoCategoryLabel: {
+    fontSize: 16,
+    color: '#333',
+    flex: 1,
   },
 });
