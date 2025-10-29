@@ -331,10 +331,10 @@ export async function buildSMOAVAC(
       });
     }
     
-    // Draw table section for first 3 rows
+    // Draw table section for available logs (up to 3 rows)
     console.log('📝 Drawing table section...');
     
-    for (let rowNum = 1; rowNum <= 3; rowNum++) {
+    for (let rowNum = 1; rowNum <= Math.min(logs.length, 3); rowNum++) {
       console.log(`📝 Drawing row ${rowNum}...`);
       
       // Personnel Assignment ID
@@ -345,9 +345,14 @@ export async function buildSMOAVAC(
         });
       }
       
+      const log = logs[rowNum - 1];
+      
+      // Only process if we have a log for this row
+      if (!log) continue;
+      
       // Concurrent Employment tickbox
       const tickbox = smoCoordinates.fields.table[`tickbox_row${rowNum}`];
-      if (tickbox && logs[rowNum - 1]?.concurrentEmployment) {
+      if (tickbox && log.concurrentEmployment) {
         page.drawText('X', {
           x: tickbox.left + (tickbox.width || 10) / 2 + 2,
           y: page.getHeight() - (tickbox.top + (tickbox.height || 10) / 2) - 3,
@@ -360,8 +365,8 @@ export async function buildSMOAVAC(
       
       // Date
       const dateBox = smoCoordinates.fields.table[`date_row${rowNum}`];
-      if (dateBox && logs[rowNum - 1]) {
-        const date = new Date(logs[rowNum - 1].date).toLocaleDateString('en-AU');
+      if (dateBox) {
+        const date = new Date(log.date).toLocaleDateString('en-AU');
         drawTextInBox(page, date, dateBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
@@ -369,40 +374,40 @@ export async function buildSMOAVAC(
       
       // Rostered Start
       const rosteredStartBox = smoCoordinates.fields.table[`rosteredStart_row${rowNum}`];
-      if (rosteredStartBox && logs[rowNum - 1]?.rosteredStart) {
-        drawTextInBox(page, logs[rowNum - 1].rosteredStart, rosteredStartBox, helvetica, { 
+      if (rosteredStartBox && log.rosteredStart) {
+        drawTextInBox(page, log.rosteredStart, rosteredStartBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
       
       // Rostered Finish
       const rosteredFinishBox = smoCoordinates.fields.table[`rosteredFinish_row${rowNum}`];
-      if (rosteredFinishBox && logs[rowNum - 1]?.rosteredFinish) {
-        drawTextInBox(page, logs[rowNum - 1].rosteredFinish, rosteredFinishBox, helvetica, { 
+      if (rosteredFinishBox && log.rosteredFinish) {
+        drawTextInBox(page, log.rosteredFinish, rosteredFinishBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
       
       // Actual Start
       const actualStartBox = smoCoordinates.fields.table[`actualStart_row${rowNum}`];
-      if (actualStartBox && logs[rowNum - 1]?.actualStart) {
-        drawTextInBox(page, logs[rowNum - 1].actualStart, actualStartBox, helvetica, { 
+      if (actualStartBox && log.actualStart) {
+        drawTextInBox(page, log.actualStart, actualStartBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
       
       // Actual Finish
       const actualFinishBox = smoCoordinates.fields.table[`actualFinish_row${rowNum}`];
-      if (actualFinishBox && logs[rowNum - 1]?.actualFinish) {
-        drawTextInBox(page, logs[rowNum - 1].actualFinish, actualFinishBox, helvetica, { 
+      if (actualFinishBox && log.actualFinish) {
+        drawTextInBox(page, log.actualFinish, actualFinishBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
       
       // Meal Break
       const mealBreakBox = smoCoordinates.fields.table[`mealBreak_row${rowNum}`];
-      if (mealBreakBox && logs[rowNum - 1]?.mealBreakMinutes) {
-        drawTextInBox(page, logs[rowNum - 1].mealBreakMinutes.toString(), mealBreakBox, helvetica, { 
+      if (mealBreakBox && log.mealBreakMinutes) {
+        drawTextInBox(page, log.mealBreakMinutes.toString(), mealBreakBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
@@ -420,7 +425,7 @@ export async function buildSMOAVAC(
       
       smoTickBoxes.forEach(({ key, label }) => {
         const box = smoCoordinates.fields.table[`${key}_row${rowNum}`];
-        if (box && logs[rowNum - 1]?.smoCategories?.[key as keyof typeof logs[rowNum - 1].smoCategories]) {
+        if (box && log.smoCategories && log.smoCategories[key as keyof typeof log.smoCategories]) {
           page.drawText('X', {
             x: box.left + (box.width || 10) / 2 + 2,
             y: page.getHeight() - (box.top + (box.height || 10) / 2) - 3,
@@ -434,16 +439,16 @@ export async function buildSMOAVAC(
       
       // Comments
       const commentsBox = smoCoordinates.fields.table[`comments_row${rowNum}`];
-      if (commentsBox && logs[rowNum - 1]?.comments) {
-        drawTextInBox(page, logs[rowNum - 1].comments, commentsBox, helvetica, { 
+      if (commentsBox && log.comments) {
+        drawTextInBox(page, log.comments, commentsBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
       
       // Employee Initial
       const initialBox = smoCoordinates.fields.table[`employeeInitial_row${rowNum}`];
-      if (initialBox && logs[rowNum - 1]?.initials) {
-        drawTextInBox(page, logs[rowNum - 1].initials, initialBox, helvetica, { 
+      if (initialBox && log.initials) {
+        drawTextInBox(page, log.initials, initialBox, helvetica, { 
           color: rgb(0, 0, 0) 
         });
       }
