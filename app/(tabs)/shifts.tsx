@@ -1,0 +1,289 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Alert,
+  useColorScheme,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useShiftsStore } from '../../lib/state/shiftsStore';
+import { ShiftCard } from '../../components/ShiftCard';
+import { EmptyState } from '../../components/EmptyState';
+import { UsualShift } from '../../types';
+
+export default function ShiftsScreen() {
+  const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  
+  const { shifts, deleteShift, loadShifts } = useShiftsStore();
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    console.log('🔄 ShiftsScreen: Loading shifts...');
+    loadShifts();
+  }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadShifts();
+    setRefreshing(false);
+  };
+
+  const handleAddShift = () => {
+    console.log('➕ ShiftsScreen: Add shift button pressed');
+    router.push('/shifts/new');
+  };
+
+  const handleEditShift = (shift: UsualShift) => {
+    console.log('✏️ ShiftsScreen: Edit shift pressed:', {
+      id: shift.id,
+      label: shift.label,
+      day: shift.dayOfWeek,
+      type: shift.type
+    });
+    router.push(`/shifts/${shift.id}`);
+  };
+
+  const handleDeleteShift = (shift: UsualShift) => {
+    console.log('🗑️ ShiftsScreen: Delete shift requested:', {
+      id: shift.id,
+      label: shift.label,
+      day: shift.dayOfWeek
+    });
+    Alert.alert(
+      'Delete Shift',
+      'Are you sure you want to delete this shift pattern?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            console.log('✅ ShiftsScreen: Confirming delete for shift:', shift.id);
+            deleteShift(shift.id);
+          },
+        },
+      ]
+    );
+  };
+
+  const getNextShiftOccurrence = (shift: UsualShift): string => {
+    const today = new Date();
+    const dayOfWeek = shift.dayOfWeek;
+    
+    // Start from today and look ahead up to 7 days
+    for (let i = 0; i < 7; i++) {
+      const checkDate = new Date(today);
+      checkDate.setDate(today.getDate() + i);
+      
+      if (checkDate.getDay() === dayOfWeek) {
+        const dateStr = checkDate.toISOString().split('T')[0];
+        
+        // Check if shift is active on this date
+        if (shift.activeFrom <= dateStr && (!shift.activeTo || shift.activeTo >= dateStr)) {
+          // For biweekly shifts, check week index
+          if (shift.type === 'biweekly' && shift.weekIndex) {
+            const weekIndex = getWeekIndex(checkDate);
+            if (weekIndex === shift.weekIndex) {
+              return dateStr;
+            }
+          } else if (shift.type === 'weekly') {
+            return dateStr;
+          }
+        }
+      }
+    }
+    
+    // If no occurrence found in next 7 days, return a far future date for sorting
+    return '9999-12-31';
+  };
+
+  const getWeekIndex = (date: Date): 1 | 2 => {
+    const year = date.getFullYear();
+    const firstSunday = new Date(year, 0, 1);
+    
+    // Find the first Sunday of the year
+    while (firstSunday.getDay() !== 0) {
+      firstSunday.setDate(firstSunday.getDate() + 1);
+    }
+    
+    const daysSinceFirstSunday = Math.floor((date.getTime() - firstSunday.getTime()) / (1000 * 60 * 60 * 24));
+    const weekNumber = Math.floor(daysSinceFirstSunday / 7) + 1;
+    
+    return (weekNumber % 2 === 1) ? 1 : 2;
+  };
+
+  const getActiveShifts = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const activeShifts = shifts.filter(shift => 
+      shift.activeFrom <= today && 
+      (!shift.activeTo || shift.activeTo >= today)
+    );
+    
+    // Sort by next occurrence date
+    return activeShifts.sort((a, b) => {
+      const nextA = getNextShiftOccurrence(a);
+      const nextB = getNextShiftOccurrence(b);
+      return nextA.localeCompare(nextB);
+    });
+  };
+
+  const getInactiveShifts = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return shifts.filter(shift => 
+      shift.activeTo && shift.activeTo < today
+    );
+  };
+
+  const activeShifts = getActiveShifts();
+  const inactiveShifts = getInactiveShifts();
+
+  const renderShiftItem = ({ item }: { item: UsualShift }) => {
+    const nextOccurrence = getNextShiftOccurrence(item);
+    const isNextShift = activeShifts.indexOf(item) === 0; // First in sorted list
+    
+    return (
+      <ShiftCard
+        shift={item}
+        onPress={() => handleEditShift(item)}
+        onEdit={() => handleEditShift(item)}
+        onDelete={() => handleDeleteShift(item)}
+        showActions={true}
+        nextOccurrence={nextOccurrence}
+        isNextShift={isNextShift}
+        isDark={isDark}
+      />
+    );
+  };
+
+  const renderSection = (title: string, data: UsualShift[], emptyMessage: string) => {
+    if (data.length === 0) return null;
+
+    return (
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+          {title}
+        </Text>
+        <FlatList
+          data={data}
+          renderItem={renderShiftItem}
+          keyExtractor={(item) => item.id}
+          scrollEnabled={false}
+          ListEmptyComponent={
+            <View style={styles.emptySection}>
+              <Text style={[styles.emptyText, isDark && styles.darkEmptyText]}>
+                {emptyMessage}
+              </Text>
+            </View>
+          }
+        />
+      </View>
+    );
+  };
+
+  if (shifts.length === 0) {
+    return (
+      <EmptyState
+        title="No Shift Patterns"
+        description="Create your usual shift patterns to quickly log overtime with pre-filled times."
+        actionText="Add First Shift"
+        onAction={handleAddShift}
+        icon="📅"
+      />
+    );
+  }
+
+  return (
+    <View style={[styles.container, isDark && styles.darkContainer]}>
+      <FlatList
+        data={[]}
+        renderItem={() => null}
+        ListHeaderComponent={
+          <View>
+            {renderSection(
+              'Active Shifts',
+              activeShifts,
+              'No active shifts'
+            )}
+            {renderSection(
+              'Inactive Shifts',
+              inactiveShifts,
+              'No inactive shifts'
+            )}
+          </View>
+        }
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+      />
+
+      {/* Add Button */}
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={handleAddShift}
+      >
+        <Ionicons name="add" size={24} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  darkContainer: {
+    backgroundColor: '#000',
+  },
+  listContainer: {
+    paddingVertical: 8,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+    marginHorizontal: 16,
+  },
+  darkText: {
+    color: '#fff',
+  },
+  emptySection: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  darkEmptyText: {
+    color: '#999',
+  },
+  addButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+});
