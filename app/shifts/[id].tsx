@@ -14,6 +14,7 @@ import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
 import { validateShift } from '../../lib/roster';
+import { getPreviousISODate } from '../../lib/time';
 import { UsualShift } from '../../types';
 
 const SHIFT_TYPES = [
@@ -43,7 +44,7 @@ export default function EditShiftScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { shifts, updateShift, deleteShift } = useShiftsStore();
+  const { shifts, updateShift, deleteShift, addShift } = useShiftsStore();
   
   const [shift, setShift] = useState<UsualShift | null>(null);
   const [label, setLabel] = useState('');
@@ -158,6 +159,101 @@ export default function EditShiftScreen() {
       console.error('❌ EditShiftScreen: Failed to update shift:', error);
       Alert.alert('Error', 'Failed to update shift pattern. Please try again.');
     }
+  };
+
+  const handleUpdateFuture = async () => {
+    if (!shift) return;
+
+    console.log('💾 EditShiftScreen: Update Future button pressed');
+    console.log('📝 EditShiftScreen: Form data:', {
+      id: shift.id,
+      label,
+      type,
+      selectedDays,
+      rosteredStart,
+      rosteredFinish,
+      mealBreakMinutes,
+      activeFrom,
+      activeTo
+    });
+
+    if (!validateForm()) {
+      console.log('❌ EditShiftScreen: Validation failed:', validationErrors);
+      Alert.alert('Validation Error', validationErrors.join('\n'));
+      return;
+    }
+
+    // Use activeFrom as effective date, default to today if empty
+    const effectiveFrom = activeFrom || new Date().toISOString().split('T')[0];
+    
+    // Check if effective date is valid
+    if (shift.activeFrom > effectiveFrom) {
+      Alert.alert(
+        'Invalid Date',
+        'The effective date cannot be before the original shift start date. Please choose a date on or after the original start date.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Calculate previous day for the split
+    const previousDay = getPreviousISODate(effectiveFrom);
+    
+    // Handle edge case where previous day is before original activeFrom
+    const splitDate = previousDay < shift.activeFrom ? shift.activeFrom : previousDay;
+
+    // Show confirmation dialog
+    Alert.alert(
+      'Update Future Shifts',
+      `This will update the shift pattern starting from ${effectiveFrom}.\n\nAll future occurrences will use the new times:\n• Start: ${rosteredStart}\n• Finish: ${rosteredFinish}\n• Meal Break: ${mealBreakMinutes} minutes\n\nContinue?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Update Future',
+          onPress: async () => {
+            try {
+              console.log('🔄 EditShiftScreen: Updating shift series:', {
+                originalId: shift.id,
+                effectiveFrom,
+                splitDate
+              });
+
+              // 1) Update existing record's activeTo
+              const updatedShift: UsualShift = {
+                ...shift,
+                activeTo: splitDate,
+              };
+              await updateShift(updatedShift);
+
+              // 2) Create new record for future with new times
+              const newShift: UsualShift = {
+                id: crypto.randomUUID(),
+                label,
+                type,
+                weekIndex: type === 'biweekly' ? weekIndex : undefined,
+                dayOfWeek: selectedDays[0] as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+                rosteredStart,
+                rosteredFinish,
+                mealBreakMinutes: mealBreakMinutes || 0,
+                activeFrom: effectiveFrom,
+                activeTo: shift.activeTo, // Preserve original end date
+              };
+              await addShift(newShift);
+
+              console.log('✅ EditShiftScreen: Shift series updated successfully');
+              Alert.alert(
+                'Success',
+                'Updated this shift and all future occurrences successfully!',
+                [{ text: 'OK', onPress: () => router.back() }]
+              );
+            } catch (error) {
+              console.error('❌ EditShiftScreen: Failed to update shift series:', error);
+              Alert.alert('Error', 'Failed to update shift series. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleDelete = () => {
@@ -484,6 +580,16 @@ export default function EditShiftScreen() {
           >
             <Text style={styles.updateButtonText}>Update</Text>
           </TouchableOpacity>
+          
+          {/* Only show future update button for weekly and biweekly shifts */}
+          {(type === 'weekly' || type === 'biweekly') && (
+            <TouchableOpacity
+              style={[styles.button, styles.updateFutureButton]}
+              onPress={handleUpdateFuture}
+            >
+              <Text style={styles.updateFutureButtonText}>Update This & Future Shifts</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </ScrollView>
@@ -758,6 +864,9 @@ const styles = StyleSheet.create({
   updateButton: {
     backgroundColor: '#007AFF',
   },
+  updateFutureButton: {
+    backgroundColor: '#4CAF50',
+  },
   deleteButtonText: {
     color: '#d32f2f',
     fontSize: 16,
@@ -769,6 +878,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   updateButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  updateFutureButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',

@@ -30,6 +30,11 @@ interface LogsState {
   getExportedLogs: () => OvertimeLog[];
   computeMinutesForLog: (log: OvertimeLog) => MinutesCalculation;
   getTotalMinutes: (logs: OvertimeLog[]) => number;
+  
+  // Active shift management
+  getActiveShiftDraft: () => OvertimeLog | null;
+  clearActiveShift: (id: string) => Promise<void>;
+  markDraftAsStale: (id: string) => Promise<void>;
 }
 
 export const useLogsStore = create<LogsState>((set, get) => ({
@@ -327,5 +332,30 @@ export const useLogsStore = create<LogsState>((set, get) => ({
 
   getTotalMinutes: (logs: OvertimeLog[]) => {
     return logs.reduce((sum, log) => sum + log.minutesOvertime, 0);
+  },
+
+  // Active shift management
+  getActiveShiftDraft: () => {
+    const { logs } = get();
+    return logs.find(log => log.status === 'draft' && log.isActiveShift === true) || null;
+  },
+
+  clearActiveShift: async (id: string) => {
+    const { logs, updateLog } = get();
+    const log = logs.find(l => l.id === id);
+    if (!log) return;
+
+    const updatedLog: OvertimeLog = {
+      ...log,
+      isActiveShift: false,
+      updatedAt: new Date().toISOString()
+    };
+
+    await updateLog(updatedLog);
+  },
+
+  markDraftAsStale: async (id: string) => {
+    // Mark as stale by clearing the active shift flag
+    await get().clearActiveShift(id);
   }
 }));

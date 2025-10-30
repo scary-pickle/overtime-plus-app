@@ -19,22 +19,28 @@ import { getRosterForDate } from '../../lib/roster';
 import { LateBadge } from '../../components/LateBadge';
 import { EmptyState } from '../../components/EmptyState';
 import { testSMOAVACGeneration } from '../../lib/pdf/testSMOAVAC';
+import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
+import { OvertimeLog } from '../../types';
 
 export default function HomeScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { profile, loadProfile } = useProfileStore();
+  const { profile, loadProfile, initials } = useProfileStore();
   
   // Compute profile state from profile object
   const hasProfile = !!profile;
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const { shifts, getRosterFor } = useShiftsStore();
-  const { logs, getDraftLogs, getReadyLogs } = useLogsStore();
+  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, clearActiveShift, markDraftAsStale } = useLogsStore();
   
   const [currentTime, setCurrentTime] = useState(getCurrentTime());
   const [todayRoster, setTodayRoster] = useState<any>(null);
+  const [activeShiftDraft, setActiveShiftDraft] = useState<OvertimeLog | null>(null);
+  const [showEndShiftModal, setShowEndShiftModal] = useState(false);
+  const [endShiftDraft, setEndShiftDraft] = useState<OvertimeLog | null>(null);
+  const [endShiftNoRosterMode, setEndShiftNoRosterMode] = useState(false);
 
   useEffect(() => {
     // Update time every minute
@@ -51,6 +57,32 @@ export default function HomeScreen() {
       setTodayRoster(roster);
     }
   }, [hasProfile, shifts]);
+
+  // Check for active shift draft and handle stale drafts
+  useEffect(() => {
+    const checkActiveShift = async () => {
+      const activeDraft = getActiveShiftDraft();
+      
+      if (activeDraft) {
+        const today = getCurrentDate();
+        
+        // Check if draft is stale (from a previous day)
+        if (activeDraft.date < today) {
+          console.log('Stale draft detected, clearing active shift');
+          await markDraftAsStale(activeDraft.id);
+          setActiveShiftDraft(null);
+        } else {
+          setActiveShiftDraft(activeDraft);
+        }
+      } else {
+        setActiveShiftDraft(null);
+      }
+    };
+    
+    if (hasProfile) {
+      checkActiveShift();
+    }
+  }, [hasProfile, logs]);
 
   // Reload profile when screen comes into focus
   useEffect(() => {
@@ -70,7 +102,7 @@ export default function HomeScreen() {
     }, [loadProfile])
   );
 
-  const handleStartShift = () => {
+  const handleStartShift = async () => {
     if (!hasProfile || !isComplete) {
       Alert.alert(
         'Profile Required',
@@ -79,11 +111,58 @@ export default function HomeScreen() {
       );
       return;
     }
-    
-    router.push('/log/new');
+
+    // Check if there's already an active shift
+    if (activeShiftDraft) {
+      Alert.alert(
+        'Shift Already Started',
+        'You have already started a shift. Please end it before starting a new one.'
+      );
+      return;
+    }
+
+    try {
+      const today = getCurrentDate();
+      const currentActualTime = getCurrentTime();
+      const roster = getRosterFor(today);
+      
+      // Use profile's employeeInitial directly if initials from store is empty
+      const logInitials = initials || profile?.employeeInitial || '';
+
+      // Create draft log with current time as actual start
+      const draftLog: OvertimeLog = {
+        id: `log_${Date.now()}`,
+        date: today,
+        rosteredStart: roster?.rosteredStart,
+        rosteredFinish: roster?.rosteredFinish,
+        actualStart: currentActualTime,
+        actualFinish: 'N/A', // Will be set when ending shift
+        mealBreakMinutes: roster?.mealBreakMinutes || 30,
+        minutesOvertime: 0, // Will be calculated when ending shift
+        category: 'Overtime',
+        initials: logInitials,
+        status: 'draft',
+        isActiveShift: true,
+        source: 'manual',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await addLog(draftLog);
+      setActiveShiftDraft(draftLog);
+
+      const message = roster 
+        ? `Shift started at ${currentActualTime}` 
+        : `Shift started at ${currentActualTime} (no roster found)`;
+      
+      Alert.alert('Shift Started', message);
+    } catch (error) {
+      console.error('Error starting shift:', error);
+      Alert.alert('Error', 'Failed to start shift. Please try again.');
+    }
   };
 
-  const handleEndShift = () => {
+  const handleEndShift = async () => {
     if (!hasProfile || !isComplete) {
       Alert.alert(
         'Profile Required',
@@ -92,8 +171,80 @@ export default function HomeScreen() {
       );
       return;
     }
-    
-    router.push('/log/new');
+
+    try {
+      const today = getCurrentDate();
+      const currentActualTime = getCurrentTime();
+      const roster = getRosterFor(today);
+
+      // Check if there's an active shift draft
+      if (activeShiftDraft) {
+        // Update the active draft with finish time
+        const updatedDraft: OvertimeLog = {
+          ...activeShiftDraft,
+          actualFinish: currentActualTime,
+          updatedAt: new Date().toISOString(),
+        };
+        
+        setEndShiftDraft(updatedDraft);
+        setEndShiftNoRosterMode(false);
+        setShowEndShiftModal(true);
+      } else {
+        // No active draft - check if roster exists
+        const logInitials = initials || profile?.employeeInitial || '';
+        
+        if (roster) {
+          // Roster exists - create draft with actual start = rostered start
+          const draftLog: OvertimeLog = {
+            id: `log_${Date.now()}`,
+            date: today,
+            rosteredStart: roster.rosteredStart,
+            rosteredFinish: roster.rosteredFinish,
+            actualStart: roster.rosteredStart || currentActualTime,
+            actualFinish: currentActualTime,
+            mealBreakMinutes: roster.mealBreakMinutes || 30,
+            minutesOvertime: 0, // Will be calculated in modal
+            category: 'Overtime',
+            initials: logInitials,
+            status: 'draft',
+            isActiveShift: false,
+            source: 'manual',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          
+          setEndShiftDraft(draftLog);
+          setEndShiftNoRosterMode(false);
+          setShowEndShiftModal(true);
+        } else {
+          // No roster - enter "no roster" mode
+          const draftLog: OvertimeLog = {
+            id: `log_${Date.now()}`,
+            date: today,
+            rosteredStart: undefined,
+            rosteredFinish: undefined,
+            actualStart: 'N/A', // User will need to enter this
+            actualFinish: currentActualTime,
+            mealBreakMinutes: 30,
+            minutesOvertime: 0, // Will be calculated in modal
+            category: 'Overtime',
+            initials: logInitials,
+            status: 'draft',
+            isActiveShift: false,
+            source: 'manual',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          
+          setEndShiftDraft(draftLog);
+          setEndShiftNoRosterMode(true);
+          setShowEndShiftModal(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error ending shift:', error);
+      Alert.alert('Error', 'Failed to end shift. Please try again.');
+    }
   };
 
   const draftLogs = getDraftLogs();
@@ -191,10 +342,20 @@ export default function HomeScreen() {
         {/* Quick Actions */}
         <View style={styles.quickActions}>
           <TouchableOpacity 
-            style={[styles.actionButton, styles.startButton]}
+            style={[
+              styles.actionButton, 
+              styles.startButton,
+              activeShiftDraft && styles.disabledButton
+            ]}
             onPress={handleStartShift}
+            disabled={!!activeShiftDraft}
           >
-            <Text style={styles.actionButtonText}>Start Shift</Text>
+            <Text style={[
+              styles.actionButtonText,
+              activeShiftDraft && styles.disabledButtonText
+            ]}>
+              {activeShiftDraft ? 'Shift In Progress' : 'Start Shift'}
+            </Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -298,6 +459,20 @@ export default function HomeScreen() {
           </View>
         )}
       </View>
+      
+      {/* Quick End Shift Modal */}
+      <QuickEndShiftModal
+        visible={showEndShiftModal}
+        draftLog={endShiftDraft}
+        noRosterMode={endShiftNoRosterMode}
+        onClose={() => {
+          setShowEndShiftModal(false);
+          setEndShiftDraft(null);
+        }}
+        onComplete={() => {
+          setActiveShiftDraft(null);
+        }}
+      />
     </ScrollView>
   );
 }
@@ -478,5 +653,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  disabledButton: {
+    backgroundColor: '#ccc',
+    opacity: 0.6,
+  },
+  disabledButtonText: {
+    color: '#888',
   },
 });

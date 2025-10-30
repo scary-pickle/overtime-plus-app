@@ -57,6 +57,7 @@ export type OvertimeLog = {
   status: 'draft'|'ready'|'exported';
   exportBatchId?: string;
   source: 'manual'|'geofence-proposed'|'imported';
+  isActiveShift?: boolean; // Marks this draft as the currently active shift started via "Start Shift" button
   createdAt: string;
   updatedAt: string;
 };

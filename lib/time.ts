@@ -176,3 +176,12 @@ export function getTimeInTimezone(timezone: string = 'Australia/Brisbane'): stri
   // This will be enhanced with dayjs timezone plugin
   return getCurrentTime();
 }
+
+/**
+ * Get the previous day's date in ISO format (YYYY-MM-DD)
+ */
+export function getPreviousISODate(dateISO: string): string {
+  const d = new Date(dateISO + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split('T')[0];
+}
