@@ -18,8 +18,6 @@ import { EmptyState } from '../../components/EmptyState';
 import { ShiftsCalendarView } from '../../components/ShiftsCalendarView';
 import { UsualShift } from '../../types';
 
-type ViewMode = 'list' | 'calendar';
-
 export default function ShiftsScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -27,7 +25,6 @@ export default function ShiftsScreen() {
   
   const { shifts, deleteShift, loadShifts } = useShiftsStore();
   const [refreshing, setRefreshing] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
 
   useEffect(() => {
     console.log('🔄 ShiftsScreen: Loading shifts...');
@@ -239,150 +236,37 @@ export default function ShiftsScreen() {
 
   return (
     <View style={[styles.container, isDark && styles.darkContainer]}>
-      {/* View Mode Toggle */}
-      <View style={[styles.viewModeContainer, isDark && styles.darkViewModeContainer]}>
-        <TouchableOpacity
-          style={[
-            styles.viewModeButton,
-            viewMode === 'calendar' && styles.activeViewModeButton,
-            isDark && styles.darkViewModeButton,
-            viewMode === 'calendar' && isDark && styles.darkActiveViewModeButton,
-          ]}
-          onPress={() => setViewMode('calendar')}
-        >
-          <Ionicons 
-            name="calendar" 
-            size={18} 
-            color={viewMode === 'calendar' ? '#fff' : (isDark ? '#999' : '#666')} 
-          />
-          <Text style={[
-            styles.viewModeText,
-            viewMode === 'calendar' && styles.activeViewModeText,
-            isDark && styles.darkViewModeText,
-            viewMode === 'calendar' && isDark && styles.darkActiveViewModeText,
-          ]}>
-            Calendar
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[
-            styles.viewModeButton,
-            viewMode === 'list' && styles.activeViewModeButton,
-            isDark && styles.darkViewModeButton,
-            viewMode === 'list' && isDark && styles.darkActiveViewModeButton,
-          ]}
-          onPress={() => setViewMode('list')}
-        >
-          <Ionicons 
-            name="list" 
-            size={18} 
-            color={viewMode === 'list' ? '#fff' : (isDark ? '#999' : '#666')} 
-          />
-          <Text style={[
-            styles.viewModeText,
-            viewMode === 'list' && styles.activeViewModeText,
-            isDark && styles.darkViewModeText,
-            viewMode === 'list' && isDark && styles.darkActiveViewModeText,
-          ]}>
-            List
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <FlatList
+        data={[]}
+        renderItem={() => null}
+        ListHeaderComponent={
+          <View style={styles.content}>
+            {/* Calendar Picker */}
+            <View style={styles.calendarSection}>
+              <ShiftsCalendarView
+                shifts={shifts}
+                onDayPress={handleCalendarDayPress}
+                isDark={isDark}
+              />
+            </View>
 
-      {/* Calendar View */}
-      {viewMode === 'calendar' ? (
-        <ScrollView
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor="#007AFF"
-            />
-          }
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <ShiftsCalendarView
-            shifts={shifts}
-            onDayPress={handleCalendarDayPress}
-            isDark={isDark}
-          />
-          
-          {/* List of Active Shifts Below Calendar */}
-          {activeShifts.length > 0 && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-                Active Shifts
-              </Text>
-              {activeShifts.map((shift) => {
-                const nextOccurrence = getNextShiftOccurrence(shift);
-                const isNextShift = nextShiftId === shift.id;
-                
-                return (
-                  <ShiftCard
-                    key={shift.id}
-                    shift={shift}
-                    onPress={() => handleEditShift(shift)}
-                    onEdit={() => handleEditShift(shift)}
-                    onDelete={() => handleDeleteShift(shift)}
-                    showActions={true}
-                    nextOccurrence={nextOccurrence}
-                    isNextShift={isNextShift}
-                    isDark={isDark}
-                  />
-                );
-              })}
-            </View>
-          )}
-          
-          {/* Inactive Shifts */}
-          {inactiveShifts.length > 0 && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-                Inactive Shifts
-              </Text>
-              {inactiveShifts.map((shift) => (
-                <ShiftCard
-                  key={shift.id}
-                  shift={shift}
-                  onPress={() => handleEditShift(shift)}
-                  onEdit={() => handleEditShift(shift)}
-                  onDelete={() => handleDeleteShift(shift)}
-                  showActions={true}
-                  nextOccurrence="9999-12-31"
-                  isNextShift={false}
-                  isDark={isDark}
-                />
-              ))}
-            </View>
-          )}
-        </ScrollView>
-      ) : (
-        /* List View */
-        <FlatList
-          data={[]}
-          renderItem={() => null}
-          ListHeaderComponent={
-            <View>
-              {renderSection(
-                'Active Shifts',
-                activeShifts,
-                'No active shifts'
-              )}
-              {renderSection(
-                'Inactive Shifts',
-                inactiveShifts,
-                'No inactive shifts'
-              )}
-            </View>
-          }
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+            {renderSection(
+              'Active Shifts',
+              activeShifts,
+              'No active shifts'
+            )}
+            {renderSection(
+              'Inactive Shifts',
+              inactiveShifts,
+              'No inactive shifts'
+            )}
+          </View>
+        }
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        contentContainerStyle={styles.listContainer}
+        showsVerticalScrollIndicator={false}
+      />
 
       {/* Add Button */}
       <TouchableOpacity
@@ -403,63 +287,14 @@ const styles = StyleSheet.create({
   darkContainer: {
     backgroundColor: '#000',
   },
-  viewModeContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 12,
-    borderRadius: 12,
-    padding: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+  content: {
+    padding: 16,
   },
-  darkViewModeContainer: {
-    backgroundColor: '#1c1c1e',
-  },
-  viewModeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    gap: 6,
-  },
-  darkViewModeButton: {
-    backgroundColor: 'transparent',
-  },
-  activeViewModeButton: {
-    backgroundColor: '#007AFF',
-  },
-  darkActiveViewModeButton: {
-    backgroundColor: '#007AFF',
-  },
-  viewModeText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666',
-  },
-  darkViewModeText: {
-    color: '#999',
-  },
-  activeViewModeText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  darkActiveViewModeText: {
-    color: '#fff',
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 80,
+  calendarSection: {
+    marginBottom: 20,
   },
   listContainer: {
-    paddingVertical: 8,
+    paddingBottom: 80,
   },
   section: {
     marginBottom: 24,
