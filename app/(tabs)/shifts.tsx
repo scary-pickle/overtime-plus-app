@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   calendarSection: {
-    marginBottom: 4,
+    marginBottom: 16,
   },
   listContainer: {
     paddingBottom: 80,

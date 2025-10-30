@@ -522,14 +522,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 12,
-    paddingBottom: 4,
+    paddingBottom: 0,
   },
   dayCell: {
     width: '14.28%',
     aspectRatio: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 0,
+    marginVertical: 2,
     position: 'relative',
   },
   todayCell: {
