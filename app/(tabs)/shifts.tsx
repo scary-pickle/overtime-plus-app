@@ -288,7 +288,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   content: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   calendarSection: {
     marginBottom: 20,
@@ -304,7 +305,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
     marginBottom: 12,
-    marginHorizontal: 16,
   },
   darkText: {
     color: '#fff',

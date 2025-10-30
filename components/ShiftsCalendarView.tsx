@@ -205,21 +205,46 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
 
   return (
     <View style={styles.container}>
-      {/* Calendar Toggle Button */}
-      <TouchableOpacity
-        style={[styles.toggleButton, isDark && styles.darkToggleButton]}
-        onPress={togglePicker}
-      >
-        <Text style={[styles.toggleButtonText, isDark && styles.darkText]}>
-          {isVisible ? 'Hide Calendar' : 'Show Calendar'}
-        </Text>
-        <Text style={[styles.toggleButtonSubtext, isDark && styles.darkToggleButtonSubtext]}>
-          {getShiftsSummary()}
-        </Text>
-        <Text style={[styles.dropdownArrow, isDark && styles.darkText]}>
-          {isVisible ? '▲' : '▼'}
-        </Text>
-      </TouchableOpacity>
+      {/* Segmented Control Toggle */}
+      <View style={[styles.segmentedControl, isDark && styles.darkSegmentedControl]}>
+        <TouchableOpacity
+          style={[
+            styles.segment,
+            isVisible && styles.activeSegment,
+            isDark && styles.darkSegment,
+            isVisible && isDark && styles.darkActiveSegment,
+          ]}
+          onPress={() => setIsVisible(true)}
+        >
+          <Text style={[
+            styles.segmentText,
+            isVisible && styles.activeSegmentText,
+            isDark && styles.darkSegmentText,
+            isVisible && isDark && styles.darkActiveSegmentText,
+          ]}>
+            📅 Calendar
+          </Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={[
+            styles.segment,
+            !isVisible && styles.activeSegment,
+            isDark && styles.darkSegment,
+            !isVisible && isDark && styles.darkActiveSegment,
+          ]}
+          onPress={() => setIsVisible(false)}
+        >
+          <Text style={[
+            styles.segmentText,
+            !isVisible && styles.activeSegmentText,
+            isDark && styles.darkSegmentText,
+            !isVisible && isDark && styles.darkActiveSegmentText,
+          ]}>
+            ☰ List
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Calendar View */}
       {isVisible && (
@@ -325,44 +350,55 @@ const styles = StyleSheet.create({
   container: {
     marginVertical: 0,
   },
-  toggleButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
     borderRadius: 12,
-    padding: 14,
-    backgroundColor: '#fff',
-    minHeight: 60,
-    justifyContent: 'center',
-    position: 'relative',
-    marginBottom: 12,
+    padding: 4,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  darkToggleButton: {
+  darkSegmentedControl: {
     backgroundColor: '#2c2c2e',
-    borderColor: '#333',
   },
-  toggleButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
+  segment: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  toggleButtonSubtext: {
-    fontSize: 13,
+  darkSegment: {
+    backgroundColor: 'transparent',
+  },
+  activeSegment: {
+    backgroundColor: '#007AFF',
+  },
+  darkActiveSegment: {
+    backgroundColor: '#007AFF',
+  },
+  segmentText: {
+    fontSize: 15,
+    fontWeight: '500',
     color: '#666',
   },
-  darkToggleButtonSubtext: {
+  darkSegmentText: {
     color: '#999',
+  },
+  activeSegmentText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  darkActiveSegmentText: {
+    color: '#fff',
   },
   darkText: {
     color: '#fff',
-  },
-  dropdownArrow: {
-    position: 'absolute',
-    right: 16,
-    top: '50%',
-    marginTop: -8,
-    fontSize: 14,
-    color: '#666',
   },
   calendarContainer: {
     backgroundColor: '#fff',
@@ -381,7 +417,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingTop: 12,
     paddingBottom: 8,
   },
@@ -416,7 +452,7 @@ const styles = StyleSheet.create({
   todayButton: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    marginHorizontal: 16,
+    marginHorizontal: 12,
     marginBottom: 8,
     borderRadius: 8,
     backgroundColor: '#E3F2FD',
@@ -441,7 +477,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
     backgroundColor: '#f8f8f8',
-    marginHorizontal: 16,
+    marginHorizontal: 12,
     borderRadius: 8,
   },
   darkLegend: {
@@ -464,7 +500,7 @@ const styles = StyleSheet.create({
   },
   dayLabels: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
   dayLabel: {
@@ -477,7 +513,7 @@ const styles = StyleSheet.create({
   calendarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingBottom: 12,
   },
   dayCell: {
