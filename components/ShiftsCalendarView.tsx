@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 2,
+    marginVertical: 0,
     position: 'relative',
   },
   todayCell: {
