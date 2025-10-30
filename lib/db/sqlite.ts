@@ -97,6 +97,36 @@ class Database {
     } catch (error) {
       // Column already exists, which is fine
     }
+
+    try {
+      // Migration: Add is_active_shift column to overtime_logs
+      await this.db.execAsync(`
+        ALTER TABLE overtime_logs ADD COLUMN is_active_shift INTEGER DEFAULT 0;
+      `);
+      console.log('✅ Added is_active_shift column');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      // Migration: Add concurrent_employment column to overtime_logs
+      await this.db.execAsync(`
+        ALTER TABLE overtime_logs ADD COLUMN concurrent_employment INTEGER DEFAULT 0;
+      `);
+      console.log('✅ Added concurrent_employment column');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      // Migration: Add smo_categories column to overtime_logs (stored as JSON string)
+      await this.db.execAsync(`
+        ALTER TABLE overtime_logs ADD COLUMN smo_categories TEXT;
+      `);
+      console.log('✅ Added smo_categories column');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
   }
 
   // UsualShifts CRUD
@@ -168,13 +198,16 @@ class Database {
       INSERT INTO overtime_logs (
         id, date, rostered_start, rostered_finish, actual_start, actual_finish,
         meal_break_minutes, minutes_overtime, category, comments,
-        initials, status, export_batch_id, source, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        initials, status, export_batch_id, source, is_active_shift, concurrent_employment,
+        smo_categories, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       log.id, log.date, log.rosteredStart || null, log.rosteredFinish || null,
       log.actualStart, log.actualFinish, log.mealBreakMinutes || 0, log.minutesOvertime,
       log.category, log.comments || null,
       log.initials, log.status, log.exportBatchId || null, log.source,
+      log.isActiveShift ? 1 : 0, log.concurrentEmployment ? 1 : 0,
+      log.smoCategories ? JSON.stringify(log.smoCategories) : null,
       log.createdAt, log.updatedAt
     ]);
   }
@@ -201,6 +234,9 @@ class Database {
       status: row.status as 'draft' | 'ready' | 'exported',
       exportBatchId: row.export_batch_id as string | undefined,
       source: row.source as 'manual' | 'geofence-proposed' | 'imported',
+      isActiveShift: row.is_active_shift === 1,
+      concurrentEmployment: row.concurrent_employment === 1,
+      smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string
     }));
@@ -228,6 +264,9 @@ class Database {
       status: row.status as 'draft' | 'ready' | 'exported',
       exportBatchId: row.export_batch_id as string | undefined,
       source: row.source as 'manual' | 'geofence-proposed' | 'imported',
+      isActiveShift: row.is_active_shift === 1,
+      concurrentEmployment: row.concurrent_employment === 1,
+      smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string
     }));
@@ -241,13 +280,16 @@ class Database {
         date = ?, rostered_start = ?, rostered_finish = ?, actual_start = ?,
         actual_finish = ?, meal_break_minutes = ?, minutes_overtime = ?, category = ?,
         comments = ?, initials = ?, status = ?,
-        export_batch_id = ?, source = ?, updated_at = ?
+        export_batch_id = ?, source = ?, is_active_shift = ?, concurrent_employment = ?,
+        smo_categories = ?, updated_at = ?
       WHERE id = ?
     `, [
       log.date, log.rosteredStart || null, log.rosteredFinish || null,
       log.actualStart, log.actualFinish, log.mealBreakMinutes || 0, log.minutesOvertime,
       log.category, log.comments || null,
       log.initials, log.status, log.exportBatchId || null, log.source,
+      log.isActiveShift ? 1 : 0, log.concurrentEmployment ? 1 : 0,
+      log.smoCategories ? JSON.stringify(log.smoCategories) : null,
       new Date().toISOString(), log.id
     ]);
   }
