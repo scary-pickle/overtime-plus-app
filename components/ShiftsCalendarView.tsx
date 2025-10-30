@@ -42,6 +42,14 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
     generateCalendarDays();
   }, [currentDate, shifts]);
 
+  // Helper to get date string in local timezone (avoid UTC conversion issues)
+  const getLocalDateString = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   const getWeekIndex = (date: Date): 1 | 2 => {
     const year = date.getFullYear();
     const firstSunday = new Date(year, 0, 1);
@@ -57,7 +65,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
   };
 
   const getShiftsForDate = (date: Date): UsualShift[] => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = getLocalDateString(date);
     const dayOfWeek = date.getDay();
     
     return shifts.filter(shift => {
@@ -96,12 +104,12 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
     
     const days: DayInfo[] = [];
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getLocalDateString(today);
     
     // Add previous month days
     for (let i = firstDayOfWeek - 1; i >= 0; i--) {
       const date = new Date(year, month - 1, prevMonthDays - i);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(date);
       const dayShifts = getShiftsForDate(date);
       
       days.push({
@@ -118,7 +126,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
     // Add current month days
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(date);
       const dayShifts = getShiftsForDate(date);
       
       days.push({
@@ -136,7 +144,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
     const remainingDays = 42 - days.length; // 6 rows * 7 days
     for (let day = 1; day <= remainingDays; day++) {
       const date = new Date(year, month + 1, day);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(date);
       const dayShifts = getShiftsForDate(date);
       
       days.push({
@@ -177,7 +185,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
   };
 
   const getShiftsSummary = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString(new Date());
     const activeCount = shifts.filter(s => !s.activeTo || s.activeTo >= today).length;
     const inactiveCount = shifts.filter(s => s.activeTo && s.activeTo < today).length;
     
@@ -222,7 +230,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
             isDark && styles.darkSegmentText,
             isVisible && isDark && styles.darkActiveSegmentText,
           ]}>
-            📅 Calendar
+            📆 Calendar
           </Text>
         </TouchableOpacity>
         
