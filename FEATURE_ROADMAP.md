@@ -31,7 +31,7 @@
 
 ### Visual Improvements
 - [ ] ⬜ **Progress Indicators**: Show profile completion status (e.g., "4/6 sections complete")
-- [ ] 🔄 **Visual Calendar View**: Monthly calendar showing days with overtime (color-coded by status) (🌟 **Priority**)
+- [x] ✅ **Visual Calendar View**: Monthly calendar showing days with shifts (color-coded by status) (🌟 **Priority**)
 - [ ] ⬜ **Charts & Analytics Dashboard**: (🌟 **Priority**)
   - [ ] ⬜ Weekly/monthly overtime trends (line chart)
   - [ ] ⬜ Breakdown by category (pie chart)
@@ -199,7 +199,7 @@
 
 These features provide the most value for the least effort:
 
-1. ✅ **Visual Calendar View** - Makes patterns visible at a glance (IN PROGRESS)
+1. ✅ **Visual Calendar View** - Makes patterns visible at a glance (**COMPLETE**)
 2. [ ] ⬜ **Duplicate Log Feature** - Massive time-saver for repetitive work
 3. [ ] ⬜ **Weekly Summary Notification** - Catches forgotten drafts
 4. [ ] ⬜ **Time Rounding Buttons** - Speeds up data entry significantly
@@ -231,9 +231,10 @@ These features provide the most value for the least effort:
 ## 📊 Progress Tracking
 
 ### Current Sprint Focus
-- 🔄 Visual Calendar View (Shifts Screen)
+- Next feature TBD (see Quick Wins section)
 
 ### Recently Completed
+- ✅ Visual Calendar View (Shifts Screen) - October 30, 2025
 - ✅ Quick Shift Tracking (Start/End Shift)
 - ✅ SMO Support (Different AVAC template)
 - ✅ Email Export with Templates
@@ -241,9 +242,9 @@ These features provide the most value for the least effort:
 - ✅ Stale Draft Detection
 
 ### Next Up
-- Visual Calendar View implementation
 - Duplicate log feature
 - Search and filter functionality
+- Time rounding buttons
 
 ---
 
