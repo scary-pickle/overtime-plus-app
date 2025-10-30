@@ -33,7 +33,7 @@ export default function HomeScreen() {
   const hasProfile = !!profile;
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const { shifts, getRosterFor } = useShiftsStore();
-  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, clearActiveShift, markDraftAsStale } = useLogsStore();
+  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, clearActiveShift, markDraftAsStale, loadLogs } = useLogsStore();
   
   const [currentTime, setCurrentTime] = useState(getCurrentTime());
   const [todayRoster, setTodayRoster] = useState<any>(null);
@@ -94,12 +94,13 @@ export default function HomeScreen() {
     refreshProfile();
   }, []);
 
-  // Refresh profile when screen comes into focus
+  // Refresh profile and logs when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      console.log('Home screen focused, refreshing profile');
+      console.log('Home screen focused, refreshing profile and logs');
       loadProfile();
-    }, [loadProfile])
+      loadLogs();
+    }, [loadProfile, loadLogs])
   );
 
   const handleStartShift = async () => {
