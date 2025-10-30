@@ -388,11 +388,12 @@ const styles = StyleSheet.create({
   dayCell: {
     width: '14.28%', // 100% / 7 days
     aspectRatio: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     position: 'relative',
     borderWidth: 0.5,
     borderColor: '#f0f0f0',
+    paddingTop: 8,
   },
   darkDayCell: {
     borderColor: '#333',
@@ -406,12 +407,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a2942',
   },
   disabledCell: {
-    opacity: 0.3,
+    // Don't use opacity on the whole cell, only on the text
   },
   dayText: {
     fontSize: 14,
     color: '#333',
     fontWeight: '500',
+    textAlign: 'center',
   },
   darkDayText: {
     color: '#fff',
@@ -424,18 +426,23 @@ const styles = StyleSheet.create({
     color: '#007AFF',
   },
   disabledText: {
-    color: '#999',
+    color: '#ccc',
+    opacity: 0.5,
   },
   darkDisabledText: {
     color: '#555',
+    opacity: 0.5,
   },
   hasShiftText: {
     fontWeight: '700',
   },
   indicatorsContainer: {
     position: 'absolute',
-    bottom: 2,
+    bottom: 4,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
+    justifyContent: 'center',
     gap: 3,
   },
   indicator: {
