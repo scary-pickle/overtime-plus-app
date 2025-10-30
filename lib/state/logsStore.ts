@@ -44,20 +44,15 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   error: null,
 
   loadLogs: async () => {
-    console.log('🔄 loadLogs: Starting to load logs from database...');
     set({ isLoading: true, error: null });
     try {
       const logs = await database.getOvertimeLogs();
-      console.log('✅ loadLogs: Loaded', logs.length, 'logs from database');
-      console.log('📋 loadLogs: Logs details:', logs.map(l => ({ id: l.id, status: l.status, isActiveShift: l.isActiveShift })));
       set({ 
         logs, 
         isLoading: false,
         error: null 
       });
-      console.log('✅ loadLogs: Store updated with loaded logs');
     } catch (error) {
-      console.error('❌ loadLogs: Error loading logs:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to load logs' 
@@ -83,21 +78,16 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   },
 
   addLog: async (log: OvertimeLog) => {
-    console.log('💾 addLog called with:', { id: log.id, status: log.status, isActiveShift: log.isActiveShift });
     set({ isLoading: true, error: null });
     try {
       await database.createOvertimeLog(log);
-      console.log('✅ Database save successful');
       const { logs } = get();
-      console.log('📊 Current logs count before add:', logs.length);
       set({ 
         logs: [log, ...logs], 
         isLoading: false,
         error: null 
       });
-      console.log('✅ Log added to store, new count:', [log, ...logs].length);
     } catch (error) {
-      console.error('❌ Error adding log:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to add log' 
@@ -347,14 +337,6 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   // Active shift management
   getActiveShiftDraft: () => {
     const { logs } = get();
-    console.log('🔍 getActiveShiftDraft: Searching through', logs.length, 'logs');
-    const draftLogs = logs.filter(log => log.status === 'draft');
-    console.log('📝 Draft logs:', draftLogs.length);
-    const activeDrafts = logs.filter(log => log.status === 'draft' && log.isActiveShift === true);
-    console.log('⭐ Active shift drafts:', activeDrafts.length);
-    if (activeDrafts.length > 0) {
-      console.log('✅ Found active draft:', activeDrafts[0].id);
-    }
     return logs.find(log => log.status === 'draft' && log.isActiveShift === true) || null;
   },
 
