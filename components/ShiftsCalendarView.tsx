@@ -34,7 +34,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
   const colorScheme = useColorScheme();
   const isDark = isDarkProp ?? colorScheme === 'dark';
   
-  const [isVisible, setIsVisible] = useState(false);
+  const [isVisible, setIsVisible] = useState(true); // Open by default
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarDays, setCalendarDays] = useState<DayInfo[]>([]);
 
@@ -172,7 +172,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
   const handleDayPress = (dayInfo: DayInfo) => {
     if (dayInfo.shifts.length > 0 && onDayPress) {
       onDayPress(dayInfo.date, dayInfo.shifts);
-      setIsVisible(false);
+      // Keep calendar open after selecting a day
     }
   };
 
@@ -205,15 +205,15 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
 
   return (
     <View style={styles.container}>
-      {/* Calendar Button */}
+      {/* Calendar Toggle Button */}
       <TouchableOpacity
-        style={[styles.input, isDark && styles.darkInput]}
+        style={[styles.toggleButton, isDark && styles.darkToggleButton]}
         onPress={togglePicker}
       >
-        <Text style={[styles.inputText, isDark && styles.darkText]}>
-          View Shift Calendar
+        <Text style={[styles.toggleButtonText, isDark && styles.darkText]}>
+          {isVisible ? 'Hide Calendar' : 'Show Calendar'}
         </Text>
-        <Text style={[styles.inputSubtext, isDark && styles.darkInputSubtext]}>
+        <Text style={[styles.toggleButtonSubtext, isDark && styles.darkToggleButtonSubtext]}>
           {getShiftsSummary()}
         </Text>
         <Text style={[styles.dropdownArrow, isDark && styles.darkText]}>
@@ -221,9 +221,9 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
         </Text>
       </TouchableOpacity>
 
-      {/* Calendar Dropdown */}
+      {/* Calendar View */}
       {isVisible && (
-        <View style={[styles.pickerContainer, isDark && styles.darkPickerContainer]}>
+        <View style={[styles.calendarContainer, isDark && styles.darkCalendarContainer]}>
           {/* Header */}
           <View style={[styles.header, isDark && styles.darkHeader]}>
             <Text style={[styles.monthYear, isDark && styles.darkText]}>
@@ -325,31 +325,32 @@ const styles = StyleSheet.create({
   container: {
     marginVertical: 0,
   },
-  input: {
+  toggleButton: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 12,
-    padding: 16,
+    padding: 14,
     backgroundColor: '#fff',
-    minHeight: 70,
+    minHeight: 60,
     justifyContent: 'center',
     position: 'relative',
+    marginBottom: 12,
   },
-  darkInput: {
+  darkToggleButton: {
     backgroundColor: '#2c2c2e',
     borderColor: '#333',
   },
-  inputText: {
-    fontSize: 17,
+  toggleButtonText: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  inputSubtext: {
-    fontSize: 14,
+  toggleButtonSubtext: {
+    fontSize: 13,
     color: '#666',
   },
-  darkInputSubtext: {
+  darkToggleButtonSubtext: {
     color: '#999',
   },
   darkText: {
@@ -359,12 +360,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     top: '50%',
-    marginTop: -10,
+    marginTop: -8,
     fontSize: 14,
     color: '#666',
   },
-  pickerContainer: {
-    marginTop: 8,
+  calendarContainer: {
     backgroundColor: '#fff',
     borderRadius: 12,
     overflow: 'hidden',
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  darkPickerContainer: {
+  darkCalendarContainer: {
     backgroundColor: '#1c1c1e',
   },
   header: {
