@@ -61,20 +61,28 @@ export default function HomeScreen() {
   // Check for active shift draft and handle stale drafts
   useEffect(() => {
     const checkActiveShift = async () => {
+      console.log('🔍 Checking for active shift draft...');
+      console.log('📊 Total logs count:', logs.length);
+      console.log('📋 All logs:', logs.map(l => ({ id: l.id, status: l.status, isActiveShift: l.isActiveShift, date: l.date })));
+      
       const activeDraft = getActiveShiftDraft();
+      console.log('🎯 Active draft found:', activeDraft ? `ID: ${activeDraft.id}, Date: ${activeDraft.date}` : 'None');
       
       if (activeDraft) {
         const today = getCurrentDate();
+        console.log('📅 Today:', today, '| Draft date:', activeDraft.date);
         
         // Check if draft is stale (from a previous day)
         if (activeDraft.date < today) {
-          console.log('Stale draft detected, clearing active shift');
+          console.log('⚠️ Stale draft detected, clearing active shift');
           await markDraftAsStale(activeDraft.id);
           setActiveShiftDraft(null);
         } else {
+          console.log('✅ Setting active shift draft');
           setActiveShiftDraft(activeDraft);
         }
       } else {
+        console.log('❌ No active draft, clearing state');
         setActiveShiftDraft(null);
       }
     };
@@ -97,9 +105,12 @@ export default function HomeScreen() {
   // Refresh profile and logs when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      console.log('Home screen focused, refreshing profile and logs');
+      console.log('🏠 === HOME SCREEN FOCUSED ===');
+      console.log('🔄 Reloading profile and logs...');
       loadProfile();
-      loadLogs();
+      loadLogs().then(() => {
+        console.log('✅ Logs reloaded successfully');
+      });
     }, [loadProfile, loadLogs])
   );
 
@@ -123,9 +134,14 @@ export default function HomeScreen() {
     }
 
     try {
+      console.log('🚀 === START SHIFT CLICKED ===');
       const today = getCurrentDate();
       const currentActualTime = getCurrentTime();
       const roster = getRosterFor(today);
+      
+      console.log('📅 Date:', today);
+      console.log('⏰ Time:', currentActualTime);
+      console.log('📋 Roster found:', roster ? 'Yes' : 'No');
       
       // Use profile's employeeInitial directly if initials from store is empty
       const logInitials = initials || profile?.employeeInitial || '';
@@ -149,8 +165,12 @@ export default function HomeScreen() {
         updatedAt: new Date().toISOString(),
       };
 
+      console.log('💾 Creating draft log:', { id: draftLog.id, isActiveShift: draftLog.isActiveShift, status: draftLog.status });
       await addLog(draftLog);
+      console.log('✅ Draft log created successfully');
+      
       setActiveShiftDraft(draftLog);
+      console.log('✅ Active shift state set');
 
       const message = roster 
         ? `Shift started at ${currentActualTime}` 
@@ -158,7 +178,7 @@ export default function HomeScreen() {
       
       Alert.alert('Shift Started', message);
     } catch (error) {
-      console.error('Error starting shift:', error);
+      console.error('❌ Error starting shift:', error);
       Alert.alert('Error', 'Failed to start shift. Please try again.');
     }
   };
