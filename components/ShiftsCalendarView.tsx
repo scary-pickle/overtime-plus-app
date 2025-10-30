@@ -230,7 +230,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
             isDark && styles.darkSegmentText,
             isVisible && isDark && styles.darkActiveSegmentText,
           ]}>
-            🗓️ Calendar
+            📅 Calendar
           </Text>
         </TouchableOpacity>
         
