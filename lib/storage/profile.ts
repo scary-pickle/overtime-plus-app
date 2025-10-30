@@ -68,9 +68,18 @@ export class ProfileStorage {
         await this.saveProfile(profile as Profile);
       }
       
+      // Migration: Add isSMO field if missing
+      if (profile.isSMO === undefined) {
+        console.log('Adding missing isSMO field...');
+        profile.isSMO = false; // Default to non-SMO
+        // Save the updated profile
+        await this.saveProfile(profile as Profile);
+      }
+      
       console.log('Profile loaded from storage:', {
         hasEmployeeInitial: !!profile.employeeInitial,
         employeeInitial: profile.employeeInitial,
+        isSMO: profile.isSMO,
         allFields: Object.keys(profile)
       });
       return profile as Profile;
@@ -148,7 +157,8 @@ export class ProfileStorage {
       timezone: 'Australia/Brisbane',
       concurrentEmploymentDefault: false, // Default to off/empty
       email: '',
-      emailTemplate: undefined // Will use default template
+      emailTemplate: undefined, // Will use default template
+      isSMO: false // Default to non-SMO
     };
   }
 }
