@@ -523,6 +523,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: 12,
     paddingBottom: 0,
+    marginBottom: -4,
   },
   dayCell: {
     width: '14.28%',
