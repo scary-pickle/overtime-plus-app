@@ -230,7 +230,7 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
             isDark && styles.darkSegmentText,
             isVisible && isDark && styles.darkActiveSegmentText,
           ]}>
-            📆 Calendar
+            🗓️ Calendar
           </Text>
         </TouchableOpacity>
         
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 4,
     backgroundColor: '#f8f8f8',
     marginHorizontal: 12,
     borderRadius: 8,
@@ -522,14 +522,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 12,
-    paddingBottom: 12,
+    paddingBottom: 4,
   },
   dayCell: {
     width: '14.28%',
     aspectRatio: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 2,
+    marginVertical: 0,
     position: 'relative',
   },
   todayCell: {
