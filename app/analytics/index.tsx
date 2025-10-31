@@ -27,6 +27,8 @@ export default function AnalyticsScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'Analytics',
+      headerBackTitle: 'Home',
+      headerBackTitleVisible: true,
       headerStyle: {
         backgroundColor: isDark ? '#000' : '#fff',
       },
