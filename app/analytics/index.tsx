@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useNavigation } from '@react-navigation/native';
 import { useLogsStore } from '../../lib/state/logsStore';
 import BarChart from '../../components/charts/Line';
 import Pie from '../../components/charts/Pie';
@@ -21,11 +21,11 @@ export default function AnalyticsScreen() {
   const [mode, setMode] = useState<RangeMode>('month');
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const router = useRouter();
+  const navigation = useNavigation();
 
   // Set navigation header dynamically for dark mode support
   useLayoutEffect(() => {
-    router.setOptions({
+    navigation.setOptions({
       title: 'Analytics',
       headerStyle: {
         backgroundColor: isDark ? '#000' : '#fff',
@@ -36,7 +36,7 @@ export default function AnalyticsScreen() {
         fontWeight: '600',
       },
     });
-  }, [isDark, router]);
+  }, [isDark, navigation]);
 
   // Load logs when screen mounts
   useEffect(() => {
