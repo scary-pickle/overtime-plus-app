@@ -56,8 +56,10 @@ export default function AnalyticsScreen() {
 
   return (
     <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
-      <View style={styles.headerRow}>
-        <Text style={[styles.title, isDark && styles.darkText]}>Analytics</Text>
+      {/* Page header */}
+      <View style={[styles.headerRow, isDark && styles.darkHeaderRow]}>
+        <Text style={[styles.title, isDark && styles.darkTitle]}>Analytics</Text>
+        <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>Insights from your overtime logs</Text>
       </View>
 
       {/* Range selector */}
@@ -96,19 +98,6 @@ export default function AnalyticsScreen() {
         </View>
       </View>
 
-      {/* Debug info */}
-      {__DEV__ && (
-        <View style={[styles.card, isDark && styles.darkCard]}>
-          <Text style={[styles.cardTitle, isDark && styles.darkText]}>Debug Info</Text>
-          <Text style={[styles.debugText, isDark && styles.darkText]}>
-            Total logs: {logs.length}{'\n'}
-            Filtered logs: {filtered.length}{'\n'}
-            Range: {activeRange.start} to {activeRange.end}{'\n'}
-            Total minutes: {totalMinutes}
-          </Text>
-        </View>
-      )}
-
       {/* Trend */}
       <View style={[styles.card, isDark && styles.darkCard]}>
         <Text style={[styles.cardTitle, isDark && styles.darkText]}>Overtime trend</Text>
@@ -143,13 +132,17 @@ export default function AnalyticsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   darkContainer: { backgroundColor: '#000' },
-  headerRow: { padding: 16, paddingBottom: 8 },
-  title: { fontSize: 24, fontWeight: '700', color: '#333' },
+  headerRow: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, backgroundColor: '#fff' },
+  darkHeaderRow: { backgroundColor: '#000' },
+  title: { fontSize: 26, fontWeight: '800', color: '#111' },
+  darkTitle: { color: '#fff' },
+  subtitle: { marginTop: 2, color: '#666', fontSize: 12 },
+  darkSubtitle: { color: '#aaa' },
   darkText: { color: '#fff' },
-  segment: { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 16, borderRadius: 10, overflow: 'hidden' },
+  segment: { flexDirection: 'row', backgroundColor: '#f2f2f7', marginHorizontal: 16, borderRadius: 12, overflow: 'hidden' },
   darkSegment: { backgroundColor: '#1c1c1e' },
   segmentBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  segmentBtnActive: { backgroundColor: '#007AFF22' },
+  segmentBtnActive: { backgroundColor: '#fff', borderRadius: 12 },
   segmentText: { color: '#333', fontWeight: '600' },
   segmentTextActive: { color: '#007AFF' },
   rangePickers: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 12 },
