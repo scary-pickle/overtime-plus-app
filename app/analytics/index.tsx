@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useLogsStore } from '../../lib/state/logsStore';
@@ -21,6 +21,22 @@ export default function AnalyticsScreen() {
   const [mode, setMode] = useState<RangeMode>('month');
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const router = useRouter();
+
+  // Set navigation header dynamically for dark mode support
+  useLayoutEffect(() => {
+    router.setOptions({
+      title: 'Analytics',
+      headerStyle: {
+        backgroundColor: isDark ? '#000' : '#fff',
+      },
+      headerTintColor: isDark ? '#fff' : '#000',
+      headerTitleStyle: {
+        color: isDark ? '#fff' : '#000',
+        fontWeight: '600',
+      },
+    });
+  }, [isDark, router]);
 
   // Load logs when screen mounts
   useEffect(() => {
