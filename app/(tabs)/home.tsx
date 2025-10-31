@@ -21,6 +21,8 @@ import { LateBadge } from '../../components/LateBadge';
 import { EmptyState } from '../../components/EmptyState';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
 import { OvertimeLog } from '../../types';
+import LineMini from '../../components/charts/LineMini';
+import { getLast30DaysRange, getLogsInRange, bucketByDay, sumMinutes } from '../../lib/analytics';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -533,6 +535,29 @@ export default function HomeScreen() {
               </Text>
             </View>
           </View>
+        </View>
+
+        {/* Analytics Preview */}
+        <View style={[styles.statsCard, isDark && styles.darkCard]}>
+          <Text style={[styles.statsTitle, isDark && styles.darkText]}>Analytics</Text>
+          {(() => {
+            const range = getLast30DaysRange();
+            const inRange = getLogsInRange(logs, range);
+            const series = bucketByDay(inRange, range).map((d) => ({ x: d.date.slice(5), y: d.minutes }));
+            const minutes = sumMinutes(inRange);
+            return (
+              <>
+                <LineMini data={series} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+                  <Text style={[styles.statLabel, isDark && styles.darkText]}>Last 30 days</Text>
+                  <Text style={{ color: '#007AFF', fontWeight: '700' }}>{Math.round(minutes / 60)}h</Text>
+                </View>
+                <TouchableOpacity style={styles.viewAllButton} onPress={() => router.push('/analytics')}>
+                  <Text style={styles.viewAllText}>Open Analytics</Text>
+                </TouchableOpacity>
+              </>
+            );
+          })()}
         </View>
 
         {/* Recent Logs */}
