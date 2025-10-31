@@ -57,13 +57,22 @@ export const usualShiftSchema = z.object({
   activeTo: z.string().datetime().optional()
 }).refine(
   (data) => {
-    // Ensure finish is after start
+    // Handle overnight shifts that cross midnight
     const startMinutes = timeToMinutes(data.rosteredStart);
-    const finishMinutes = timeToMinutes(data.rosteredFinish);
-    return finishMinutes > startMinutes;
+    let finishMinutes = timeToMinutes(data.rosteredFinish);
+    
+    // If finish time is earlier than start time, assume it's the next day
+    if (finishMinutes <= startMinutes) {
+      finishMinutes += 24 * 60; // Add 24 hours
+    }
+    
+    const duration = finishMinutes - startMinutes;
+    
+    // Allow shifts up to 24 hours (1440 minutes) to handle overnight shifts
+    return duration > 0 && duration <= 24 * 60;
   },
   {
-    message: 'Finish time must be after start time',
+    message: 'Invalid shift duration - shift must be between 1 minute and 24 hours',
     path: ['rosteredFinish']
   }
 );

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
@@ -40,6 +41,7 @@ export default function EditLogScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
   
   const { profile, initials } = useProfileStore();
   const { shifts, getRosterFor } = useShiftsStore();
@@ -312,8 +314,8 @@ export default function EditLogScreen() {
                 key={cat}
                 style={[
                   styles.categoryOption,
+                  isDark && category !== cat && styles.darkCategoryOption,
                   category === cat && styles.selectedCategoryOption,
-                  isDark && styles.darkCategoryOption,
                 ]}
                 onPress={() => {
                   setCategory(cat);
@@ -323,7 +325,7 @@ export default function EditLogScreen() {
                 <Text style={[
                   styles.categoryOptionText,
                   category === cat && styles.selectedCategoryOptionText,
-                  isDark && styles.darkText,
+                  isDark && category !== cat && styles.darkText,
                 ]}>
                   {cat}
                 </Text>
@@ -381,7 +383,7 @@ export default function EditLogScreen() {
       <View style={[styles.container, isDark && styles.darkContainer]}>
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, isDark && styles.darkHeader, { paddingTop: insets.top + 12 }]}>
             <TouchableOpacity 
               style={styles.backButton}
               onPress={handleCancel}
@@ -509,8 +511,8 @@ export default function EditLogScreen() {
                       key={minutes}
                       style={[
                         styles.mealBreakOption,
+                        isDark && mealBreakMinutes !== minutes && styles.darkMealBreakOption,
                         mealBreakMinutes === minutes && styles.selectedMealBreakOption,
-                        isDark && styles.darkMealBreakOption,
                       ]}
                       onPress={() => {
                         setMealBreakMinutes(minutes);
@@ -520,7 +522,7 @@ export default function EditLogScreen() {
                       <Text style={[
                         styles.mealBreakOptionText,
                         mealBreakMinutes === minutes && styles.selectedMealBreakOptionText,
-                        isDark && styles.darkText,
+                        isDark && mealBreakMinutes !== minutes && styles.darkText,
                       ]}>
                         {minutes} minutes
                       </Text>
@@ -594,6 +596,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+  },
+  darkHeader: {
+    backgroundColor: '#1c1c1e',
+    borderBottomColor: '#333',
   },
   backButton: {
     padding: 8,

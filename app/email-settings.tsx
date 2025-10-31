@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProfileStore } from '../lib/state/profileStore';
 import { getDefaultEmailTemplate } from '../lib/email/emailService';
 
@@ -19,16 +20,19 @@ export default function EmailSettingsScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
   
   const { profile, saveProfile, isLoading } = useProfileStore();
   const [email, setEmail] = useState('');
   const [emailTemplate, setEmailTemplate] = useState('');
+  const [emailSubmissionMethod, setEmailSubmissionMethod] = useState<'apple-mail' | 'share-sheet'>('share-sheet');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (profile) {
       setEmail(profile.email || '');
       setEmailTemplate(profile.emailTemplate || getDefaultEmailTemplate());
+      setEmailSubmissionMethod(profile.emailSubmissionMethod || 'share-sheet');
     }
   }, [profile]);
 
@@ -47,7 +51,8 @@ export default function EmailSettingsScreen() {
       const updatedProfile = {
         ...profile,
         email: email.trim(),
-        emailTemplate: emailTemplate.trim() || undefined
+        emailTemplate: emailTemplate.trim() || undefined,
+        emailSubmissionMethod
       };
       
       await saveProfile(updatedProfile);
@@ -86,6 +91,33 @@ export default function EmailSettingsScreen() {
     );
   };
 
+  const handleSubmissionMethodChange = async (method: 'apple-mail' | 'share-sheet') => {
+    setEmailSubmissionMethod(method);
+    
+    // Auto-save the submission method immediately
+    if (profile) {
+      try {
+        const updatedProfile = {
+          ...profile,
+          emailSubmissionMethod: method
+        };
+        await saveProfile(updatedProfile);
+        
+        // Show brief success message
+        Alert.alert(
+          'Saved',
+          method === 'apple-mail' 
+            ? 'Email submission will use Apple Mail with full auto-fill.'
+            : 'Email submission will use Share Sheet (works with Outlook).',
+          [{ text: 'OK' }]
+        );
+      } catch (error) {
+        console.error('Failed to save submission method:', error);
+        Alert.alert('Error', 'Failed to save your preference. Please try again.');
+      }
+    }
+  };
+
   if (isLoading && !profile) {
     return (
       <View style={[styles.container, styles.centerContent, isDark && styles.darkContainer]}>
@@ -98,10 +130,10 @@ export default function EmailSettingsScreen() {
   }
 
   return (
-    <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+    <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
       <View style={styles.content}>
         {/* Header with back button */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
@@ -131,6 +163,66 @@ export default function EmailSettingsScreen() {
             autoCapitalize="none"
             autoCorrect={false}
           />
+        </View>
+
+        <View style={[styles.section, isDark && styles.darkSection]}>
+          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+            Email Submission Method
+          </Text>
+          <Text style={[styles.sectionDescription, isDark && styles.darkText]}>
+            Choose how you want to submit AVAC forms via email
+          </Text>
+          
+          <TouchableOpacity
+            style={[
+              styles.radioOption,
+              emailSubmissionMethod === 'apple-mail' && styles.radioOptionSelected,
+              isDark && styles.darkRadioOption
+            ]}
+            onPress={() => handleSubmissionMethodChange('apple-mail')}
+          >
+            <View style={styles.radioButton}>
+              {emailSubmissionMethod === 'apple-mail' && <View style={styles.radioButtonInner} />}
+            </View>
+            <View style={styles.radioContent}>
+              <Text style={[styles.radioTitle, isDark && styles.darkText]}>
+                Apple Mail (Auto-Fill Everything)
+              </Text>
+              <Text style={[styles.radioDescription, isDark && styles.darkText]}>
+                Opens Apple Mail with recipient, subject, message, and PDF attachment all pre-filled. Everything is ready - just click send.
+              </Text>
+              <View style={styles.radioPros}>
+                <Text style={styles.radioProsText}>✓ Fully automatic - zero manual work</Text>
+                <Text style={styles.radioConsText}>✗ Only works with Apple Mail app</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.radioOption,
+              emailSubmissionMethod === 'share-sheet' && styles.radioOptionSelected,
+              isDark && styles.darkRadioOption
+            ]}
+            onPress={() => handleSubmissionMethodChange('share-sheet')}
+          >
+            <View style={styles.radioButton}>
+              {emailSubmissionMethod === 'share-sheet' && <View style={styles.radioButtonInner} />}
+            </View>
+            <View style={styles.radioContent}>
+              <Text style={[styles.radioTitle, isDark && styles.darkText]}>
+                Share Sheet (Works with Outlook)
+              </Text>
+              <Text style={[styles.radioDescription, isDark && styles.darkText]}>
+                Opens any email app you choose (Outlook, Gmail, etc.) with PDF automatically attached. Email details copied to clipboard for easy pasting.
+              </Text>
+              <View style={styles.radioPros}>
+                <Text style={styles.radioProsText}>✓ Works with Outlook and any email app</Text>
+                <Text style={styles.radioProsText}>✓ PDF automatically attached</Text>
+                <Text style={styles.radioConsText}>✗ Requires one paste for email details</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.section, isDark && styles.darkSection]}>
@@ -328,5 +420,67 @@ const styles = StyleSheet.create({
   },
   darkText: {
     color: '#fff',
+  },
+  radioOption: {
+    flexDirection: 'row',
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    marginBottom: 12,
+    backgroundColor: '#fff',
+  },
+  radioOptionSelected: {
+    borderColor: '#007AFF',
+    backgroundColor: '#f0f8ff',
+  },
+  darkRadioOption: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#444',
+  },
+  radioButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    marginRight: 12,
+    marginTop: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioButtonInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#007AFF',
+  },
+  radioContent: {
+    flex: 1,
+  },
+  radioTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  radioDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  radioPros: {
+    marginTop: 4,
+  },
+  radioProsText: {
+    fontSize: 13,
+    color: '#34C759',
+    marginBottom: 2,
+  },
+  radioConsText: {
+    fontSize: 13,
+    color: '#FF9500',
+    marginBottom: 2,
   },
 });

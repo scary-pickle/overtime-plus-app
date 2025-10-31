@@ -484,16 +484,25 @@ export async function buildAVAC(
     let currentPage = page;
     let currentRow = 0;
     
-    for (const log of logs) {
+    for (let i = 0; i < logs.length; i++) {
+      const log = logs[i];
+      
       if (currentRow >= maxRowsPerPage) {
-        // Create new page using the template
-        const newPage = pdfDoc.addPage([avacCoordinates.page.width, avacCoordinates.page.height]);
+        // Create new page by copying the first page (template with all headers/fields)
+        console.log(`Creating new page for log ${i + 1} (currentRow: ${currentRow})`);
         
-        // Copy the template content to the new page
-        // Note: This is a simplified approach - in practice, you might want to 
-        // copy specific elements from the template page
-        currentPage = newPage;
+        // Copy the first page to get a fresh template with all fields
+        const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [0]);
+        pdfDoc.addPage(copiedPage);
+        
+        // Get the newly added page
+        const pages = pdfDoc.getPages();
+        currentPage = pages[pages.length - 1];
         currentRow = 0;
+        
+        // Redraw profile and delegate sections on the new page
+        await drawProfileSection(currentPage, profile, helvetica, helveticaBold);
+        await drawDelegateSection(currentPage, profile, helvetica, helveticaBold);
       }
       
       await drawLogRow(currentPage, log, currentRow, profile, helvetica, helveticaBold);

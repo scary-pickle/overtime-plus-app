@@ -35,6 +35,10 @@ interface LogsState {
   getActiveShiftDraft: () => OvertimeLog | null;
   clearActiveShift: (id: string) => Promise<void>;
   markDraftAsStale: (id: string) => Promise<void>;
+  
+  // Duplicate prevention
+  hasLoggedShiftForDate: (date: string) => boolean;
+  getLoggedShiftForDate: (date: string) => OvertimeLog | null;
 }
 
 export const useLogsStore = create<LogsState>((set, get) => ({
@@ -357,5 +361,22 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   markDraftAsStale: async (id: string) => {
     // Mark as stale by clearing the active shift flag
     await get().clearActiveShift(id);
+  },
+  
+  // Duplicate prevention
+  hasLoggedShiftForDate: (date: string) => {
+    const { logs } = get();
+    return logs.some(log => 
+      log.date === date && 
+      (log.status === 'ready' || log.status === 'exported')
+    );
+  },
+  
+  getLoggedShiftForDate: (date: string) => {
+    const { logs } = get();
+    return logs.find(log => 
+      log.date === date && 
+      (log.status === 'ready' || log.status === 'exported')
+    ) || null;
   }
 }));

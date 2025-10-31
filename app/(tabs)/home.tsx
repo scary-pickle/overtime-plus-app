@@ -6,7 +6,8 @@ import {
   ScrollView, 
   TouchableOpacity, 
   Alert,
-  useColorScheme 
+  useColorScheme,
+  RefreshControl
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -18,7 +19,6 @@ import { getCurrentTime, getCurrentDate, formatMinutes } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
 import { LateBadge } from '../../components/LateBadge';
 import { EmptyState } from '../../components/EmptyState';
-import { testSMOAVACGeneration } from '../../lib/pdf/testSMOAVAC';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
 import { OvertimeLog } from '../../types';
 
@@ -32,8 +32,8 @@ export default function HomeScreen() {
   // Compute profile state from profile object
   const hasProfile = !!profile;
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
-  const { shifts, getRosterFor } = useShiftsStore();
-  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, clearActiveShift, markDraftAsStale, loadLogs } = useLogsStore();
+  const { shifts, getRosterFor, loadShifts } = useShiftsStore();
+  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, clearActiveShift, markDraftAsStale, loadLogs, hasLoggedShiftForDate, getLoggedShiftForDate } = useLogsStore();
   
   const [currentTime, setCurrentTime] = useState(getCurrentTime());
   const [todayRoster, setTodayRoster] = useState<any>(null);
@@ -41,6 +41,9 @@ export default function HomeScreen() {
   const [showEndShiftModal, setShowEndShiftModal] = useState(false);
   const [endShiftDraft, setEndShiftDraft] = useState<OvertimeLog | null>(null);
   const [endShiftNoRosterMode, setEndShiftNoRosterMode] = useState(false);
+  const [hasLoggedToday, setHasLoggedToday] = useState(false);
+  const [todayLoggedShift, setTodayLoggedShift] = useState<OvertimeLog | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     // Update time every minute
@@ -55,8 +58,15 @@ export default function HomeScreen() {
     if (hasProfile) {
       const roster = getRosterFor(getCurrentDate());
       setTodayRoster(roster);
+      
+      // Check if shift has already been logged today
+      const today = getCurrentDate();
+      const hasLogged = hasLoggedShiftForDate(today);
+      const loggedShift = getLoggedShiftForDate(today);
+      setHasLoggedToday(hasLogged);
+      setTodayLoggedShift(loggedShift);
     }
-  }, [hasProfile, shifts]);
+  }, [hasProfile, shifts, logs]);
 
   // Check for active shift draft and handle stale drafts
   useEffect(() => {
@@ -102,12 +112,63 @@ export default function HomeScreen() {
     }, [loadProfile, loadLogs])
   );
 
+  // Handle pull-to-refresh
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        loadProfile(),
+        loadLogs(),
+        loadShifts()
+      ]);
+      // Update current time
+      setCurrentTime(getCurrentTime());
+      // Refresh roster data
+      if (hasProfile) {
+        const roster = getRosterFor(getCurrentDate());
+        setTodayRoster(roster);
+        
+        // Check if shift has already been logged today
+        const today = getCurrentDate();
+        const hasLogged = hasLoggedShiftForDate(today);
+        const loggedShift = getLoggedShiftForDate(today);
+        setHasLoggedToday(hasLogged);
+        setTodayLoggedShift(loggedShift);
+      }
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadProfile, loadLogs, loadShifts, hasProfile, getRosterFor, hasLoggedShiftForDate, getLoggedShiftForDate]);
+
   const handleStartShift = async () => {
     if (!hasProfile || !isComplete) {
       Alert.alert(
         'Profile Required',
         'Please complete your profile before logging overtime.',
         [{ text: 'OK', onPress: () => router.push('/(tabs)/profile') }]
+      );
+      return;
+    }
+
+    // Check if shift has already been logged today
+    if (hasLoggedToday) {
+      Alert.alert(
+        'Shift Already Logged',
+        'You have already logged a shift for today. Do you want to create another log for today?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'View Existing Log', 
+            onPress: () => {
+              if (todayLoggedShift) {
+                router.push(`/log/${todayLoggedShift.id}`);
+              }
+            }
+          },
+          { text: 'Create New Log', onPress: () => proceedStartShift() }
+        ]
       );
       return;
     }
@@ -120,6 +181,11 @@ export default function HomeScreen() {
       );
       return;
     }
+
+    await proceedStartShift();
+  };
+
+  const proceedStartShift = async () => {
 
     try {
       const today = getCurrentDate();
@@ -172,6 +238,31 @@ export default function HomeScreen() {
       return;
     }
 
+    // Check if shift has already been logged today (but allow if there's an active draft)
+    if (hasLoggedToday && !activeShiftDraft) {
+      Alert.alert(
+        'Shift Already Logged',
+        'You have already logged a shift for today. Do you want to create another log for today?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'View Existing Log', 
+            onPress: () => {
+              if (todayLoggedShift) {
+                router.push(`/log/${todayLoggedShift.id}`);
+              }
+            }
+          },
+          { text: 'Create New Log', onPress: () => proceedEndShift() }
+        ]
+      );
+      return;
+    }
+
+    await proceedEndShift();
+  };
+
+  const proceedEndShift = async () => {
     try {
       const today = getCurrentDate();
       const currentActualTime = getCurrentTime();
@@ -213,6 +304,8 @@ export default function HomeScreen() {
             updatedAt: new Date().toISOString(),
           };
           
+          // Save draft to store before opening modal
+          await addLog(draftLog);
           setEndShiftDraft(draftLog);
           setEndShiftNoRosterMode(false);
           setShowEndShiftModal(true);
@@ -236,6 +329,8 @@ export default function HomeScreen() {
             updatedAt: new Date().toISOString(),
           };
           
+          // Save draft to store before opening modal
+          await addLog(draftLog);
           setEndShiftDraft(draftLog);
           setEndShiftNoRosterMode(true);
           setShowEndShiftModal(true);
@@ -261,7 +356,19 @@ export default function HomeScreen() {
 
   if (!hasProfile) {
     return (
-      <View style={[styles.container, isDark && styles.darkContainer]}>
+      <ScrollView 
+        style={[styles.container, isDark && styles.darkContainer]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={isDark ? '#fff' : '#007AFF'}
+            colors={['#007AFF']}
+          />
+        }
+        contentContainerStyle={styles.emptyContainer}
+      >
         <EmptyState
           title="Welcome to Overtime+"
           description="Set up your profile to start tracking overtime and generate AVAC forms."
@@ -269,22 +376,25 @@ export default function HomeScreen() {
           onAction={() => router.push('/(tabs)/profile')}
           icon="👋"
         />
-        <TouchableOpacity 
-          style={styles.debugButton}
-          onPress={() => {
-            console.log('Manual refresh triggered');
-            loadProfile();
-          }}
-        >
-          <Text style={styles.debugButtonText}>Refresh Profile</Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     );
   }
 
   if (!isComplete) {
     return (
-      <View style={[styles.container, isDark && styles.darkContainer]}>
+      <ScrollView 
+        style={[styles.container, isDark && styles.darkContainer]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={isDark ? '#fff' : '#007AFF'}
+            colors={['#007AFF']}
+          />
+        }
+        contentContainerStyle={styles.emptyContainer}
+      >
         <EmptyState
           title="Complete Your Profile"
           description="Please fill in all required profile information to start using the app."
@@ -292,21 +402,23 @@ export default function HomeScreen() {
           onAction={() => router.push('/(tabs)/profile')}
           icon="📝"
         />
-        <TouchableOpacity 
-          style={styles.debugButton}
-          onPress={() => {
-            console.log('Manual refresh triggered');
-            loadProfile();
-          }}
-        >
-          <Text style={styles.debugButtonText}>Refresh Profile</Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     );
   }
 
   return (
-    <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+    <ScrollView 
+      style={[styles.container, isDark && styles.darkContainer]}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={isDark ? '#fff' : '#007AFF'}
+          colors={['#007AFF']}
+        />
+      }
+    >
       <View style={styles.content}>
         {/* Today Card */}
         <View style={[styles.todayCard, isDark && styles.darkCard]}>
@@ -338,6 +450,27 @@ export default function HomeScreen() {
             </Text>
           )}
         </View>
+
+        {/* Shift Already Logged Indicator */}
+        {hasLoggedToday && todayLoggedShift && !activeShiftDraft && (
+          <TouchableOpacity 
+            style={[styles.loggedShiftIndicator, isDark && styles.darkLoggedShiftIndicator]}
+            onPress={() => router.push(`/log/${todayLoggedShift.id}`)}
+          >
+            <View style={styles.loggedShiftContent}>
+              <Text style={styles.loggedShiftIcon}>✓</Text>
+              <View style={styles.loggedShiftTextContainer}>
+                <Text style={[styles.loggedShiftTitle, isDark && styles.darkText]}>
+                  Shift Already Logged
+                </Text>
+                <Text style={[styles.loggedShiftDetails, isDark && styles.darkText]}>
+                  {todayLoggedShift.actualStart} - {todayLoggedShift.actualFinish} • {formatMinutes(todayLoggedShift.minutesOvertime)}
+                </Text>
+              </View>
+              <Text style={styles.loggedShiftArrow}>›</Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* Quick Actions */}
         <View style={styles.quickActions}>
@@ -402,30 +535,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* SMO AVAC Test Button - Development Only */}
-        {__DEV__ && (
-          <View style={[styles.statsCard, isDark && styles.darkCard]}>
-            <Text style={[styles.statsTitle, isDark && styles.darkText]}>
-              Development Tools
-            </Text>
-            
-            <TouchableOpacity 
-              style={[styles.actionButton, { backgroundColor: '#28a745', marginTop: 10 }]}
-              onPress={async () => {
-                try {
-                  Alert.alert('Generating SMO AVAC Test...', 'Please wait while the test PDF is generated.');
-                  const fileUri = await testSMOAVACGeneration();
-                  Alert.alert('Success!', 'SMO AVAC test PDF generated!\n\nGo to the Exports tab and pull down to refresh to view the PDF.');
-                } catch (error) {
-                  Alert.alert('Error', `Failed to generate SMO AVAC test: ${error}`);
-                }
-              }}
-            >
-              <Text style={styles.actionButtonText}>Generate SMO AVAC Test</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* Recent Logs */}
         {logs.length > 0 && (
           <View style={[styles.recentCard, isDark && styles.darkCard]}>
@@ -484,6 +593,10 @@ const styles = StyleSheet.create({
   },
   darkContainer: {
     backgroundColor: '#000',
+  },
+  emptyContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   content: {
     padding: 16,
@@ -642,23 +755,50 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  debugButton: {
-    backgroundColor: '#FF6B6B',
-    padding: 12,
-    margin: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  debugButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
   disabledButton: {
     backgroundColor: '#ccc',
     opacity: 0.6,
   },
   disabledButtonText: {
     color: '#888',
+  },
+  loggedShiftIndicator: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  darkLoggedShiftIndicator: {
+    backgroundColor: '#1a2e1a',
+    borderColor: '#66BB6A',
+  },
+  loggedShiftContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  loggedShiftIcon: {
+    fontSize: 24,
+    color: '#4CAF50',
+    marginRight: 12,
+  },
+  loggedShiftTextContainer: {
+    flex: 1,
+  },
+  loggedShiftTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2e7d32',
+    marginBottom: 4,
+  },
+  loggedShiftDetails: {
+    fontSize: 14,
+    color: '#4CAF50',
+  },
+  loggedShiftArrow: {
+    fontSize: 24,
+    color: '#4CAF50',
+    marginLeft: 8,
   },
 });

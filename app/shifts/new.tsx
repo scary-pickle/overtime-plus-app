@@ -162,7 +162,7 @@ export default function NewShiftScreen() {
   };
 
   const renderTypeSelector = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Shift Type
       </Text>
@@ -172,16 +172,16 @@ export default function NewShiftScreen() {
             key={shiftType.value}
             style={[
               styles.typeButton,
+              isDark && type !== shiftType.value && styles.darkTypeButton,
               type === shiftType.value && styles.selectedTypeButton,
-              isDark && styles.darkTypeButton,
             ]}
             onPress={() => setType(shiftType.value)}
           >
             <Text
               style={[
                 styles.typeButtonText,
+                isDark && type !== shiftType.value && styles.darkTypeButtonText,
                 type === shiftType.value && styles.selectedTypeButtonText,
-                isDark && styles.darkTypeButtonText,
               ]}
             >
               {shiftType.label}
@@ -196,7 +196,7 @@ export default function NewShiftScreen() {
     if (type !== 'biweekly') return null;
 
     return (
-      <View style={styles.section}>
+      <View style={[styles.section, isDark && styles.darkCard]}>
         <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
           Week Index
         </Text>
@@ -206,16 +206,16 @@ export default function NewShiftScreen() {
               key={week.value}
               style={[
                 styles.weekIndexButton,
+                isDark && weekIndex !== week.value && styles.darkWeekIndexButton,
                 weekIndex === week.value && styles.selectedWeekIndexButton,
-                isDark && styles.darkWeekIndexButton,
               ]}
               onPress={() => setWeekIndex(week.value)}
             >
               <Text
                 style={[
                   styles.weekIndexButtonText,
+                  isDark && weekIndex !== week.value && styles.darkWeekIndexButtonText,
                   weekIndex === week.value && styles.selectedWeekIndexButtonText,
-                  isDark && styles.darkWeekIndexButtonText,
                 ]}
               >
                 {week.label}
@@ -228,7 +228,7 @@ export default function NewShiftScreen() {
   };
 
   const renderDaySelector = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Days of Week
       </Text>
@@ -241,8 +241,8 @@ export default function NewShiftScreen() {
             key={day.value}
             style={[
               styles.dayButton,
+              isDark && !selectedDays.includes(day.value) && styles.darkDayButton,
               selectedDays.includes(day.value) && styles.selectedDayButton,
-              isDark && styles.darkDayButton,
             ]}
             onPress={() => {
               if (selectedDays.includes(day.value)) {
@@ -255,8 +255,8 @@ export default function NewShiftScreen() {
             <Text
               style={[
                 styles.dayButtonText,
+                isDark && !selectedDays.includes(day.value) && styles.darkDayButtonText,
                 selectedDays.includes(day.value) && styles.selectedDayButtonText,
-                isDark && styles.darkDayButtonText,
               ]}
             >
               {day.label}
@@ -273,7 +273,7 @@ export default function NewShiftScreen() {
   );
 
   const renderTimeInputs = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Rostered Times
       </Text>
@@ -301,7 +301,7 @@ export default function NewShiftScreen() {
   );
 
   const renderMealBreak = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Meal Break (minutes)
       </Text>
@@ -344,7 +344,7 @@ export default function NewShiftScreen() {
   );
 
   const renderDateRange = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Active Date Range
       </Text>
@@ -372,7 +372,7 @@ export default function NewShiftScreen() {
   );
 
   const renderLabelInput = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Label
       </Text>
@@ -404,7 +404,7 @@ export default function NewShiftScreen() {
 
   return (
     <SharedTimePickerProvider>
-      <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+      <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
         {/* Label */}
         {renderLabelInput()}
@@ -430,10 +430,10 @@ export default function NewShiftScreen() {
         {/* Action Buttons */}
         <View style={styles.actions}>
           <TouchableOpacity
-            style={[styles.button, styles.cancelButton]}
+            style={[styles.button, styles.cancelButton, isDark && styles.darkCancelButton]}
             onPress={() => router.back()}
           >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
+            <Text style={[styles.cancelButtonText, isDark && styles.darkCancelButtonText]}>Cancel</Text>
           </TouchableOpacity>
           
           <TouchableOpacity
@@ -723,5 +723,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  darkCancelButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#48484a',
+  },
+  darkCancelButtonText: {
+    color: '#fff',
   },
 });

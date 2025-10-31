@@ -1,4 +1,6 @@
 import * as MailComposer from 'expo-mail-composer';
+import * as Linking from 'expo-linking';
+import { Platform } from 'react-native';
 import { Profile } from '../../types';
 import { getDelegateForDepartment } from '../data/hospitalDepartments';
 
@@ -92,9 +94,72 @@ export function composeAVACEmail(
 }
 
 /**
- * Send AVAC email using device's email app
+ * Send AVAC email using mailto: URL (respects default mail app but no attachment)
+ * This opens the user's default email app (e.g., Outlook if set as default)
  */
-export async function sendAVACEmail(profile: Profile, pdfUri: string): Promise<{
+export async function sendAVACEmailViaMailto(profile: Profile): Promise<{
+  success: boolean;
+  error?: string;
+  needsAttachment?: boolean;
+}> {
+  try {
+    // Get recipient based on hospital and department
+    const recipient = await getRecipientForDepartment(profile.location, profile.orgUnitName);
+    if (!recipient || !recipient.email) {
+      return {
+        success: false,
+        error: `No recipient email found for ${profile.orgUnitName} at ${profile.location}. Please contact your administrator or use the Share button instead.`
+      };
+    }
+    
+    // Use custom template or default
+    const template = profile.emailTemplate || DEFAULT_EMAIL_TEMPLATE;
+    
+    // Prepare template variables
+    const variables = {
+      'User Name': profile.fullName,
+      'Date': new Date().toLocaleDateString('en-AU'),
+      'Total Hours': '0', // Will be calculated from logs
+    };
+    
+    // Parse template
+    const body = parseEmailTemplate(template, variables);
+    const subject = `AVAC Submission - ${profile.fullName}`;
+    
+    // Create mailto URL
+    const mailtoUrl = `mailto:${recipient.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    
+    // Check if device can open mailto URLs
+    const canOpen = await Linking.canOpenURL(mailtoUrl);
+    if (!canOpen) {
+      return {
+        success: false,
+        error: 'No email app is configured on this device. Please set up an email account in Settings.'
+      };
+    }
+    
+    // Open the default email app with pre-filled fields
+    await Linking.openURL(mailtoUrl);
+    
+    return {
+      success: true,
+      needsAttachment: true // User needs to manually attach the PDF
+    };
+    
+  } catch (error) {
+    console.error('Error opening email app:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+    };
+  }
+}
+
+/**
+ * Send AVAC email using device's email app (Apple Mail only with attachment)
+ * Note: This always opens Apple Mail, regardless of default mail app setting
+ */
+export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: string): Promise<{
   success: boolean;
   error?: string;
 }> {
@@ -120,7 +185,7 @@ export async function sendAVACEmail(profile: Profile, pdfUri: string): Promise<{
     // Compose email
     const emailData = composeAVACEmail(profile, pdfUri, recipient.email, recipient.name);
     
-    // Open email composer
+    // Open email composer (always opens Apple Mail)
     const result = await MailComposer.composeAsync({
       recipients: emailData.recipients,
       subject: emailData.subject,
@@ -157,6 +222,103 @@ export async function sendAVACEmail(profile: Profile, pdfUri: string): Promise<{
     return {
       success: false,
       error: error instanceof Error ? error.message : 'An unexpected error occurred'
+    };
+  }
+}
+
+/**
+ * Get recipient information for AVAC submission
+ * Returns recipient email and formatted message for sharing
+ */
+export async function getAVACRecipientInfo(profile: Profile): Promise<{
+  success: boolean;
+  error?: string;
+  recipientEmail?: string;
+  recipientName?: string;
+  subject?: string;
+  body?: string;
+}> {
+  try {
+    // Get recipient based on hospital and department
+    const recipient = await getRecipientForDepartment(profile.location, profile.orgUnitName);
+    if (!recipient || !recipient.email) {
+      return {
+        success: false,
+        error: `No recipient email found for ${profile.orgUnitName} at ${profile.location}. Please contact your administrator or use the Share button instead.`
+      };
+    }
+    
+    // Use custom template or default
+    const template = profile.emailTemplate || DEFAULT_EMAIL_TEMPLATE;
+    
+    // Prepare template variables
+    const variables = {
+      'User Name': profile.fullName,
+      'Date': new Date().toLocaleDateString('en-AU'),
+      'Total Hours': '0', // Will be calculated from logs
+    };
+    
+    // Parse template
+    const body = parseEmailTemplate(template, variables);
+    const subject = `AVAC Submission - ${profile.fullName}`;
+    
+    return {
+      success: true,
+      recipientEmail: recipient.email,
+      recipientName: recipient.name,
+      subject,
+      body
+    };
+  } catch (error) {
+    console.error('Error getting recipient info:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+    };
+  }
+}
+
+/**
+ * Send AVAC email using the method specified in user profile
+ * Defaults to share-sheet method if not specified
+ */
+export async function sendAVACEmail(profile: Profile, pdfUri: string): Promise<{
+  success: boolean;
+  error?: string;
+  recipientEmail?: string;
+  recipientName?: string;
+  subject?: string;
+  body?: string;
+  useShareSheet?: boolean;
+  useAppleMail?: boolean;
+}> {
+  const method = profile.emailSubmissionMethod || 'share-sheet';
+  
+  if (method === 'apple-mail') {
+    // Use expo-mail-composer (Apple Mail with full pre-fill including attachment)
+    const result = await sendAVACEmailWithAttachment(profile, pdfUri);
+    return {
+      ...result,
+      useAppleMail: true
+    };
+  } else {
+    // Use share sheet method (works with Outlook, requires clipboard paste)
+    const recipientInfo = await getAVACRecipientInfo(profile);
+    
+    if (!recipientInfo.success) {
+      return {
+        success: false,
+        error: recipientInfo.error
+      };
+    }
+    
+    return {
+      success: true,
+      recipientEmail: recipientInfo.recipientEmail,
+      recipientName: recipientInfo.recipientName,
+      subject: recipientInfo.subject,
+      body: recipientInfo.body,
+      useShareSheet: true
     };
   }
 }

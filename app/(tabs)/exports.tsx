@@ -15,6 +15,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
+import * as Clipboard from 'expo-clipboard';
 import { getInfoAsync } from 'expo-file-system';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useProfileStore } from '../../lib/state/profileStore';
@@ -131,21 +132,64 @@ export default function ExportsScreen() {
       return;
     }
 
+    if (!batch.pdfUri) {
+      Alert.alert('PDF Not Available', 'The PDF file is no longer available.');
+      return;
+    }
+
     setSubmittingId(batch.id);
     try {
       const result = await sendAVACEmail(profile, batch.pdfUri);
       
-      if (result.success) {
-        // Mark batch as submitted
+      if (result.success && result.useAppleMail) {
+        // Apple Mail method - everything is pre-filled with attachment
         await markBatchAsSubmitted(batch.id, 'email');
-        Alert.alert('Success', 'AVAC form opened in your email app. Please review and send.');
-      } else {
-        Alert.alert('Error', result.error || 'Failed to open email app. Please try again.');
+        Alert.alert('Success', 'Email opened in Apple Mail with attachment and all details pre-filled. Please review and send.');
+        setSubmittingId(null);
+      } else if (result.success && result.useShareSheet) {
+        // Share sheet method - copy info to clipboard and open share sheet
+        const clipboardText = `To: ${result.recipientEmail}\nSubject: ${result.subject}\n\n${result.body}`;
+        await Clipboard.setStringAsync(clipboardText);
+        
+        // Show brief notification then open share sheet
+        Alert.alert(
+          'Ready to Email',
+          `✓ Email details copied to clipboard\n\nTo: ${result.recipientEmail}\n\nNext: Select your email app (e.g., Outlook), then paste (Cmd+V) the email details.`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => setSubmittingId(null) },
+            {
+              text: 'Continue',
+              onPress: async () => {
+                try {
+                  // Open share sheet with PDF attachment
+                  if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(batch.pdfUri, {
+                      mimeType: 'application/pdf',
+                      dialogTitle: 'Share AVAC via Email',
+                      UTI: 'com.adobe.pdf'
+                    });
+                    // Mark as submitted after sharing
+                    await markBatchAsSubmitted(batch.id, 'email');
+                  } else {
+                    Alert.alert('Sharing not available', 'Sharing is not available on this device.');
+                  }
+                } catch (shareError) {
+                  console.error('Sharing failed:', shareError);
+                  Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
+                } finally {
+                  setSubmittingId(null);
+                }
+              }
+            }
+          ]
+        );
+      } else if (!result.success) {
+        Alert.alert('Error', result.error || 'Failed to get recipient information. Please try again.');
+        setSubmittingId(null);
       }
     } catch (error) {
       console.error('Error submitting AVAC:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
       setSubmittingId(null);
     }
   };

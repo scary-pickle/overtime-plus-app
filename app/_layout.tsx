@@ -47,6 +47,12 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen 
+          name="log/[id]" 
+          options={{ 
+            headerShown: false,
+          }} 
+        />
+        <Stack.Screen 
           name="log/new" 
           options={{ 
             title: 'New Log',
@@ -92,6 +98,21 @@ export default function RootLayout() {
           }} 
         />
         <Stack.Screen 
+          name="shifts/[id]" 
+          options={{ 
+            title: 'Edit Shift',
+            presentation: 'modal',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colorScheme === 'dark' ? '#000' : '#fff',
+            },
+            headerTintColor: colorScheme === 'dark' ? '#fff' : '#000',
+            headerTitleStyle: {
+              color: colorScheme === 'dark' ? '#fff' : '#000',
+            },
+          }} 
+        />
+        <Stack.Screen 
           name="shifts/new" 
           options={{ 
             title: 'Create Shift Pattern',
@@ -104,6 +125,12 @@ export default function RootLayout() {
             headerTitleStyle: {
               color: colorScheme === 'dark' ? '#fff' : '#000',
             },
+          }} 
+        />
+        <Stack.Screen 
+          name="email-settings" 
+          options={{ 
+            headerShown: false 
           }} 
         />
         <Stack.Screen 

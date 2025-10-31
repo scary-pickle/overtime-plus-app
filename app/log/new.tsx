@@ -333,14 +333,14 @@ export default function NewLogScreen() {
         </TouchableOpacity>
         
         {showCategoryPicker && (
-          <ScrollView style={[styles.categoryPickerContainer, isDark && styles.darkPickerContainer]}>
+          <ScrollView style={[styles.categoryPickerContainer, isDark && styles.darkPickerContainer]} showsVerticalScrollIndicator={false}>
             {CATEGORIES.map((cat) => (
               <TouchableOpacity
                 key={cat}
                 style={[
                   styles.categoryOption,
+                  isDark && category !== cat && styles.darkCategoryOption,
                   category === cat && styles.selectedCategoryOption,
-                  isDark && styles.darkCategoryOption,
                 ]}
                 onPress={() => {
                   setCategory(cat);
@@ -350,7 +350,7 @@ export default function NewLogScreen() {
                 <Text style={[
                   styles.categoryOptionText,
                   category === cat && styles.selectedCategoryOptionText,
-                  isDark && styles.darkText,
+                  isDark && category !== cat && styles.darkText,
                 ]}>
                   {cat}
                 </Text>
@@ -405,7 +405,7 @@ export default function NewLogScreen() {
 
   return (
     <SharedTimePickerProvider>
-      <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+      <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
         {/* Date Selection */}
         <View style={[styles.section, isDark && styles.darkCard]}>
@@ -511,8 +511,8 @@ export default function NewLogScreen() {
                   key={minutes}
                   style={[
                     styles.mealBreakOption,
+                    isDark && mealBreakMinutes !== minutes && styles.darkMealBreakOption,
                     mealBreakMinutes === minutes && styles.selectedMealBreakOption,
-                    isDark && styles.darkMealBreakOption,
                   ]}
                   onPress={() => {
                     setMealBreakMinutes(minutes);
@@ -522,7 +522,7 @@ export default function NewLogScreen() {
                   <Text style={[
                     styles.mealBreakOptionText,
                     mealBreakMinutes === minutes && styles.selectedMealBreakOptionText,
-                    isDark && styles.darkText,
+                    isDark && mealBreakMinutes !== minutes && styles.darkText,
                   ]}>
                     {minutes} minutes
                   </Text>

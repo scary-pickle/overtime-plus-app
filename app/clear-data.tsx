@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { clearTestData, checkDataExists } from '../lib/clearTestData';
 import { useLogsStore } from '../lib/state/logsStore';
 import { useShiftsStore } from '../lib/state/shiftsStore';
@@ -18,6 +19,7 @@ export default function ClearDataScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
   
   const { loadLogs } = useLogsStore();
   const { loadShifts } = useShiftsStore();
@@ -77,10 +79,10 @@ export default function ClearDataScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+    <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
       <View style={styles.content}>
         {/* Header */}
-        <View style={[styles.header, isDark && styles.darkCard]}>
+        <View style={[styles.header, isDark && styles.darkCard, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => router.back()}

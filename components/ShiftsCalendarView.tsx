@@ -11,6 +11,7 @@ import { UsualShift } from '../types';
 interface ShiftsCalendarViewProps {
   shifts: UsualShift[];
   onDayPress?: (date: string, shifts: UsualShift[]) => void;
+  selectedDate?: string | null;
   isDark?: boolean;
 }
 
@@ -30,7 +31,7 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: ShiftsCalendarViewProps) {
+export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: isDarkProp }: ShiftsCalendarViewProps) {
   const colorScheme = useColorScheme();
   const isDark = isDarkProp ?? colorScheme === 'dark';
   
@@ -179,6 +180,12 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
 
   const handleDayPress = (dayInfo: DayInfo) => {
     if (dayInfo.shifts.length > 0 && onDayPress) {
+      // If clicking a day from another month, navigate to that month
+      if (!dayInfo.isCurrentMonth) {
+        const clickedDate = new Date(dayInfo.date + 'T00:00:00');
+        setCurrentDate(new Date(clickedDate.getFullYear(), clickedDate.getMonth(), 1));
+      }
+      
       onDayPress(dayInfo.date, dayInfo.shifts);
       // Keep calendar open after selecting a day
     }
@@ -313,7 +320,8 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
           <View style={styles.calendarGrid}>
             {calendarDays.map((dayInfo, index) => {
               const hasShifts = dayInfo.shifts.length > 0;
-              const isDisabled = !dayInfo.isCurrentMonth;
+              const isOtherMonth = !dayInfo.isCurrentMonth;
+              const isSelected = selectedDate === dayInfo.date;
               
               return (
                 <TouchableOpacity
@@ -322,9 +330,11 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
                     styles.dayCell,
                     dayInfo.isToday && styles.todayCell,
                     hasShifts && styles.hasShiftCell,
+                    isSelected && styles.selectedCell,
+                    isSelected && isDark && styles.darkSelectedCell,
                   ]}
                   onPress={() => handleDayPress(dayInfo)}
-                  disabled={!hasShifts || isDisabled}
+                  disabled={!hasShifts}
                 >
                   <Text
                     style={[
@@ -332,8 +342,9 @@ export function ShiftsCalendarView({ shifts, onDayPress, isDark: isDarkProp }: S
                       dayInfo.isToday && styles.todayDayText,
                       hasShifts && styles.hasShiftText,
                       isDark && styles.darkDayText,
-                      isDisabled && styles.disabledText,
-                      isDisabled && isDark && styles.darkDisabledText,
+                      isOtherMonth && styles.disabledText,
+                      isOtherMonth && isDark && styles.darkDisabledText,
+                      isSelected && styles.selectedDayText,
                     ]}
                   >
                     {dayInfo.day}
@@ -541,6 +552,13 @@ const styles = StyleSheet.create({
   hasShiftCell: {
     // Has shifts indicator is shown via dot
   },
+  selectedCell: {
+    backgroundColor: '#007AFF',
+    borderRadius: 20,
+  },
+  darkSelectedCell: {
+    backgroundColor: '#0A84FF',
+  },
   dayText: {
     fontSize: 15,
     fontWeight: '500',
@@ -549,6 +567,10 @@ const styles = StyleSheet.create({
   todayDayText: {
     color: '#007AFF',
     fontWeight: '600',
+  },
+  selectedDayText: {
+    color: '#fff',
+    fontWeight: '700',
   },
   darkDayText: {
     color: '#fff',

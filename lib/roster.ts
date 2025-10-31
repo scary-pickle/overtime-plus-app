@@ -191,10 +191,18 @@ export function validateShift(shift: UsualShift): string[] {
   // Check time format and logic
   if (shift.rosteredStart && shift.rosteredFinish) {
     const startMinutes = timeToMinutes(shift.rosteredStart);
-    const finishMinutes = timeToMinutes(shift.rosteredFinish);
+    let finishMinutes = timeToMinutes(shift.rosteredFinish);
     
+    // If finish time is earlier than start time, assume it's the next day (overnight shift)
     if (finishMinutes <= startMinutes) {
-      errors.push('Finish time must be after start time');
+      finishMinutes += 24 * 60; // Add 24 hours
+    }
+    
+    const duration = finishMinutes - startMinutes;
+    
+    // Validate that shift duration is reasonable (between 1 minute and 24 hours)
+    if (duration <= 0 || duration > 24 * 60) {
+      errors.push('Invalid shift duration - shift must be between 1 minute and 24 hours');
     }
   }
   

@@ -290,6 +290,220 @@ function generateSMOFileName(): string {
 }
 
 /**
+ * Draw header section on SMO AVAC page
+ */
+async function drawSMOHeaderSection(
+  page: any,
+  profile: Profile,
+  helvetica: any,
+  helveticaBold: any
+): Promise<void> {
+  console.log('📝 Drawing SMO header section...');
+  
+  // Employee Name
+  if (smoCoordinates.fields.header.employeeName) {
+    drawTextInBox(page, profile.fullName, smoCoordinates.fields.header.employeeName, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Organisational Unit No. - 8 boxes
+  for (let i = 1; i <= 8; i++) {
+    const boxKey = `orgUnitNo_box${i}` as keyof typeof smoCoordinates.fields.header;
+    const box = smoCoordinates.fields.header[boxKey];
+    if (box && profile.orgUnitNo && profile.orgUnitNo[i - 1]) {
+      drawTextInBox(page, profile.orgUnitNo[i - 1], box, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
+  }
+  
+  // Organisation unit name
+  if (smoCoordinates.fields.header.orgUnitName) {
+    drawTextInBox(page, profile.orgUnitName, smoCoordinates.fields.header.orgUnitName, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Location
+  if (smoCoordinates.fields.header.location) {
+    drawTextInBox(page, profile.location, smoCoordinates.fields.header.location, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+}
+
+/**
+ * Draw approval section on SMO AVAC page
+ */
+async function drawSMOApprovalSection(
+  page: any,
+  profile: Profile,
+  helvetica: any,
+  helveticaBold: any
+): Promise<void> {
+  console.log('📝 Drawing SMO approval section...');
+  
+  // Delegate's full name
+  if (smoCoordinates.fields.approval.delegateFullName && profile.delegateName) {
+    drawTextInBox(page, profile.delegateName, smoCoordinates.fields.approval.delegateFullName, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Delegate's position title
+  if (smoCoordinates.fields.approval.delegatePosition && profile.delegatePosition) {
+    drawTextInBox(page, profile.delegatePosition, smoCoordinates.fields.approval.delegatePosition, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Contact telephone number
+  if (smoCoordinates.fields.approval.contactPhone && profile.delegatePhone) {
+    drawTextInBox(page, profile.delegatePhone, smoCoordinates.fields.approval.contactPhone, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Approval Date
+  if (smoCoordinates.fields.approval.approvalDate) {
+    const currentDate = new Date().toLocaleDateString('en-AU');
+    drawTextInBox(page, currentDate, smoCoordinates.fields.approval.approvalDate, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+}
+
+/**
+ * Draw a single log row on SMO AVAC page
+ */
+async function drawSMOLogRow(
+  page: any,
+  log: OvertimeLog,
+  rowNum: number,
+  profile: Profile,
+  helvetica: any,
+  helveticaBold: any
+): Promise<void> {
+  console.log(`📝 Drawing SMO log row ${rowNum}...`);
+  
+  // Personnel Assignment ID
+  const personnelBox = smoCoordinates.fields.table[`personnelAssignmentNo_row${rowNum}`];
+  if (personnelBox && profile.payrollNumber) {
+    drawTextInBox(page, profile.payrollNumber, personnelBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Concurrent Employment tickbox
+  const tickbox = smoCoordinates.fields.table[`tickbox_row${rowNum}`];
+  if (tickbox && log.concurrentEmployment) {
+    page.drawText('X', {
+      x: tickbox.left + (tickbox.width || 10) / 2 + 2,
+      y: page.getHeight() - (tickbox.top + (tickbox.height || 10) / 2) - 3,
+      size: 12,
+      font: helveticaBold,
+      color: rgb(0, 0, 0),
+      rotate: degrees(90),
+    });
+  }
+  
+  // Date
+  const dateBox = smoCoordinates.fields.table[`date_row${rowNum}`];
+  if (dateBox) {
+    const date = new Date(log.date).toLocaleDateString('en-AU');
+    drawTextInBox(page, date, dateBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Rostered Start
+  const rosteredStartBox = smoCoordinates.fields.table[`rosteredStart_row${rowNum}`];
+  if (rosteredStartBox && log.rosteredStart) {
+    const rosteredStartText = log.rosteredStart === 'N/A' ? 'N/A' : log.rosteredStart;
+    drawTextInBox(page, rosteredStartText, rosteredStartBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Rostered Finish
+  const rosteredFinishBox = smoCoordinates.fields.table[`rosteredFinish_row${rowNum}`];
+  if (rosteredFinishBox && log.rosteredFinish) {
+    const rosteredFinishText = log.rosteredFinish === 'N/A' ? 'N/A' : log.rosteredFinish;
+    drawTextInBox(page, rosteredFinishText, rosteredFinishBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Actual Start
+  const actualStartBox = smoCoordinates.fields.table[`actualStart_row${rowNum}`];
+  if (actualStartBox && log.actualStart) {
+    const actualStartText = log.actualStart === 'N/A' ? 'N/A' : log.actualStart;
+    drawTextInBox(page, actualStartText, actualStartBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Actual Finish
+  const actualFinishBox = smoCoordinates.fields.table[`actualFinish_row${rowNum}`];
+  if (actualFinishBox && log.actualFinish) {
+    const actualFinishText = log.actualFinish === 'N/A' ? 'N/A' : log.actualFinish;
+    drawTextInBox(page, actualFinishText, actualFinishBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Meal Break
+  const mealBreakBox = smoCoordinates.fields.table[`mealBreak_row${rowNum}`];
+  if (mealBreakBox && log.mealBreakMinutes) {
+    drawTextInBox(page, log.mealBreakMinutes.toString(), mealBreakBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // SMO-specific tick boxes
+  const smoTickBoxes = [
+    { key: 'vmoAdditionalHours', label: 'VMO Additional' },
+    { key: 'overtime', label: 'Overtime' },
+    { key: 'oncall', label: 'On-call' },
+    { key: 'physicalRecall', label: 'Physical Recall' },
+    { key: 'digitalRecall', label: 'Digital Recall' },
+    { key: 'extraShift', label: 'Extra Shift' },
+    { key: 'approvedForPayment', label: 'Approved Payment' }
+  ];
+  
+  smoTickBoxes.forEach(({ key, label }) => {
+    const box = smoCoordinates.fields.table[`${key}_row${rowNum}`];
+    if (box && log.smoCategories && log.smoCategories[key as keyof typeof log.smoCategories]) {
+      page.drawText('X', {
+        x: box.left + (box.width || 10) / 2 + 2,
+        y: page.getHeight() - (box.top + (box.height || 10) / 2) - 3,
+        size: 10,
+        font: helveticaBold,
+        color: rgb(0, 0, 0),
+        rotate: degrees(90),
+      });
+    }
+  });
+  
+  // Comments
+  const commentsBox = smoCoordinates.fields.table[`comments_row${rowNum}`];
+  if (commentsBox && log.comments) {
+    drawTextInBox(page, log.comments, commentsBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+  
+  // Employee Initial
+  const initialBox = smoCoordinates.fields.table[`employeeInitial_row${rowNum}`];
+  if (initialBox && log.initials) {
+    drawTextInBox(page, log.initials, initialBox, helvetica, { 
+      color: rgb(0, 0, 0) 
+    });
+  }
+}
+
+/**
  * Build production SMO AVAC PDF without overlay boxes
  */
 export async function buildSMOAVAC(
@@ -310,197 +524,41 @@ export async function buildSMOAVAC(
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     
     // Draw header section
-    console.log('📝 Drawing header section...');
-    
-    // Employee Name
-    if (smoCoordinates.fields.header.employeeName) {
-      drawTextInBox(page, profile.fullName, smoCoordinates.fields.header.employeeName, helvetica, { 
-        color: rgb(0, 0, 0) 
-      });
-    }
-    
-    // Organisational Unit No. - 8 boxes
-    for (let i = 1; i <= 8; i++) {
-      const boxKey = `orgUnitNo_box${i}` as keyof typeof smoCoordinates.fields.header;
-      const box = smoCoordinates.fields.header[boxKey];
-      if (box && profile.orgUnitNo && profile.orgUnitNo[i - 1]) {
-        drawTextInBox(page, profile.orgUnitNo[i - 1], box, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-    }
-    
-    // Organisation unit name
-    if (smoCoordinates.fields.header.orgUnitName) {
-      drawTextInBox(page, profile.orgUnitName, smoCoordinates.fields.header.orgUnitName, helvetica, { 
-        color: rgb(0, 0, 0) 
-      });
-    }
-    
-    // Location
-    if (smoCoordinates.fields.header.location) {
-      drawTextInBox(page, profile.location, smoCoordinates.fields.header.location, helvetica, { 
-        color: rgb(0, 0, 0) 
-      });
-    }
-    
-    // Draw table section for available logs (up to 3 rows)
-    console.log('📝 Drawing table section...');
-    
-    for (let rowNum = 1; rowNum <= Math.min(logs.length, 3); rowNum++) {
-      console.log(`📝 Drawing row ${rowNum}...`);
-      
-      // Personnel Assignment ID
-      const personnelBox = smoCoordinates.fields.table[`personnelAssignmentNo_row${rowNum}`];
-      if (personnelBox && profile.payrollNumber) {
-        drawTextInBox(page, profile.payrollNumber, personnelBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-      
-      const log = logs[rowNum - 1];
-      
-      // Only process if we have a log for this row
-      if (!log) continue;
-      
-      // Concurrent Employment tickbox
-      const tickbox = smoCoordinates.fields.table[`tickbox_row${rowNum}`];
-      if (tickbox && log.concurrentEmployment) {
-        page.drawText('X', {
-          x: tickbox.left + (tickbox.width || 10) / 2 + 2,
-          y: page.getHeight() - (tickbox.top + (tickbox.height || 10) / 2) - 3,
-          size: 12,
-          font: helveticaBold,
-          color: rgb(0, 0, 0),
-          rotate: degrees(90),
-        });
-      }
-      
-      // Date
-      const dateBox = smoCoordinates.fields.table[`date_row${rowNum}`];
-      if (dateBox) {
-        const date = new Date(log.date).toLocaleDateString('en-AU');
-        drawTextInBox(page, date, dateBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-      
-      // Rostered Start
-      const rosteredStartBox = smoCoordinates.fields.table[`rosteredStart_row${rowNum}`];
-      if (rosteredStartBox && log.rosteredStart) {
-        const rosteredStartText = log.rosteredStart === 'N/A' ? 'N/A' : log.rosteredStart;
-        drawTextInBox(page, rosteredStartText, rosteredStartBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-      
-      // Rostered Finish
-      const rosteredFinishBox = smoCoordinates.fields.table[`rosteredFinish_row${rowNum}`];
-      if (rosteredFinishBox && log.rosteredFinish) {
-        const rosteredFinishText = log.rosteredFinish === 'N/A' ? 'N/A' : log.rosteredFinish;
-        drawTextInBox(page, rosteredFinishText, rosteredFinishBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-      
-      // Actual Start
-      const actualStartBox = smoCoordinates.fields.table[`actualStart_row${rowNum}`];
-      if (actualStartBox && log.actualStart) {
-        const actualStartText = log.actualStart === 'N/A' ? 'N/A' : log.actualStart;
-        drawTextInBox(page, actualStartText, actualStartBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-      
-      // Actual Finish
-      const actualFinishBox = smoCoordinates.fields.table[`actualFinish_row${rowNum}`];
-      if (actualFinishBox && log.actualFinish) {
-        const actualFinishText = log.actualFinish === 'N/A' ? 'N/A' : log.actualFinish;
-        drawTextInBox(page, actualFinishText, actualFinishBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-      
-      // Meal Break
-      const mealBreakBox = smoCoordinates.fields.table[`mealBreak_row${rowNum}`];
-      if (mealBreakBox && log.mealBreakMinutes) {
-        drawTextInBox(page, log.mealBreakMinutes.toString(), mealBreakBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-      
-      // SMO-specific tick boxes
-      const smoTickBoxes = [
-        { key: 'vmoAdditionalHours', label: 'VMO Additional' },
-        { key: 'overtime', label: 'Overtime' },
-        { key: 'oncall', label: 'On-call' },
-        { key: 'physicalRecall', label: 'Physical Recall' },
-        { key: 'digitalRecall', label: 'Digital Recall' },
-        { key: 'extraShift', label: 'Extra Shift' },
-        { key: 'approvedForPayment', label: 'Approved Payment' }
-      ];
-      
-      smoTickBoxes.forEach(({ key, label }) => {
-        const box = smoCoordinates.fields.table[`${key}_row${rowNum}`];
-        if (box && log.smoCategories && log.smoCategories[key as keyof typeof log.smoCategories]) {
-          page.drawText('X', {
-            x: box.left + (box.width || 10) / 2 + 2,
-            y: page.getHeight() - (box.top + (box.height || 10) / 2) - 3,
-            size: 10,
-            font: helveticaBold,
-            color: rgb(0, 0, 0),
-            rotate: degrees(90),
-          });
-        }
-      });
-      
-      // Comments
-      const commentsBox = smoCoordinates.fields.table[`comments_row${rowNum}`];
-      if (commentsBox && log.comments) {
-        drawTextInBox(page, log.comments, commentsBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-      
-      // Employee Initial
-      const initialBox = smoCoordinates.fields.table[`employeeInitial_row${rowNum}`];
-      if (initialBox && log.initials) {
-        drawTextInBox(page, log.initials, initialBox, helvetica, { 
-          color: rgb(0, 0, 0) 
-        });
-      }
-    }
+    await drawSMOHeaderSection(page, profile, helvetica, helveticaBold);
     
     // Draw approval section
-    console.log('📝 Drawing approval section...');
+    await drawSMOApprovalSection(page, profile, helvetica, helveticaBold);
     
-    // Delegate's full name
-    if (smoCoordinates.fields.approval.delegateFullName && profile.delegateName) {
-      drawTextInBox(page, profile.delegateName, smoCoordinates.fields.approval.delegateFullName, helvetica, { 
-        color: rgb(0, 0, 0) 
-      });
-    }
+    // Draw table section for available logs (3 rows per page)
+    console.log('📝 Drawing table section...');
+    const maxRowsPerPage = 3; // SMO template has 3 rows per page
+    let currentPage = page;
+    let currentRow = 1; // SMO uses 1-based row numbers (row1, row2, row3)
     
-    // Delegate's position title
-    if (smoCoordinates.fields.approval.delegatePosition && profile.delegatePosition) {
-      drawTextInBox(page, profile.delegatePosition, smoCoordinates.fields.approval.delegatePosition, helvetica, { 
-        color: rgb(0, 0, 0) 
-      });
-    }
-    
-    // Contact telephone number
-    if (smoCoordinates.fields.approval.contactPhone && profile.delegatePhone) {
-      drawTextInBox(page, profile.delegatePhone, smoCoordinates.fields.approval.contactPhone, helvetica, { 
-        color: rgb(0, 0, 0) 
-      });
-    }
-    
-    // Approval Date
-    if (smoCoordinates.fields.approval.approvalDate) {
-      const currentDate = new Date().toLocaleDateString('en-AU');
-      drawTextInBox(page, currentDate, smoCoordinates.fields.approval.approvalDate, helvetica, { 
-        color: rgb(0, 0, 0) 
-      });
+    for (let i = 0; i < logs.length; i++) {
+      const log = logs[i];
+      
+      if (currentRow > maxRowsPerPage) {
+        // Create new page by copying the first page (template with all headers/fields)
+        console.log(`Creating new SMO page for log ${i + 1} (currentRow: ${currentRow})`);
+        
+        // Copy the first page to get a fresh template with all fields
+        const [copiedPage] = await pdfDoc.copyPages(pdfDoc, [0]);
+        pdfDoc.addPage(copiedPage);
+        
+        // Get the newly added page
+        const pages = pdfDoc.getPages();
+        currentPage = pages[pages.length - 1];
+        currentRow = 1;
+        
+        // Redraw header and approval sections on the new page
+        await drawSMOHeaderSection(currentPage, profile, helvetica, helveticaBold);
+        await drawSMOApprovalSection(currentPage, profile, helvetica, helveticaBold);
+      }
+      
+      // Draw the log row
+      await drawSMOLogRow(currentPage, log, currentRow, profile, helvetica, helveticaBold);
+      currentRow++;
     }
     
     // Save PDF to file

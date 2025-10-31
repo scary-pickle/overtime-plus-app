@@ -16,6 +16,7 @@ export type Profile = {
   concurrentEmploymentDefault: boolean; // Default concurrent employment setting
   email: string; // User's QLD Health email address
   emailTemplate?: string; // Customizable email body template
+  emailSubmissionMethod?: 'apple-mail' | 'share-sheet'; // Preferred email submission method
   isSMO: boolean; // Whether user is a Senior Medical Officer
 };
 

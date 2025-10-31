@@ -206,7 +206,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+    <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
       <View style={styles.content}>
         {/* Header */}
         <View style={[styles.header, isDark && styles.darkCard]}>

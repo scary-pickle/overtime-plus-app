@@ -25,6 +25,7 @@ export default function ShiftsScreen() {
   
   const { shifts, deleteShift, loadShifts } = useShiftsStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('🔄 ShiftsScreen: Loading shifts...');
@@ -76,22 +77,11 @@ export default function ShiftsScreen() {
   };
 
   const handleCalendarDayPress = (date: string, dayShifts: UsualShift[]) => {
-    if (dayShifts.length === 1) {
-      handleEditShift(dayShifts[0]);
-    } else if (dayShifts.length > 1) {
-      // Show alert with list of shifts for that day
-      const shiftLabels = dayShifts.map(s => `${s.label} (${s.rosteredStart} - ${s.rosteredFinish})`).join('\n');
-      Alert.alert(
-        'Multiple Shifts',
-        `You have ${dayShifts.length} shifts on this day:\n\n${shiftLabels}`,
-        [
-          { text: 'OK', style: 'cancel' },
-          ...dayShifts.map((shift, index) => ({
-            text: `Edit ${shift.label}`,
-            onPress: () => handleEditShift(shift),
-          })),
-        ]
-      );
+    // Toggle selection: if clicking the same date, clear it; otherwise set new date
+    if (selectedDate === date) {
+      setSelectedDate(null);
+    } else if (dayShifts.length > 0) {
+      setSelectedDate(date);
     }
   };
 
@@ -164,8 +154,44 @@ export default function ShiftsScreen() {
     );
   };
 
-  const activeShifts = getActiveShifts();
-  const inactiveShifts = getInactiveShifts();
+  const getShiftsForSelectedDate = (date: string): UsualShift[] => {
+    const selectedDateObj = new Date(date + 'T00:00:00');
+    const dayOfWeek = selectedDateObj.getDay();
+    
+    return shifts.filter(shift => {
+      // Check if shift is for this day of week
+      if (shift.dayOfWeek !== dayOfWeek) return false;
+      
+      // Check if shift is active on this date
+      if (shift.activeFrom > date) return false;
+      if (shift.activeTo && shift.activeTo < date) return false;
+      
+      // For biweekly shifts, check week index
+      if (shift.type === 'biweekly' && shift.weekIndex) {
+        const weekIndex = getWeekIndex(selectedDateObj);
+        if (weekIndex !== shift.weekIndex) return false;
+      }
+      
+      return true;
+    });
+  };
+
+  const allActiveShifts = getActiveShifts();
+  const allInactiveShifts = getInactiveShifts();
+
+  // Filter shifts if a date is selected
+  const activeShifts = selectedDate 
+    ? getShiftsForSelectedDate(selectedDate).filter(shift => 
+        shift.activeFrom <= selectedDate && 
+        (!shift.activeTo || shift.activeTo >= selectedDate)
+      )
+    : allActiveShifts;
+    
+  const inactiveShifts = selectedDate
+    ? getShiftsForSelectedDate(selectedDate).filter(shift => 
+        shift.activeTo && shift.activeTo < selectedDate
+      )
+    : allInactiveShifts;
 
   // Calculate the next shift once for all items
   const today = new Date().toISOString().split('T')[0];
@@ -234,6 +260,17 @@ export default function ShiftsScreen() {
     );
   }
 
+  const formatSelectedDate = (dateStr: string): string => {
+    const date = new Date(dateStr + 'T00:00:00');
+    const options: Intl.DateTimeFormatOptions = { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    };
+    return date.toLocaleDateString('en-US', options);
+  };
+
   return (
     <View style={[styles.container, isDark && styles.darkContainer]}>
       <FlatList
@@ -246,19 +283,46 @@ export default function ShiftsScreen() {
               <ShiftsCalendarView
                 shifts={shifts}
                 onDayPress={handleCalendarDayPress}
+                selectedDate={selectedDate}
                 isDark={isDark}
               />
             </View>
 
+            {/* Selected Date Banner */}
+            {selectedDate && (
+              <View style={[styles.filterBanner, isDark && styles.darkFilterBanner]}>
+                <View style={styles.filterBannerContent}>
+                  <Ionicons 
+                    name="calendar" 
+                    size={20} 
+                    color={isDark ? '#fff' : '#007AFF'} 
+                  />
+                  <Text style={[styles.filterBannerText, isDark && styles.darkText]}>
+                    Showing shifts for {formatSelectedDate(selectedDate)}
+                  </Text>
+                </View>
+                <TouchableOpacity 
+                  onPress={() => setSelectedDate(null)}
+                  style={styles.filterBannerClose}
+                >
+                  <Ionicons 
+                    name="close-circle" 
+                    size={24} 
+                    color={isDark ? '#fff' : '#007AFF'} 
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+
             {renderSection(
               'Active Shifts',
               activeShifts,
-              'No active shifts'
+              selectedDate ? 'No active shifts on this date' : 'No active shifts'
             )}
             {renderSection(
               'Inactive Shifts',
               inactiveShifts,
-              'No inactive shifts'
+              selectedDate ? 'No inactive shifts on this date' : 'No inactive shifts'
             )}
           </View>
         }
@@ -336,5 +400,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  filterBanner: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  darkFilterBanner: {
+    backgroundColor: '#1a2942',
+  },
+  filterBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  filterBannerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
+    flex: 1,
+    flexWrap: 'wrap',
+  },
+  filterBannerClose: {
+    padding: 4,
   },
 });

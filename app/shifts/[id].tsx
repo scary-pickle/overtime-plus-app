@@ -294,7 +294,7 @@ export default function EditShiftScreen() {
   };
 
   const renderTypeSelector = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Shift Type
       </Text>
@@ -304,16 +304,16 @@ export default function EditShiftScreen() {
             key={shiftType.value}
             style={[
               styles.typeButton,
+              isDark && type !== shiftType.value && styles.darkTypeButton,
               type === shiftType.value && styles.selectedTypeButton,
-              isDark && styles.darkTypeButton,
             ]}
             onPress={() => setType(shiftType.value)}
           >
             <Text
               style={[
                 styles.typeButtonText,
+                isDark && type !== shiftType.value && styles.darkTypeButtonText,
                 type === shiftType.value && styles.selectedTypeButtonText,
-                isDark && styles.darkTypeButtonText,
               ]}
             >
               {shiftType.label}
@@ -328,7 +328,7 @@ export default function EditShiftScreen() {
     if (type !== 'biweekly') return null;
 
     return (
-      <View style={styles.section}>
+      <View style={[styles.section, isDark && styles.darkCard]}>
         <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
           Week Index
         </Text>
@@ -338,16 +338,16 @@ export default function EditShiftScreen() {
               key={week.value}
               style={[
                 styles.weekIndexButton,
+                isDark && weekIndex !== week.value && styles.darkWeekIndexButton,
                 weekIndex === week.value && styles.selectedWeekIndexButton,
-                isDark && styles.darkWeekIndexButton,
               ]}
               onPress={() => setWeekIndex(week.value)}
             >
               <Text
                 style={[
                   styles.weekIndexButtonText,
+                  isDark && weekIndex !== week.value && styles.darkWeekIndexButtonText,
                   weekIndex === week.value && styles.selectedWeekIndexButtonText,
-                  isDark && styles.darkWeekIndexButtonText,
                 ]}
               >
                 {week.label}
@@ -360,7 +360,7 @@ export default function EditShiftScreen() {
   };
 
   const renderDaySelector = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Day of Week
       </Text>
@@ -373,8 +373,8 @@ export default function EditShiftScreen() {
             key={day.value}
             style={[
               styles.dayButton,
+              isDark && !selectedDays.includes(day.value) && styles.darkDayButton,
               selectedDays.includes(day.value) && styles.selectedDayButton,
-              isDark && styles.darkDayButton,
             ]}
             onPress={() => {
               // For editing, we only allow changing to a single day
@@ -384,8 +384,8 @@ export default function EditShiftScreen() {
             <Text
               style={[
                 styles.dayButtonText,
+                isDark && !selectedDays.includes(day.value) && styles.darkDayButtonText,
                 selectedDays.includes(day.value) && styles.selectedDayButtonText,
-                isDark && styles.darkDayButtonText,
               ]}
             >
               {day.label}
@@ -397,7 +397,7 @@ export default function EditShiftScreen() {
   );
 
   const renderTimeInputs = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Rostered Times
       </Text>
@@ -425,7 +425,7 @@ export default function EditShiftScreen() {
   );
 
   const renderMealBreak = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Meal Break (minutes)
       </Text>
@@ -445,8 +445,8 @@ export default function EditShiftScreen() {
               key={minutes}
               style={[
                 styles.mealBreakOption,
+                isDark && mealBreakMinutes !== minutes && styles.darkMealBreakOption,
                 mealBreakMinutes === minutes && styles.selectedMealBreakOption,
-                isDark && styles.darkMealBreakOption,
               ]}
               onPress={() => {
                 setMealBreakMinutes(minutes);
@@ -456,7 +456,7 @@ export default function EditShiftScreen() {
               <Text style={[
                 styles.mealBreakOptionText,
                 mealBreakMinutes === minutes && styles.selectedMealBreakOptionText,
-                isDark && styles.darkText,
+                isDark && mealBreakMinutes !== minutes && styles.darkText,
               ]}>
                 {minutes} minutes
               </Text>
@@ -468,7 +468,7 @@ export default function EditShiftScreen() {
   );
 
   const renderDateRange = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Active Date Range
       </Text>
@@ -496,7 +496,7 @@ export default function EditShiftScreen() {
   );
 
   const renderLabelInput = () => (
-    <View style={styles.section}>
+    <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Label
       </Text>
@@ -535,7 +535,7 @@ export default function EditShiftScreen() {
 
   return (
     <SharedTimePickerProvider>
-      <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+      <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
         {/* Label */}
         {renderLabelInput()}
@@ -560,26 +560,29 @@ export default function EditShiftScreen() {
 
         {/* Action Buttons */}
         <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.button, styles.deleteButton]}
-            onPress={handleDelete}
-          >
-            <Text style={styles.deleteButtonText}>Delete</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.button, styles.cancelButton]}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.button, styles.updateButton]}
-            onPress={handleUpdate}
-          >
-            <Text style={styles.updateButtonText}>Update</Text>
-          </TouchableOpacity>
+          {/* Primary action buttons row */}
+          <View style={styles.primaryActions}>
+            <TouchableOpacity
+              style={[styles.button, styles.deleteButton, isDark && styles.darkDeleteButton]}
+              onPress={handleDelete}
+            >
+              <Text style={[styles.deleteButtonText, isDark && styles.darkDeleteButtonText]}>Delete</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton, isDark && styles.darkCancelButton]}
+              onPress={() => router.back()}
+            >
+              <Text style={[styles.cancelButtonText, isDark && styles.darkCancelButtonText]}>Cancel</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.button, styles.updateButton]}
+              onPress={handleUpdate}
+            >
+              <Text style={styles.updateButtonText}>Update</Text>
+            </TouchableOpacity>
+          </View>
           
           {/* Only show future update button for weekly and biweekly shifts */}
           {(type === 'weekly' || type === 'biweekly') && (
@@ -841,41 +844,63 @@ const styles = StyleSheet.create({
 
   // Actions
   actions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: 12,
     marginBottom: 32,
   },
+  primaryActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   button: {
     flex: 1,
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
   },
   deleteButton: {
     backgroundColor: '#ffebee',
     borderWidth: 1,
     borderColor: '#ffcdd2',
   },
+  darkDeleteButton: {
+    backgroundColor: '#3a1a1a',
+    borderColor: '#5a2a2a',
+  },
   cancelButton: {
     backgroundColor: '#f5f5f5',
     borderWidth: 1,
     borderColor: '#ddd',
+  },
+  darkCancelButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
   },
   updateButton: {
     backgroundColor: '#007AFF',
   },
   updateFutureButton: {
     backgroundColor: '#4CAF50',
+    flex: undefined,
+    width: '100%',
   },
   deleteButtonText: {
     color: '#d32f2f',
     fontSize: 16,
     fontWeight: '600',
   },
+  darkDeleteButtonText: {
+    color: '#ff6b6b',
+  },
   cancelButtonText: {
     color: '#666',
     fontSize: 16,
     fontWeight: '600',
+  },
+  darkCancelButtonText: {
+    color: '#999',
   },
   updateButtonText: {
     color: '#fff',

@@ -244,7 +244,7 @@ export default function ExportPreviewScreen() {
   }
 
   return (
-    <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+    <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
       <View style={styles.content}>
         {/* Success Header */}
         <View style={[styles.header, isDark && styles.darkCard]}>

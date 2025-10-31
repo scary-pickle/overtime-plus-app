@@ -155,34 +155,67 @@ Update `app/(tabs)/profile.tsx`:
 
 ## Files to Modify
 
-- `package.json` - Add expo-mail-composer dependency
+- `package.json` - Add expo-mail-composer and expo-clipboard dependencies
 - `types.ts` - Extend Profile and ExportBatch types
 - `lib/state/profileStore.ts` - Add email fields
 - `lib/state/logsStore.ts` - Add submission tracking
 - `lib/data/hospitalDepartments.ts` - Add recipient email addresses
-- `app/(tabs)/exports.tsx` - Add submit button
-- `app/export/view.tsx` - Add submit button
+- `app/(tabs)/exports.tsx` - Add submit button with clipboard functionality
+- `app/export/view.tsx` - Add submit button with clipboard functionality
 - `app/(tabs)/profile.tsx` - Add email field
 
 ## Handling Multiple Email Apps (iOS)
 
-The `expo-mail-composer` library respects the user's default email app setting:
+**IMPORTANT: `expo-mail-composer` does NOT respect iOS default mail app settings!**
 
-- If Outlook is set as default → Opens in Outlook
-- If Mail is default → Opens in Mail
-- If Gmail is default → Opens in Gmail
-- User can set default in iOS Settings → [App Name] → Default Mail App
+The `expo-mail-composer` library uses iOS's `MFMailComposeViewController`, which **always opens Apple Mail** regardless of the user's default mail app setting. This is a limitation of the iOS API, not the library.
+
+### Solution Implemented:
+
+The app now offers **TWO submission methods** that users can choose from in Email Settings:
+
+#### Method 1: Apple Mail (Fully Automatic)
+
+- Uses `expo-mail-composer`
+- Opens Apple Mail with everything pre-filled
+- Recipient, subject, message, and PDF attachment all ready
+- User just clicks "Send"
+- **Limitation:** Only works with Apple Mail app
+
+**User Flow:**
+
+1. Tap "Submit" button → Apple Mail opens with everything ready
+2. Click "Send" → Done!
+
+#### Method 2: Share Sheet (Works with Outlook)
+
+- Uses iOS Share sheet with auto-clipboard
+- Automatically copies email details to clipboard
+- Opens share sheet with PDF already attached
+- Works with any email app (Outlook, Gmail, etc.)
+- User pastes the pre-copied email details
+
+**User Flow:**
+
+1. Tap "Submit" button → Email details copied to clipboard
+2. Tap "Continue" → Share sheet opens
+3. Select email app (e.g., Outlook) → PDF already attached
+4. Paste (Cmd+V) → Send
+
+### Choosing Your Preferred Method:
+
+Users can select their preferred method in **Profile → Email Settings**:
+
+- **Apple Mail** - Best if you use Apple Mail (fully automatic)
+- **Share Sheet** - Best if you use Outlook or other email apps (PDF auto-attached, one paste required)
+
+### Alternative: Share Button
+
+The regular "Share" button opens the iOS share sheet directly without showing email information first. Use this for quick sharing when you know the recipient.
 
 **User Instructions:**
 
-If users have QLD Health email only in Outlook:
-
-1. Go to iOS Settings
-2. Scroll to Outlook
-3. Tap "Default Mail App"
-4. Select "Outlook"
-
-Alternatively, the library will show an app picker if multiple email apps are available.
+You can set Outlook (or any email app) as your default in iOS Settings, but the Share sheet will still let you choose any app regardless of the default setting.
 
 ## Future Enhancements
 
