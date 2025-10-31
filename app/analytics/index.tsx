@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useLogsStore } from '../../lib/state/logsStore';
@@ -17,10 +17,15 @@ import {
 type RangeMode = 'month' | 'week' | 'custom';
 
 export default function AnalyticsScreen() {
-  const { logs } = useLogsStore();
+  const { logs, loadLogs } = useLogsStore();
   const [mode, setMode] = useState<RangeMode>('month');
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  // Load logs when screen mounts
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
 
   // Date range state (custom)
   const defaultRange = getLast30DaysRange();
@@ -33,8 +38,17 @@ export default function AnalyticsScreen() {
     return defaultRange; // month = last 30 days default
   }, [mode, startDate, endDate, defaultRange]);
 
-  // Filter logs and compute series
-  const filtered = useMemo(() => getLogsInRange(logs, activeRange), [logs, activeRange]);
+  // Filter logs and compute series - include ALL logs regardless of status
+  const filtered = useMemo(() => {
+    const result = getLogsInRange(logs, activeRange);
+    console.log('Analytics Debug:', {
+      totalLogs: logs.length,
+      activeRange,
+      filteredCount: result.length,
+      filteredDates: result.map(l => ({ date: l.date, minutes: l.minutesOvertime, status: l.status })),
+    });
+    return result;
+  }, [logs, activeRange]);
   const totalMinutes = useMemo(() => sumMinutes(filtered), [filtered]);
   const daySeries = useMemo(() => bucketByDay(filtered, activeRange).map((d) => ({ x: d.date.slice(5), y: d.minutes })), [filtered, activeRange]);
   const categorySeries = useMemo(() => getCategoryBreakdown(filtered).map((c) => ({ x: c.category, y: c.minutes })), [filtered]);
@@ -82,16 +96,45 @@ export default function AnalyticsScreen() {
         </View>
       </View>
 
+      {/* Debug info */}
+      {__DEV__ && (
+        <View style={[styles.card, isDark && styles.darkCard]}>
+          <Text style={[styles.cardTitle, isDark && styles.darkText]}>Debug Info</Text>
+          <Text style={[styles.debugText, isDark && styles.darkText]}>
+            Total logs: {logs.length}{'\n'}
+            Filtered logs: {filtered.length}{'\n'}
+            Range: {activeRange.start} to {activeRange.end}{'\n'}
+            Total minutes: {totalMinutes}
+          </Text>
+        </View>
+      )}
+
       {/* Trend */}
       <View style={[styles.card, isDark && styles.darkCard]}>
         <Text style={[styles.cardTitle, isDark && styles.darkText]}>Overtime trend</Text>
-        <Line data={daySeries} />
+        {daySeries.length > 0 ? (
+          <Line data={daySeries} />
+        ) : (
+          <View style={styles.emptyChart}>
+            <Text style={[styles.emptyText, isDark && styles.darkText]}>
+              No data in this range. Try selecting "Custom" to choose a different date range.
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Categories */}
       <View style={[styles.card, isDark && styles.darkCard]}>
         <Text style={[styles.cardTitle, isDark && styles.darkText]}>Category breakdown</Text>
-        <Pie data={categorySeries} />
+        {categorySeries.length > 0 ? (
+          <Pie data={categorySeries} />
+        ) : (
+          <View style={styles.emptyChart}>
+            <Text style={[styles.emptyText, isDark && styles.darkText]}>
+              No category data in this range.
+            </Text>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -120,6 +163,9 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, margin: 16 },
   darkCard: { backgroundColor: '#1c1c1e' },
   cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 8, color: '#333' },
+  debugText: { fontSize: 12, fontFamily: 'monospace', color: '#666' },
+  emptyChart: { height: 220, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  emptyText: { fontSize: 14, color: '#666', textAlign: 'center' },
 });
 
 
