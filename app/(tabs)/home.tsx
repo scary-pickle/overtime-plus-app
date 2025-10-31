@@ -537,20 +537,20 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Analytics Preview */}
+        {/* Analytics Preview (Text Only) */}
         <View style={[styles.statsCard, isDark && styles.darkCard]}>
           <Text style={[styles.statsTitle, isDark && styles.darkText]}>Analytics</Text>
           {(() => {
             const range = getLast30DaysRange();
             const inRange = getLogsInRange(logs, range);
-            const series = bucketByDay(inRange, range).map((d) => ({ x: d.date.slice(5), y: d.minutes }));
             const minutes = sumMinutes(inRange);
+            const hours = Math.round(minutes / 60);
             return (
               <>
-                <LineMini data={series} />
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-                  <Text style={[styles.statLabel, isDark && styles.darkText]}>Last 30 days</Text>
-                  <Text style={{ color: '#007AFF', fontWeight: '700' }}>{Math.round(minutes / 60)}h</Text>
+                <View style={{ marginTop: 4 }}>
+                  <Text style={[styles.statLabel, isDark && styles.darkText]}>Last 30 days summary</Text>
+                  <Text style={[styles.statNumber, isDark && styles.darkText]}>{hours}h</Text>
+                  <Text style={[styles.statLabel, isDark && styles.darkText]}>{inRange.length} logs</Text>
                 </View>
                 <TouchableOpacity style={styles.viewAllButton} onPress={() => router.push('/analytics')}>
                   <Text style={styles.viewAllText}>Open Analytics</Text>
