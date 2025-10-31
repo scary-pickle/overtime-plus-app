@@ -537,24 +537,34 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Analytics Preview (Text Only) */}
-        <View style={[styles.statsCard, isDark && styles.darkCard]}>
-          <Text style={[styles.statsTitle, isDark && styles.darkText]}>Analytics</Text>
+        {/* Analytics Preview (Compact) */}
+        <View style={[styles.analyticsCard, isDark && styles.darkCard]}>
           {(() => {
             const range = getLast30DaysRange();
             const inRange = getLogsInRange(logs, range);
             const minutes = sumMinutes(inRange);
             const hours = Math.round(minutes / 60);
+            const caption = 'Last 30 days';
             return (
               <>
-                <View style={{ marginTop: 4 }}>
-                  <Text style={[styles.statLabel, isDark && styles.darkText]}>Last 30 days summary</Text>
-                  <Text style={[styles.statNumber, isDark && styles.darkText]}>{hours}h</Text>
-                  <Text style={[styles.statLabel, isDark && styles.darkText]}>{inRange.length} logs</Text>
+                <View style={styles.analyticsHeader}>
+                  <Text style={[styles.analyticsTitle, isDark && styles.darkText]}>Analytics</Text>
+                  <TouchableOpacity onPress={() => router.push('/analytics')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={styles.viewLink}>View</Text>
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity style={styles.viewAllButton} onPress={() => router.push('/analytics')}>
-                  <Text style={styles.viewAllText}>Open Analytics</Text>
-                </TouchableOpacity>
+                <View style={styles.analyticsRow}>
+                  <View style={styles.analyticsStat}>
+                    <Text style={[styles.analyticsNumber, isDark && styles.darkText]}>{hours}h</Text>
+                    <Text style={[styles.analyticsLabel, isDark && styles.darkText]}>Overtime</Text>
+                  </View>
+                  <View style={styles.analyticsDivider} />
+                  <View style={styles.analyticsStat}>
+                    <Text style={[styles.analyticsNumber, isDark && styles.darkText]}>{inRange.length}</Text>
+                    <Text style={[styles.analyticsLabel, isDark && styles.darkText]}>Logs</Text>
+                  </View>
+                </View>
+                <Text style={[styles.analyticsCaption, isDark && styles.darkText]}>{caption}</Text>
               </>
             );
           })()}
@@ -704,6 +714,64 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  analyticsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  analyticsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  analyticsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  viewLink: {
+    color: '#007AFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  analyticsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  analyticsStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  analyticsDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: '#eee',
+  },
+  analyticsNumber: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#007AFF',
+  },
+  analyticsLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  analyticsCaption: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 8,
   },
   statsTitle: {
     fontSize: 18,
