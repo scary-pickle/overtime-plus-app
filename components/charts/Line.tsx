@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, useColorScheme, StyleSheet } from 'react-native';
-import Svg, { Path, Line, G, Text as SvgText, Rect } from 'react-native-svg';
+import Svg, { Path, Line as SvgLine, G, Text as SvgText, Rect } from 'react-native-svg';
 
 type Point = { x: string | number; y: number };
 
@@ -10,7 +10,7 @@ interface LineProps {
   xTickCount?: number;
 }
 
-export default function Line({ data, height = 220, xTickCount = 6 }: LineProps) {
+export default function BarChart({ data, height = 220, xTickCount = 6 }: LineProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -79,12 +79,12 @@ export default function Line({ data, height = 220, xTickCount = 6 }: LineProps) 
     <View style={{ height }}>
       <Svg width={300} height={height} style={{ backgroundColor: 'transparent' }}>
         {/* Y-axis line */}
-        <Line x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + innerHeight} stroke={axisColor} strokeWidth="1" />
+        <SvgLine x1={padding.left} y1={padding.top} x2={padding.left} y2={padding.top + innerHeight} stroke={axisColor} strokeWidth="1" />
         
         {/* Y-axis ticks and labels */}
         {yTicks.map((tick, i) => (
           <G key={`y-${i}`}>
-            <Line x1={padding.left} y1={tick.y} x2={padding.left - 4} y2={tick.y} stroke={axisColor} strokeWidth="1" />
+            <SvgLine x1={padding.left} y1={tick.y} x2={padding.left - 4} y2={tick.y} stroke={axisColor} strokeWidth="1" />
             <SvgText
               x={padding.left - 8}
               y={tick.y + 4}
@@ -99,12 +99,12 @@ export default function Line({ data, height = 220, xTickCount = 6 }: LineProps) 
         ))}
 
         {/* X-axis line */}
-        <Line x1={padding.left} y1={padding.top + innerHeight} x2={padding.left + innerWidth} y2={padding.top + innerHeight} stroke={axisColor} strokeWidth="1" />
+        <SvgLine x1={padding.left} y1={padding.top + innerHeight} x2={padding.left + innerWidth} y2={padding.top + innerHeight} stroke={axisColor} strokeWidth="1" />
 
         {/* X-axis ticks and labels */}
         {xTicks.map((tick, i) => (
           <G key={`x-${i}`}>
-            <Line x1={tick.x} y1={padding.top + innerHeight} x2={tick.x} y2={padding.top + innerHeight + 4} stroke={axisColor} strokeWidth="1" />
+            <SvgLine x1={tick.x} y1={padding.top + innerHeight} x2={tick.x} y2={padding.top + innerHeight + 4} stroke={axisColor} strokeWidth="1" />
             <SvgText
               x={tick.x}
               y={padding.top + innerHeight + 20}

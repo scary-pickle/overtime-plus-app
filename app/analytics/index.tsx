@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useLogsStore } from '../../lib/state/logsStore';
-import Line from '../../components/charts/Line';
+import BarChart from '../../components/charts/Line';
 import Pie from '../../components/charts/Pie';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import {
@@ -113,7 +113,7 @@ export default function AnalyticsScreen() {
       <View style={[styles.card, isDark && styles.darkCard]}>
         <Text style={[styles.cardTitle, isDark && styles.darkText]}>Overtime trend</Text>
         {daySeries.length > 0 ? (
-          <Line data={daySeries} />
+        <BarChart data={daySeries} />
         ) : (
           <View style={styles.emptyChart}>
             <Text style={[styles.emptyText, isDark && styles.darkText]}>
