@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, useColorScheme } from 'react-native';
-import { VictoryArea, VictoryChart, VictoryGroup, VictoryTheme } from 'victory-native';
+import { VictoryArea, VictoryChart, VictoryGroup } from 'victory-native';
 
 type Point = { x: number | string; y: number };
 
@@ -24,7 +24,6 @@ export default function LineMini({ data, height = 80 }: LineMiniProps) {
       <VictoryChart
         height={height}
         padding={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        theme={VictoryTheme.material}
         domainPadding={{ x: 2, y: 2 }}
       >
         <VictoryGroup>

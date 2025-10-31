@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, useColorScheme } from 'react-native';
-import { VictoryAxis, VictoryChart, VictoryLine, VictoryTheme } from 'victory-native';
+import { VictoryAxis, VictoryChart, VictoryLine } from 'victory-native';
 
 type Point = { x: string | number; y: number };
 
@@ -19,7 +19,7 @@ export default function Line({ data, height = 220, xTickCount = 6 }: LineProps) 
 
   return (
     <View style={{ height }}>
-      <VictoryChart height={height} theme={VictoryTheme.material} padding={{ top: 16, bottom: 40, left: 48, right: 16 }}>
+      <VictoryChart height={height} padding={{ top: 16, bottom: 40, left: 48, right: 16 }}>
         <VictoryAxis
           style={{ axis: { stroke: axisColor }, tickLabels: { fill: axisColor, fontSize: 10 } }}
           tickCount={xTickCount}
