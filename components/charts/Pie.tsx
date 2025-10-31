@@ -1,6 +1,12 @@
 import React from 'react';
 import { View, useColorScheme } from 'react-native';
-import { VictoryPie } from 'victory-native';
+let VictoryPie: any;
+try {
+  const v = require('victory-native');
+  VictoryPie = v.VictoryPie;
+} catch (e) {
+  VictoryPie = null;
+}
 
 interface PieDatum {
   x: string;
@@ -19,6 +25,10 @@ export default function Pie({ data, height = 220 }: PieProps) {
   const isDark = useColorScheme() === 'dark';
   const colors = isDark ? paletteDark : paletteLight;
 
+  if (!VictoryPie) {
+    return <View style={{ height, borderRadius: 12, backgroundColor: isDark ? '#223' : '#e8f0fe' }} />;
+  }
+
   return (
     <View style={{ height }}>
       <VictoryPie
@@ -27,7 +37,7 @@ export default function Pie({ data, height = 220 }: PieProps) {
         colorScale={colors}
         innerRadius={50}
         padAngle={2}
-        labels={({ datum }) => `${datum.x} ${(datum.y / 60).toFixed(1)}h`}
+        labels={({ datum }: any) => `${datum.x} ${(datum.y / 60).toFixed(1)}h`}
         style={{ labels: { fontSize: 10 } }}
       />
     </View>
