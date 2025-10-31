@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, useColorScheme, StyleSheet } from 'react-native';
-import Svg, { Path, Line, G, Text as SvgText } from 'react-native-svg';
+import Svg, { Path, Line, G, Text as SvgText, Rect } from 'react-native-svg';
 
 type Point = { x: string | number; y: number };
 
@@ -19,7 +19,7 @@ export default function Line({ data, height = 220, xTickCount = 6 }: LineProps) 
   }
 
   const axisColor = isDark ? '#aaa' : '#666';
-  const lineColor = '#007AFF';
+  const barColor = '#007AFF';
   const textColor = isDark ? '#fff' : '#333';
 
   const padding = { top: 16, bottom: 40, left: 48, right: 16 };
@@ -31,15 +31,25 @@ export default function Line({ data, height = 220, xTickCount = 6 }: LineProps) 
   const minY = Math.min(...values, 0);
   const maxY = Math.max(...values, 1);
 
-  // Map data to SVG coordinates
-  const points = data.map((d, i) => {
-    const x = padding.left + (i / (data.length - 1 || 1)) * innerWidth;
-    const y = padding.top + innerHeight - ((d.y - minY) / (maxY - minY || 1)) * innerHeight;
-    return { x, y, value: d.y, label: String(d.x) };
-  });
+  // Calculate bar width
+  const barCount = data.length;
+  const barSpacing = innerWidth / barCount;
+  const barWidth = Math.max(4, barSpacing * 0.6); // 60% of spacing, minimum 4px
 
-  // Create path for line
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  // Map data to bar positions
+  const bars = data.map((d, i) => {
+    const x = padding.left + (i * barSpacing) + (barSpacing - barWidth) / 2;
+    const barHeight = ((d.y - minY) / (maxY - minY || 1)) * innerHeight;
+    const y = padding.top + innerHeight - barHeight;
+    return { 
+      x, 
+      y, 
+      width: barWidth, 
+      height: barHeight, 
+      value: d.y, 
+      label: String(d.x) 
+    };
+  });
 
   // Generate Y-axis ticks
   const yTickCount = 5;
@@ -53,10 +63,16 @@ export default function Line({ data, height = 220, xTickCount = 6 }: LineProps) 
   const xTicks = [];
   const step = Math.max(1, Math.floor(data.length / xTickCount));
   for (let i = 0; i < data.length; i += step) {
-    xTicks.push({ index: i, x: points[i].x, label: points[i].label });
+    const bar = bars[i];
+    if (bar) {
+      xTicks.push({ index: i, x: bar.x + bar.width / 2, label: bar.label });
+    }
   }
-  if (xTicks[xTicks.length - 1].index !== data.length - 1) {
-    xTicks.push({ index: data.length - 1, x: points[points.length - 1].x, label: points[points.length - 1].label });
+  if (xTicks.length > 0 && xTicks[xTicks.length - 1].index !== data.length - 1) {
+    const lastBar = bars[bars.length - 1];
+    if (lastBar) {
+      xTicks.push({ index: data.length - 1, x: lastBar.x + lastBar.width / 2, label: lastBar.label });
+    }
   }
 
   return (
@@ -101,13 +117,30 @@ export default function Line({ data, height = 220, xTickCount = 6 }: LineProps) 
           </G>
         ))}
 
-        {/* Data line */}
-        <Path d={linePath} stroke={lineColor} strokeWidth="2" fill="none" />
-        
-        {/* Data points */}
-        {points.map((p, i) => (
-          <G key={`point-${i}`}>
-            <Path d={`M ${p.x} ${p.y} L ${p.x} ${p.y}`} stroke={lineColor} strokeWidth="4" />
+        {/* Bars */}
+        {bars.map((bar, i) => (
+          <G key={`bar-${i}`}>
+            <Rect
+              x={bar.x}
+              y={bar.y}
+              width={bar.width}
+              height={bar.height}
+              fill={barColor}
+              rx={2}
+            />
+            {/* Value label on top of bar if it's tall enough */}
+            {bar.height > 20 && (
+              <SvgText
+                x={bar.x + bar.width / 2}
+                y={bar.y - 4}
+                fontSize="9"
+                fill={barColor}
+                textAnchor="middle"
+                fontWeight="600"
+              >
+                {Math.round(bar.value / 60)}h
+              </SvgText>
+            )}
           </G>
         ))}
       </Svg>
