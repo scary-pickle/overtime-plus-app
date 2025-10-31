@@ -21,8 +21,7 @@ import { LateBadge } from '../../components/LateBadge';
 import { EmptyState } from '../../components/EmptyState';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
 import { OvertimeLog } from '../../types';
-import LineMini from '../../components/charts/LineMini';
-import { getLast30DaysRange, getLogsInRange, bucketByDay, sumMinutes } from '../../lib/analytics';
+// Analytics charts preview removed from Home; link provided on Weekly card instead
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -501,11 +500,14 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats */}
+        {/* Stats (This Week) with link to Analytics */}
         <View style={[styles.statsCard, isDark && styles.darkCard]}>
-          <Text style={[styles.statsTitle, isDark && styles.darkText]}>
-            This Week
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[styles.statsTitle, isDark && styles.darkText]}>This Week</Text>
+            <TouchableOpacity onPress={() => router.push('/analytics')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.viewLink}>View</Text>
+            </TouchableOpacity>
+          </View>
           
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -535,39 +537,6 @@ export default function HomeScreen() {
               </Text>
             </View>
           </View>
-        </View>
-
-        {/* Analytics Preview (Compact) */}
-        <View style={[styles.analyticsCard, isDark && styles.darkCard]}>
-          {(() => {
-            const range = getLast30DaysRange();
-            const inRange = getLogsInRange(logs, range);
-            const minutes = sumMinutes(inRange);
-            const hours = Math.round(minutes / 60);
-            const caption = 'Last 30 days';
-            return (
-              <>
-                <View style={styles.analyticsHeader}>
-                  <Text style={[styles.analyticsTitle, isDark && styles.darkText]}>Analytics</Text>
-                  <TouchableOpacity onPress={() => router.push('/analytics')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Text style={styles.viewLink}>View</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.analyticsRow}>
-                  <View style={styles.analyticsStat}>
-                    <Text style={[styles.analyticsNumber, isDark && styles.darkText]}>{hours}h</Text>
-                    <Text style={[styles.analyticsLabel, isDark && styles.darkText]}>Overtime</Text>
-                  </View>
-                  <View style={styles.analyticsDivider} />
-                  <View style={styles.analyticsStat}>
-                    <Text style={[styles.analyticsNumber, isDark && styles.darkText]}>{inRange.length}</Text>
-                    <Text style={[styles.analyticsLabel, isDark && styles.darkText]}>Logs</Text>
-                  </View>
-                </View>
-                <Text style={[styles.analyticsCaption, isDark && styles.darkText]}>{caption}</Text>
-              </>
-            );
-          })()}
         </View>
 
         {/* Recent Logs */}
