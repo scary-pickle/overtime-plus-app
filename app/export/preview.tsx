@@ -224,7 +224,7 @@ export default function ExportPreviewScreen() {
         </Text>
         <TouchableOpacity
           style={styles.retryButton}
-          onPress={generatePDF}
+          onPress={() => generatePDF()}
         >
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>

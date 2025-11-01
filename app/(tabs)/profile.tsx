@@ -11,12 +11,14 @@ import {
   Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { EmptyState } from '../../components/EmptyState';
 import { DepartmentDropdown } from '../../components/DepartmentDropdown';
 import { HospitalDropdown } from '../../components/HospitalDropdown';
 import { getDepartmentsForHospital, getHospitalById, QUEENSLAND_HOSPITALS, getOrgUnitForDepartment, getDelegateForDepartment } from '../../lib/data/hospitalDepartments';
 import { Profile } from '../../types';
+import { profileStorage } from '../../lib/storage/profile';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -34,6 +36,13 @@ export default function ProfileScreen() {
   useEffect(() => {
     loadProfile();
   }, []);
+
+  // Refresh profile when screen gains focus (prevents stale completeness state)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProfile();
+    }, [loadProfile])
+  );
 
   useEffect(() => {
     if (profile) {
@@ -205,6 +214,8 @@ export default function ProfileScreen() {
     );
   }
 
+  const isProfileComplete = profile ? profileStorage.isProfileComplete(profile) : false;
+
   return (
     <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
       <View style={styles.content}>
@@ -214,15 +225,34 @@ export default function ProfileScreen() {
             Profile
           </Text>
           <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>
-            {isComplete ? 'Complete' : 'Incomplete'}
+            {isProfileComplete ? 'Complete' : 'Incomplete'}
           </Text>
         </View>
 
         {/* Employee Details */}
         <View style={[styles.section, isDark && styles.darkCard]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
-            Employee Details
-          </Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
+              Employee Details
+            </Text>
+            <View style={styles.sectionActions}>
+              {!isEditing ? (
+                <TouchableOpacity
+                  style={[styles.smallButton, styles.smallPrimary, isDark && styles.darkSmallPrimary]}
+                  onPress={() => setIsEditing(true)}
+                >
+                  <Text style={styles.smallPrimaryText}>Edit</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.smallButton, styles.smallSave, isDark && styles.darkSmallSave]}
+                  onPress={handleSave}
+                >
+                  <Text style={styles.smallSaveText}>Save</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
           
           <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
@@ -289,9 +319,28 @@ export default function ProfileScreen() {
 
         {/* Organisation Details */}
         <View style={[styles.section, isDark && styles.darkCard]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
-            Organisation
-          </Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
+              Organisation
+            </Text>
+            <View style={styles.sectionActions}>
+              {!isEditing ? (
+                <TouchableOpacity
+                  style={[styles.smallButton, styles.smallPrimary, isDark && styles.darkSmallPrimary]}
+                  onPress={() => setIsEditing(true)}
+                >
+                  <Text style={styles.smallPrimaryText}>Edit</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.smallButton, styles.smallSave, isDark && styles.darkSmallSave]}
+                  onPress={handleSave}
+                >
+                  <Text style={styles.smallSaveText}>Save</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
           
           <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
@@ -353,14 +402,33 @@ export default function ProfileScreen() {
 
         {/* Delegate Details */}
         <View style={[styles.section, isDark && styles.darkCard]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
-            Delegate Details
-            {isDelegateAutoFilled && (
-              <Text style={[styles.autoFilledIndicator, isDark && styles.darkAutoFilledIndicator]}>
-                {' '}(Auto-filled)
-              </Text>
-            )}
-          </Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
+              Delegate Details
+              {isDelegateAutoFilled && (
+                <Text style={[styles.autoFilledIndicator, isDark && styles.darkAutoFilledIndicator]}>
+                  {' '}(Auto-filled)
+                </Text>
+              )}
+            </Text>
+            <View style={styles.sectionActions}>
+              {!isEditing ? (
+                <TouchableOpacity
+                  style={[styles.smallButton, styles.smallPrimary, isDark && styles.darkSmallPrimary]}
+                  onPress={() => setIsEditing(true)}
+                >
+                  <Text style={styles.smallPrimaryText}>Edit</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.smallButton, styles.smallSave, isDark && styles.darkSmallSave]}
+                  onPress={handleSave}
+                >
+                  <Text style={styles.smallSaveText}>Save</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
           
           <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
@@ -619,6 +687,43 @@ const styles = StyleSheet.create({
   actions: {
     marginTop: 16,
     marginBottom: 32,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  sectionActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  smallButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  smallPrimary: {
+    backgroundColor: '#007AFF',
+  },
+  darkSmallPrimary: {
+    backgroundColor: '#007AFF',
+  },
+  smallSave: {
+    backgroundColor: '#4CAF50',
+  },
+  darkSmallSave: {
+    backgroundColor: '#4CAF50',
+  },
+  smallPrimaryText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  smallSaveText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   editActions: {
     flexDirection: 'row',

@@ -108,7 +108,11 @@ export function getCurrentTime(): string {
  * Get current date in YYYY-MM-DD format
  */
 export function getCurrentDate(): string {
-  return new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const day = now.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
@@ -184,4 +188,34 @@ export function getPreviousISODate(dateISO: string): string {
   const d = new Date(dateISO + 'T00:00:00');
   d.setDate(d.getDate() - 1);
   return d.toISOString().split('T')[0];
+}
+
+/**
+ * Determine the correct date for a shift based on start and finish times.
+ * The date should always be the date when the shift started.
+ * If finish time is earlier than start time (crosses midnight), 
+ * the date should be the previous day.
+ * 
+ * @param endDate - The date when the shift is being logged/ended (YYYY-MM-DD)
+ * @param startTime - The start time of the shift (HH:mm or 'N/A')
+ * @param finishTime - The finish time of the shift (HH:mm or 'N/A')
+ * @returns The date when the shift actually started (YYYY-MM-DD)
+ */
+export function getShiftStartDate(endDate: string, startTime: string | 'N/A', finishTime: string | 'N/A'): string {
+  // If we don't have valid times, use the end date as fallback
+  if (startTime === 'N/A' || finishTime === 'N/A') {
+    return endDate;
+  }
+  
+  const startMinutes = timeToMinutes(startTime);
+  const finishMinutes = timeToMinutes(finishTime);
+  
+  // If finish time is earlier than or equal to start time, shift crossed midnight
+  // The start date should be the previous day
+  if (finishMinutes <= startMinutes) {
+    return getPreviousISODate(endDate);
+  }
+  
+  // Otherwise, shift started and ended on the same day
+  return endDate;
 }

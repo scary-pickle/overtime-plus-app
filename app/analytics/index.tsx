@@ -130,19 +130,13 @@ export default function AnalyticsScreen() {
         )}
       </View>
 
-      {/* Categories */}
-      <View style={[styles.card, isDark && styles.darkCard]}>
-        <Text style={[styles.cardTitle, isDark && styles.darkText]}>Category breakdown</Text>
-        {categorySeries.length > 0 ? (
+      {/* Categories - only show if there are multiple categories */}
+      {categorySeries.length > 1 && (
+        <View style={[styles.card, isDark && styles.darkCard]}>
+          <Text style={[styles.cardTitle, isDark && styles.darkText]}>Category breakdown</Text>
           <Pie data={categorySeries} />
-        ) : (
-          <View style={styles.emptyChart}>
-            <Text style={[styles.emptyText, isDark && styles.darkText]}>
-              No category data in this range.
-            </Text>
-          </View>
-        )}
-      </View>
+        </View>
+      )}
     </ScrollView>
   );
 }

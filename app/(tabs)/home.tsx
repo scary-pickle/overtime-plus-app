@@ -15,7 +15,7 @@ import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { profileStorage } from '../../lib/storage/profile';
-import { getCurrentTime, getCurrentDate, formatMinutes } from '../../lib/time';
+import { getCurrentTime, getCurrentDate, formatMinutes, getShiftStartDate } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
 import { LateBadge } from '../../components/LateBadge';
 import { EmptyState } from '../../components/EmptyState';
@@ -62,10 +62,19 @@ export default function HomeScreen() {
       
       // Check if shift has already been logged today
       const today = getCurrentDate();
-      const hasLogged = hasLoggedShiftForDate(today);
       const loggedShift = getLoggedShiftForDate(today);
+      
+      // Only show as "already logged" if:
+      // 1. The shift's date matches today
+      // 2. The shift has actually completed (has a finish time)
+      // 3. The shift is in ready or exported status
+      const hasLogged = loggedShift !== null && 
+                        loggedShift.date === today && 
+                        loggedShift.actualFinish !== 'N/A' &&
+                        (loggedShift.status === 'ready' || loggedShift.status === 'exported');
+      
       setHasLoggedToday(hasLogged);
-      setTodayLoggedShift(loggedShift);
+      setTodayLoggedShift(hasLogged ? loggedShift : null);
     }
   }, [hasProfile, shifts, logs]);
 
@@ -131,10 +140,19 @@ export default function HomeScreen() {
         
         // Check if shift has already been logged today
         const today = getCurrentDate();
-        const hasLogged = hasLoggedShiftForDate(today);
         const loggedShift = getLoggedShiftForDate(today);
+        
+        // Only show as "already logged" if:
+        // 1. The shift's date matches today
+        // 2. The shift has actually completed (has a finish time)
+        // 3. The shift is in ready or exported status
+        const hasLogged = loggedShift !== null && 
+                          loggedShift.date === today && 
+                          loggedShift.actualFinish !== 'N/A' &&
+                          (loggedShift.status === 'ready' || loggedShift.status === 'exported');
+        
         setHasLoggedToday(hasLogged);
-        setTodayLoggedShift(loggedShift);
+        setTodayLoggedShift(hasLogged ? loggedShift : null);
       }
     } catch (error) {
       console.error('Error refreshing data:', error);
@@ -272,8 +290,11 @@ export default function HomeScreen() {
       // Check if there's an active shift draft
       if (activeShiftDraft) {
         // Update the active draft with finish time
+        // Recalculate the date based on start and finish times
+        const shiftStartDate = getShiftStartDate(today, activeShiftDraft.actualStart, currentActualTime);
         const updatedDraft: OvertimeLog = {
           ...activeShiftDraft,
+          date: shiftStartDate, // Ensure date is based on start time
           actualFinish: currentActualTime,
           updatedAt: new Date().toISOString(),
         };
@@ -287,12 +308,16 @@ export default function HomeScreen() {
         
         if (roster) {
           // Roster exists - create draft with actual start = rostered start
+          // Calculate the correct date based on start and finish times
+          const actualStart = roster.rosteredStart || currentActualTime;
+          const shiftStartDate = getShiftStartDate(today, actualStart, currentActualTime);
+          
           const draftLog: OvertimeLog = {
             id: `log_${Date.now()}`,
-            date: today,
+            date: shiftStartDate, // Use calculated start date, not today
             rosteredStart: roster.rosteredStart,
             rosteredFinish: roster.rosteredFinish,
-            actualStart: roster.rosteredStart || currentActualTime,
+            actualStart: actualStart,
             actualFinish: currentActualTime,
             mealBreakMinutes: roster.mealBreakMinutes || 30,
             minutesOvertime: 0, // Will be calculated in modal
@@ -312,9 +337,11 @@ export default function HomeScreen() {
           setShowEndShiftModal(true);
         } else {
           // No roster - enter "no roster" mode
+          // For no roster mode, we'll calculate the date in the modal after user enters start time
+          // For now, use today but it will be updated when user enters start time
           const draftLog: OvertimeLog = {
             id: `log_${Date.now()}`,
-            date: today,
+            date: today, // Will be recalculated in modal when user enters start time
             rosteredStart: undefined,
             rosteredFinish: undefined,
             actualStart: 'N/A', // User will need to enter this

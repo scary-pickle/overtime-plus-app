@@ -35,6 +35,7 @@ export default function ExportsScreen() {
   const [editName, setEditName] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [expandedActionIds, setExpandedActionIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadExportBatches();
@@ -44,6 +45,14 @@ export default function ExportsScreen() {
     setRefreshing(true);
     await loadExportBatches();
     setRefreshing(false);
+  };
+
+  const handleScroll = () => {
+    // Close any expanded menus when user scrolls
+    if (expandedActionIds.size > 0) {
+      console.log('[EXPORTS] Scroll detected - closing menus');
+      setExpandedActionIds(new Set());
+    }
   };
 
   const handleViewPDF = (batch: ExportBatch) => {
@@ -76,16 +85,35 @@ export default function ExportsScreen() {
   };
 
   const handleDeleteBatch = (batch: ExportBatch) => {
+    console.log('[EXPORTS] handleDeleteBatch called', { batchId: batch.id });
+    const batchId = batch.id;
+    
+    // Close the expanded menu immediately to prevent dismiss overlay from interfering
+    console.log('[EXPORTS] Closing expanded menu for delete');
+    setExpandedActionIds(prev => {
+      const next = new Set(prev);
+      next.delete(batchId);
+      console.log('[EXPORTS] Expanded menu state updated, size:', next.size);
+      return next;
+    });
+    
+    // Execute the alert immediately - it will show even if menu closes
+    console.log('[EXPORTS] Showing delete alert');
     Alert.alert(
       'Delete Export',
       'Are you sure you want to delete this export? This action cannot be undone.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Cancel', 
+          style: 'cancel',
+          onPress: () => console.log('[EXPORTS] Delete cancelled')
+        },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            deleteExportBatch(batch.id);
+            console.log('[EXPORTS] Delete confirmed, calling deleteExportBatch');
+            deleteExportBatch(batchId);
           },
         },
       ]
@@ -93,9 +121,40 @@ export default function ExportsScreen() {
   };
 
   const handleEditName = (batch: ExportBatch) => {
-    setEditingId(batch.id);
-    setEditName(batch.customName || `Export #${batch.id.split('_')[1]}`);
+    console.log('[EXPORTS] handleEditName called', { batchId: batch.id });
+    const batchId = batch.id;
+    const customName = batch.customName || `Export #${batch.id.split('_')[1]}`;
+    
+    // Set state first, then close menu - this ensures modal opens
+    console.log('[EXPORTS] Setting edit state', { batchId, customName });
+    setEditingId(batchId);
+    setEditName(customName);
     setShowEditModal(true);
+    
+    // Close the expanded menu after modal state is set
+    console.log('[EXPORTS] Closing expanded menu for edit');
+    setExpandedActionIds(prev => {
+      const next = new Set(prev);
+      next.delete(batchId);
+      console.log('[EXPORTS] Expanded menu state updated, size:', next.size);
+      return next;
+    });
+  };
+
+  const toggleExpandedActions = (batchId: string) => {
+    console.log('[EXPORTS] toggleExpandedActions called', { batchId });
+    setExpandedActionIds(prev => {
+      const next = new Set(prev);
+      if (next.has(batchId)) {
+        next.delete(batchId);
+        console.log('[EXPORTS] Closing menu for batch:', batchId);
+      } else {
+        next.add(batchId);
+        console.log('[EXPORTS] Opening menu for batch:', batchId);
+      }
+      console.log('[EXPORTS] Expanded menu size:', next.size);
+      return next;
+    });
   };
 
   const handleSaveEdit = async () => {
@@ -230,12 +289,6 @@ export default function ExportsScreen() {
           </View>
           <View style={styles.exportActions}>
             <TouchableOpacity
-              style={[styles.actionButton, styles.viewButton]}
-              onPress={() => handleViewPDF(item)}
-            >
-              <Ionicons name="eye" size={16} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
               style={[styles.actionButton, styles.submitButton]}
               onPress={() => handleSubmitEmail(item)}
               disabled={submittingId === item.id}
@@ -253,21 +306,42 @@ export default function ExportsScreen() {
               <Ionicons name="share" size={16} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.actionButton, styles.editButton]}
-              onPress={() => handleEditName(item)}
+              style={[styles.actionButton, styles.moreButton]}
+              onPress={() => toggleExpandedActions(item.id)}
             >
-              <Ionicons name="create" size={16} color="#fff" />
+              <Ionicons name={expandedActionIds.has(item.id) ? 'close' : 'ellipsis-vertical'} size={16} color="#fff" />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.deleteButton]}
-              onPress={() => handleDeleteBatch(item)}
-            >
-              <Ionicons name="trash" size={16} color="#fff" />
-            </TouchableOpacity>
+            {expandedActionIds.has(item.id) && (
+              <View style={styles.inlineOverlay} pointerEvents="auto">
+                <View style={styles.inlineButtons} pointerEvents="auto">
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.editButton]}
+                    onPress={() => {
+                      console.log('[EXPORTS] Edit button pressed for batch:', item.id);
+                      handleEditName(item);
+                    }}
+                  >
+                    <Ionicons name="create" size={16} color="#fff" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.deleteButton]}
+                    onPress={() => {
+                      console.log('[EXPORTS] Delete button pressed for batch:', item.id);
+                      handleDeleteBatch(item);
+                    }}
+                  >
+                    <Ionicons name="trash" size={16} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
         <View style={styles.exportDetails}>
+          <TouchableOpacity style={styles.viewLinkRow} onPress={() => handleViewPDF(item)}>
+            <Text style={[styles.viewLinkText, isDark && styles.viewLinkTextDark]}>View PDF</Text>
+          </TouchableOpacity>
           <View style={styles.detailRow}>
             <Text style={[styles.detailLabel, isDark && styles.darkText]}>
               Logs:
@@ -337,6 +411,7 @@ export default function ExportsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        onScrollBeginDrag={handleScroll}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -346,7 +421,6 @@ export default function ExportsScreen() {
         }
         ListEmptyComponent={renderEmptyState}
       />
-      
       <Modal
         visible={showEditModal}
         transparent={true}
@@ -414,6 +488,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    zIndex: 10, // Ensure cards are above dismiss overlay
   },
   darkCard: {
     backgroundColor: '#1c1c1e',
@@ -423,6 +498,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 16,
+    position: 'relative',
   },
   exportInfo: {
     flex: 1,
@@ -443,6 +519,8 @@ const styles = StyleSheet.create({
   exportActions: {
     flexDirection: 'row',
     gap: 8,
+    position: 'relative',
+    zIndex: 20, // Higher than card to ensure buttons are above dismiss overlay
   },
   actionButton: {
     width: 32,
@@ -450,9 +528,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  viewButton: {
-    backgroundColor: '#007AFF',
   },
   submitButton: {
     backgroundColor: '#007AFF',
@@ -466,8 +541,35 @@ const styles = StyleSheet.create({
   deleteButton: {
     backgroundColor: '#FF3B30',
   },
+  moreButton: {
+    backgroundColor: '#8E8E93',
+  },
+  inlineOverlay: {
+    position: 'absolute',
+    right: 40, // keep space for kebab button
+    top: 0,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 100, // Higher than card to ensure it's above dismiss overlay
+  },
+  inlineButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   exportDetails: {
     gap: 8,
+  },
+  viewLinkRow: {
+    marginBottom: 4,
+  },
+  viewLinkText: {
+    color: '#007AFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  viewLinkTextDark: {
+    color: '#0A84FF',
   },
   detailRow: {
     flexDirection: 'row',
@@ -585,4 +687,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  // removed menu styles (replaced by inline expansion)
 });

@@ -128,7 +128,7 @@ export class ProfileStorage {
     ];
 
     // For SMO users, payLevel is optional
-    const requiredFields = profile.isSMO 
+    const requiredFields: (keyof Profile)[] = profile.isSMO 
       ? baseRequiredFields 
       : [...baseRequiredFields, 'payLevel'];
 

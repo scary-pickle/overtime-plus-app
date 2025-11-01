@@ -7,7 +7,6 @@ import { database } from '../db/sqlite';
  */
 function generateTestProfile(): Profile {
   return {
-    id: 'test-profile',
     fullName: 'Dr. Christopher Alexander Montgomery-Wellington',
     orgUnitNo: '87654321',
     orgUnitName: 'Cardiology Department',
@@ -16,9 +15,15 @@ function generateTestProfile(): Profile {
     payLevel: 'Level 5',
     delegateName: 'Dr. Jennifer Smith',
     delegatePosition: 'Head of Cardiology',
+    delegateAreaCode: '(07)',
     delegatePhone: '07 4433 1146',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    employeeInitial: 'CAM',
+    pdfTemplateVersion: 'qld_avac_v8.5',
+    timezone: 'Australia/Brisbane',
+    concurrentEmploymentDefault: false,
+    email: '',
+    isSMO: false,
+    
   };
 }
 
@@ -37,11 +42,13 @@ function generateTestLogs(): OvertimeLog[] {
       actualStart: '13:00',
       actualFinish: '23:19',
       mealBreakMinutes: 30,
+      minutesOvertime: 60,
       category: 'Overtime',
       comments: '1728992',
       initials: 'CAM',
       concurrentEmployment: false,
       status: 'ready',
+      source: 'manual',
       createdAt: baseDate.toISOString(),
       updatedAt: baseDate.toISOString(),
     },
@@ -53,11 +60,13 @@ function generateTestLogs(): OvertimeLog[] {
       actualStart: '08:15',
       actualFinish: '17:30',
       mealBreakMinutes: 45,
+      minutesOvertime: 60,
       category: 'Overtime',
       comments: 'Extended case review',
       initials: 'CAM',
       concurrentEmployment: false,
       status: 'ready',
+      source: 'manual',
       createdAt: baseDate.toISOString(),
       updatedAt: baseDate.toISOString(),
     },

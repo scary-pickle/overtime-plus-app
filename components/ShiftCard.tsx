@@ -383,8 +383,6 @@ const styles = StyleSheet.create({
   // Dark mode styles
   darkCard: {
     backgroundColor: '#1c1c1e',
-    borderWidth: 1,
-    borderColor: '#333',
   },
   darkText: {
     color: '#fff',

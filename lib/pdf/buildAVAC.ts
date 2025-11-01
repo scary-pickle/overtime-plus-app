@@ -1309,28 +1309,28 @@ async function drawLogRow(
   // Draw rostered start
   const rosteredStartBox = avacCoordinates.table[`rosteredStart_row${rowNum}`];
   if (rosteredStartBox && log.rosteredStart) {
-    const rosteredStartText = log.rosteredStart === 'N/A' ? 'N/A' : log.rosteredStart;
+    const rosteredStartText = log.rosteredStart === 'N/A' ? '-' : log.rosteredStart;
     drawTextInBox(page, rosteredStartText, rosteredStartBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw rostered finish
   const rosteredFinishBox = avacCoordinates.table[`rosteredFinish_row${rowNum}`];
   if (rosteredFinishBox && log.rosteredFinish) {
-    const rosteredFinishText = log.rosteredFinish === 'N/A' ? 'N/A' : log.rosteredFinish;
+    const rosteredFinishText = log.rosteredFinish === 'N/A' ? '-' : log.rosteredFinish;
     drawTextInBox(page, rosteredFinishText, rosteredFinishBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw actual start
   const actualStartBox = avacCoordinates.table[`actualStart_row${rowNum}`];
   if (actualStartBox) {
-    const actualStartText = log.actualStart === 'N/A' ? 'N/A' : log.actualStart;
+    const actualStartText = log.actualStart === 'N/A' ? '-' : log.actualStart;
     drawTextInBox(page, actualStartText, actualStartBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw actual finish
   const actualFinishBox = avacCoordinates.table[`actualFinish_row${rowNum}`];
   if (actualFinishBox) {
-    const actualFinishText = log.actualFinish === 'N/A' ? 'N/A' : log.actualFinish;
+    const actualFinishText = log.actualFinish === 'N/A' ? '-' : log.actualFinish;
     drawTextInBox(page, actualFinishText, actualFinishBox, helvetica, { color: rgb(0, 0, 0) });
   }
 

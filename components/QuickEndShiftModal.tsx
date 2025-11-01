@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import { OvertimeLog } from '../types';
 import { useProfileStore } from '../lib/state/profileStore';
 import { useLogsStore } from '../lib/state/logsStore';
-import { computeMinutes, formatMinutes, getCurrentTime } from '../lib/time';
+import { computeMinutes, formatMinutes, getCurrentTime, getShiftStartDate, getCurrentDate } from '../lib/time';
 import { TimeInput } from './TimeInput';
 import { SharedTimePickerProvider } from './SharedTimePicker';
 import { NAButton } from './NAButton';
@@ -166,11 +166,21 @@ export function QuickEndShiftModal({
     if (!draftLog) return;
 
     try {
+      // Determine the actual start and finish times
+      const finalActualStart = noRosterMode && actualStart ? actualStart : draftLog.actualStart;
+      const finalActualFinish = draftLog.actualFinish;
+      
+      // Calculate the correct date based on start and finish times
+      // Use the draft log's date as the end date, or today if not available
+      const endDate = draftLog.date || getCurrentDate();
+      const shiftStartDate = getShiftStartDate(endDate, finalActualStart, finalActualFinish);
+      
       const updatedLog: OvertimeLog = {
         ...draftLog,
+        date: shiftStartDate, // Ensure date is based on start time
         rosteredStart: noRosterMode ? (rosteredTimesNA ? 'N/A' : rosteredStart || undefined) : draftLog.rosteredStart,
         rosteredFinish: noRosterMode ? (rosteredTimesNA ? 'N/A' : rosteredFinish || undefined) : draftLog.rosteredFinish,
-        actualStart: noRosterMode && actualStart ? actualStart : draftLog.actualStart,
+        actualStart: finalActualStart,
         mealBreakMinutes,
         minutesOvertime: minutesCalculation.roundedOvertime,
         category,
