@@ -138,6 +138,82 @@ export class ProfileStorage {
     });
   }
 
+  // Helper to get missing fields with user-friendly names
+  getMissingFields(profile: Profile): { field: keyof Profile; label: string; section: string }[] {
+    // Base required fields for all users
+    const baseRequiredFields: (keyof Profile)[] = [
+      'fullName', 'payrollNumber', 'orgUnitNo', 'orgUnitName', 'location',
+      'delegateName', 'delegatePosition',
+      'delegateAreaCode', 'delegatePhone', 'employeeInitial', 'email'
+    ];
+
+    // For SMO users, payLevel is optional
+    const requiredFields: (keyof Profile)[] = profile.isSMO 
+      ? baseRequiredFields 
+      : [...baseRequiredFields, 'payLevel'];
+
+    // Field labels mapping
+    const fieldLabels: Record<keyof Profile, string> = {
+      fullName: 'Full Name',
+      payrollNumber: 'Payroll Number',
+      orgUnitNo: 'Organisation Unit No',
+      orgUnitName: 'Department',
+      location: 'Hospital',
+      delegateName: 'Delegate Name',
+      delegatePosition: 'Delegate Position',
+      delegateAreaCode: 'Area Code',
+      delegatePhone: 'Phone Number',
+      employeeInitial: 'Employee Initial',
+      email: 'Email Address',
+      payLevel: 'Pay Level',
+      serviceEnquiryNumber: 'Service Enquiry Number',
+      pdfTemplateVersion: 'PDF Template Version',
+      timezone: 'Timezone',
+      concurrentEmploymentDefault: 'Concurrent Employment Default',
+      emailTemplate: 'Email Template',
+      emailSubmissionMethod: 'Email Submission Method',
+      isSMO: 'Is SMO',
+    };
+
+    // Section mapping
+    const fieldSections: Record<keyof Profile, string> = {
+      fullName: 'Employee Details',
+      payrollNumber: 'Employee Details',
+      orgUnitNo: 'Organisation',
+      orgUnitName: 'Organisation',
+      location: 'Organisation',
+      delegateName: 'Delegate Details',
+      delegatePosition: 'Delegate Details',
+      delegateAreaCode: 'Delegate Details',
+      delegatePhone: 'Delegate Details',
+      employeeInitial: 'Employee Details',
+      email: 'Employee Details',
+      payLevel: 'Employee Details',
+      serviceEnquiryNumber: 'Organisation',
+      pdfTemplateVersion: 'Settings',
+      timezone: 'Settings',
+      concurrentEmploymentDefault: 'Settings',
+      emailTemplate: 'Settings',
+      emailSubmissionMethod: 'Settings',
+      isSMO: 'Employee Details',
+    };
+
+    const missingFields: { field: keyof Profile; label: string; section: string }[] = [];
+
+    requiredFields.forEach(field => {
+      const value = profile[field];
+      if (!value || (typeof value === 'string' && value.trim().length === 0)) {
+        missingFields.push({
+          field,
+          label: fieldLabels[field] || field,
+          section: fieldSections[field] || 'Other',
+        });
+      }
+    });
+
+    return missingFields;
+  }
+
   // Helper to create default profile
   createDefaultProfile(): Profile {
     return {

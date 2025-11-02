@@ -385,9 +385,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 12,
   },
-  darkText: {
-    color: '#fff',
-  },
   emptySection: {
     padding: 20,
     alignItems: 'center',

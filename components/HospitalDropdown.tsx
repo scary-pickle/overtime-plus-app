@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,11 @@ import {
   ScrollView,
   Modal,
   useColorScheme,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { QUEENSLAND_HOSPITALS } from '../lib/data/hospitalDepartments';
+import { Ionicons } from '@expo/vector-icons';
 
 interface HospitalDropdownProps {
   value: string;
@@ -16,6 +19,8 @@ interface HospitalDropdownProps {
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
+  customHospitals?: string[];
+  onCustomHospitalAdd?: (hospital: string) => void;
 }
 
 export function HospitalDropdown({
@@ -24,10 +29,20 @@ export function HospitalDropdown({
   placeholder = 'Select hospital',
   required = false,
   disabled = false,
+  customHospitals = [],
+  onCustomHospitalAdd,
 }: HospitalDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [customHospitalName, setCustomHospitalName] = useState('');
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  // Combine predefined and custom hospitals
+  const allHospitals = [
+    ...QUEENSLAND_HOSPITALS.map(h => h.name),
+    ...customHospitals.filter(h => !QUEENSLAND_HOSPITALS.some(qh => qh.name === h))
+  ];
 
   const handleSelect = (hospitalName: string) => {
     onValueChange(hospitalName);
@@ -37,6 +52,31 @@ export function HospitalDropdown({
   const handleClear = () => {
     onValueChange('');
     setIsOpen(false);
+  };
+
+  useEffect(() => {
+    console.log('showAddModal changed to:', showAddModal);
+  }, [showAddModal]);
+
+  const handleAddCustom = () => {
+    const trimmedName = customHospitalName.trim();
+    if (!trimmedName) {
+      Alert.alert('Error', 'Please enter a hospital name');
+      return;
+    }
+
+    if (allHospitals.some(h => h.toLowerCase() === trimmedName.toLowerCase())) {
+      Alert.alert('Error', 'This hospital already exists');
+      return;
+    }
+
+    if (onCustomHospitalAdd) {
+      onCustomHospitalAdd(trimmedName);
+    }
+    handleSelect(trimmedName);
+    setCustomHospitalName('');
+    setShowAddModal(false);
+    setIsOpen(false); // Close the selection modal as well
   };
 
   return (
@@ -70,11 +110,12 @@ export function HospitalDropdown({
         animationType="fade"
         onRequestClose={() => setIsOpen(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsOpen(false)}
-        >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setIsOpen(false)}
+          />
           <View style={[styles.modalContent, isDark && styles.darkModalContent]}>
             <View style={[styles.modalHeader, isDark && styles.darkModalHeader]}>
               <Text style={[styles.modalTitle, isDark && styles.darkModalTitle]}>
@@ -91,36 +132,145 @@ export function HospitalDropdown({
             </View>
             
             <ScrollView style={styles.scrollView} showsVerticalScrollIndicator>
-              {QUEENSLAND_HOSPITALS.map((hospital, index) => (
-                <TouchableOpacity
-                  key={hospital.id}
-                  style={[
-                    styles.option,
-                    isDark && styles.darkOption,
-                    value === hospital.name && styles.selectedOption,
-                    value === hospital.name && isDark && styles.darkSelectedOption,
-                  ]}
-                  onPress={() => handleSelect(hospital.name)}
-                >
-                  <Text
+              {allHospitals.map((hospitalName, index) => {
+                const isCustom = customHospitals.includes(hospitalName);
+                return (
+                  <TouchableOpacity
+                    key={index}
                     style={[
-                      styles.optionText,
-                      isDark && styles.darkOptionText,
-                      value === hospital.name && styles.selectedOptionText,
+                      styles.option,
+                      isDark && styles.darkOption,
+                      value === hospitalName && styles.selectedOption,
+                      value === hospitalName && isDark && styles.darkSelectedOption,
                     ]}
+                    onPress={() => handleSelect(hospitalName)}
                   >
-                    {hospital.name}
-                  </Text>
-                  {value === hospital.name && (
-                    <Text style={[styles.checkmark, isDark && styles.darkCheckmark]}>
-                      ✓
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              ))}
+                    <View style={styles.optionContent}>
+                      <Text
+                        style={[
+                          styles.optionText,
+                          isDark && styles.darkOptionText,
+                          value === hospitalName && styles.selectedOptionText,
+                        ]}
+                      >
+                        {hospitalName}
+                      </Text>
+                      {isCustom && (
+                        <Text style={[styles.customBadge, isDark && styles.darkCustomBadge]}>
+                          Custom
+                        </Text>
+                      )}
+                    </View>
+                    {value === hospitalName && (
+                      <Text style={[styles.checkmark, isDark && styles.darkCheckmark]}>
+                        ✓
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                style={[styles.addButton, isDark && styles.darkAddButton]}
+                onPress={() => {
+                  console.log('Add Custom Hospital button pressed');
+                  console.log('Current isOpen:', isOpen);
+                  console.log('Current showAddModal:', showAddModal);
+                  setIsOpen(false);
+                  // Use setTimeout to ensure the selection modal closes first
+                  setTimeout(() => {
+                    console.log('Opening add modal now');
+                    setShowAddModal(true);
+                  }, 100);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="add-circle-outline" size={20} color={isDark ? "#4CAF50" : "#4CAF50"} />
+                <Text style={[styles.addButtonText, isDark && styles.darkAddButtonText]}>
+                  Add Custom Hospital
+                </Text>
+              </TouchableOpacity>
             </ScrollView>
           </View>
-        </TouchableOpacity>
+        </View>
+      </Modal>
+
+      {/* Add Custom Hospital Modal */}
+      <Modal
+        visible={showAddModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowAddModal(false);
+          setCustomHospitalName('');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              setShowAddModal(false);
+              setCustomHospitalName('');
+            }}
+          />
+          <View 
+            style={[styles.modalContent, isDark && styles.darkModalContent]}
+          >
+            <View style={[styles.modalHeader, isDark && styles.darkModalHeader]}>
+              <Text style={[styles.modalTitle, isDark && styles.darkModalTitle]}>
+                Add Custom Hospital
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAddModal(false);
+                  setCustomHospitalName('');
+                }}
+              >
+                <Ionicons name="close" size={24} color={isDark ? "#fff" : "#333"} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.addForm}>
+              <Text style={[styles.inputLabel, isDark && styles.darkInputLabel]}>
+                Hospital Name
+              </Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  isDark && styles.darkTextInput,
+                ]}
+                value={customHospitalName}
+                onChangeText={setCustomHospitalName}
+                placeholder="Enter hospital name"
+                placeholderTextColor={isDark ? '#666' : '#999'}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={handleAddCustom}
+              />
+              <View style={styles.addButtonRow}>
+                <TouchableOpacity
+                  style={[styles.cancelAddButton, isDark && styles.darkCancelAddButton]}
+                  onPress={() => {
+                    setShowAddModal(false);
+                    setCustomHospitalName('');
+                  }}
+                >
+                  <Text style={[styles.cancelAddButtonText, isDark && styles.darkCancelAddButtonText]}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmAddButton, isDark && styles.darkConfirmAddButton]}
+                  onPress={handleAddCustom}
+                >
+                  <Text style={styles.confirmAddButtonText}>
+                    Add
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -192,6 +342,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+    overflow: 'hidden',
   },
   darkModalContent: {
     backgroundColor: '#1c1c1e',
@@ -267,5 +418,112 @@ const styles = StyleSheet.create({
   },
   darkCheckmark: {
     color: '#4fc3f7',
+  },
+  optionContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  customBadge: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '500',
+    backgroundColor: '#e8f5e9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  darkCustomBadge: {
+    color: '#81C784',
+    backgroundColor: '#1b2e1b',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    backgroundColor: '#f9f9f9',
+    gap: 8,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  darkAddButton: {
+    borderTopColor: '#333',
+    backgroundColor: '#2c2c2e',
+  },
+  addButtonText: {
+    fontSize: 16,
+    color: '#4CAF50',
+    fontWeight: '500',
+  },
+  darkAddButtonText: {
+    color: '#81C784',
+  },
+  addForm: {
+    padding: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 8,
+  },
+  darkInputLabel: {
+    color: '#fff',
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    color: '#333',
+    marginBottom: 16,
+  },
+  darkTextInput: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+    color: '#fff',
+  },
+  addButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelAddButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+  },
+  darkCancelAddButton: {
+    backgroundColor: '#2c2c2e',
+  },
+  cancelAddButtonText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+  },
+  darkCancelAddButtonText: {
+    color: '#999',
+  },
+  confirmAddButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+  },
+  darkConfirmAddButton: {
+    backgroundColor: '#4CAF50',
+  },
+  confirmAddButtonText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
   },
 });

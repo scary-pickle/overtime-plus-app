@@ -22,9 +22,7 @@ export interface WidgetShiftStatus {
 export async function getWidgetShiftStatus(): Promise<WidgetShiftStatus> {
   try {
     // Ensure database is initialized
-    if (!database) {
-      await database.init();
-    }
+    await database.init();
 
     // Query for active shift (draft status with isActiveShift = true)
     const logs = await database.getOvertimeLogs();

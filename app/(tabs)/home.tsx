@@ -528,77 +528,79 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Stats (This Week) with link to Analytics */}
-        <View style={[styles.statsCard, isDark && styles.darkCard]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={[styles.statsTitle, isDark && styles.darkText]}>This Week</Text>
-            <TouchableOpacity onPress={() => router.push('/analytics')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.viewLink}>View</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, isDark && styles.darkText]}>
-                {logs.length}
-              </Text>
-              <Text style={[styles.statLabel, isDark && styles.darkText]}>
-                Total Logs
-              </Text>
-            </View>
-            
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, isDark && styles.darkText]}>
-                {formatMinutes(logs.reduce((sum, log) => sum + log.minutesOvertime, 0))}
-              </Text>
-              <Text style={[styles.statLabel, isDark && styles.darkText]}>
-                Overtime
-              </Text>
-            </View>
-            
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, isDark && styles.darkText]}>
-                {pendingCount}
-              </Text>
-              <Text style={[styles.statLabel, isDark && styles.darkText]}>
-                Pending
-              </Text>
-            </View>
-          </View>
-        </View>
+        {/* Create Log Button */}
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.createLogButton]}
+          onPress={() => router.push('/log/new')}
+        >
+          <Text style={styles.actionButtonText}>Create Log</Text>
+        </TouchableOpacity>
 
-        {/* Recent Logs */}
-        {logs.length > 0 && (
-          <View style={[styles.recentCard, isDark && styles.darkCard]}>
-            <Text style={[styles.recentTitle, isDark && styles.darkText]}>
-              Recent Logs
-            </Text>
+        {/* Analytics & Recent Logs - Combined Container */}
+        <View style={[styles.statsCard, isDark && styles.darkCard]}>
+          <TouchableOpacity onPress={() => router.push('/analytics')} activeOpacity={0.7}>
+            <Text style={[styles.statsTitle, isDark && styles.darkText, { marginBottom: 16 }]}>Analytics & Recent Logs</Text>
             
-            {logs.slice(0, 3).map((log) => (
-              <View key={log.id} style={styles.recentItem}>
-                <Text style={[styles.recentDate, isDark && styles.darkText]}>
-                  {new Date(log.date).toLocaleDateString('en-AU', { 
-                    day: 'numeric', 
-                    month: 'short' 
-                  })}
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={[styles.statNumber, isDark && styles.darkText]}>
+                  {logs.length}
                 </Text>
-                <Text style={[styles.recentTime, isDark && styles.darkText]}>
-                  {log.actualStart} - {log.actualFinish}
-                </Text>
-                <Text style={[styles.recentOvertime, isDark && styles.darkText]}>
-                  {formatMinutes(log.minutesOvertime)}
+                <Text style={[styles.statLabel, isDark && styles.darkText]}>
+                  Total Logs
                 </Text>
               </View>
-            ))}
-            
-            <TouchableOpacity 
-              style={styles.viewAllButton}
-              onPress={() => router.push('/(tabs)/log')}
-            >
-              <Text style={styles.viewAllText}>View All Logs</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+              
+              <View style={styles.statItem}>
+                <Text style={[styles.statNumber, isDark && styles.darkText]}>
+                  {formatMinutes(logs.reduce((sum, log) => sum + log.minutesOvertime, 0))}
+                </Text>
+                <Text style={[styles.statLabel, isDark && styles.darkText]}>
+                  Overtime
+                </Text>
+              </View>
+              
+              <View style={styles.statItem}>
+                <Text style={[styles.statNumber, isDark && styles.darkText]}>
+                  {pendingCount}
+                </Text>
+                <Text style={[styles.statLabel, isDark && styles.darkText]}>
+                  Pending
+                </Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {logs.length > 0 && (
+            <>
+              <View style={[styles.divider, isDark && styles.darkDivider]} />
+              
+              {logs.slice(0, 3).map((log) => (
+                <View key={log.id} style={styles.recentItem}>
+                  <Text style={[styles.recentDate, isDark && styles.darkText]}>
+                    {new Date(log.date).toLocaleDateString('en-AU', { 
+                      day: 'numeric', 
+                      month: 'short' 
+                    })}
+                  </Text>
+                  <Text style={[styles.recentTime, isDark && styles.darkText]}>
+                    {log.actualStart} - {log.actualFinish}
+                  </Text>
+                  <Text style={[styles.recentOvertime, isDark && styles.darkText]}>
+                    {formatMinutes(log.minutesOvertime)}
+                  </Text>
+                </View>
+              ))}
+              
+              <TouchableOpacity 
+                style={styles.viewAllButton}
+                onPress={() => router.push('/(tabs)/log')}
+              >
+                <Text style={styles.viewAllText}>View All Logs</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
       
       {/* Quick End Shift Modal */}
@@ -703,6 +705,10 @@ const styles = StyleSheet.create({
   endButton: {
     backgroundColor: '#FF4444',
   },
+  createLogButton: {
+    backgroundColor: '#007AFF',
+    marginBottom: 20,
+  },
   actionButtonText: {
     color: '#fff',
     fontSize: 16,
@@ -799,6 +805,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     marginTop: 4,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginVertical: 16,
+  },
+  darkDivider: {
+    backgroundColor: '#333',
   },
   recentCard: {
     backgroundColor: '#fff',

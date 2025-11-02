@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,48 +9,336 @@ import {
   Alert,
   useColorScheme,
   Switch,
+  Animated,
+  Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { EmptyState } from '../../components/EmptyState';
 import { DepartmentDropdown } from '../../components/DepartmentDropdown';
 import { HospitalDropdown } from '../../components/HospitalDropdown';
-import { getDepartmentsForHospital, getHospitalById, QUEENSLAND_HOSPITALS, getOrgUnitForDepartment, getDelegateForDepartment } from '../../lib/data/hospitalDepartments';
+import { getDepartmentsForHospital, getHospitalById, QUEENSLAND_HOSPITALS, getDelegateForDepartment } from '../../lib/data/hospitalDepartments';
 import { Profile } from '../../types';
 import { profileStorage } from '../../lib/storage/profile';
 
+// Separate component file would be better, but defining here for now
+// This component uses local state to prevent keyboard dismissal
+function FieldInputUncontrolled({
+  label,
+  placeholder,
+  required = false,
+  initialValue,
+  onChangeText,
+  isDark,
+  isEditing,
+  fieldKey,
+}: {
+  label: string;
+  placeholder: string;
+  required?: boolean;
+  initialValue: string;
+  onChangeText: (value: string) => void;
+  isDark: boolean;
+  isEditing: boolean;
+  fieldKey: string;
+}) {
+  const [localValue, setLocalValue] = useState(initialValue);
+  const isFirstRender = useRef(true);
+  const renderCount = useRef(0);
+  
+  renderCount.current += 1;
+  console.log(`[FieldInput-${fieldKey}] Render #${renderCount.current}`, {
+    localValue,
+    initialValue,
+    isEditing,
+  });
+
+  // Update local value when initial value changes from parent (but not on first render during typing)
+  useEffect(() => {
+    console.log(`[FieldInput-${fieldKey}] useEffect triggered`, {
+      isFirstRender: isFirstRender.current,
+      initialValue,
+      localValue,
+    });
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setLocalValue(initialValue);
+  }, [initialValue, fieldKey, localValue]);
+
+  const handleChange = (text: string) => {
+    console.log(`[FieldInput-${fieldKey}] handleChange called`, { text });
+    setLocalValue(text);
+    onChangeText(text);
+  };
+
+  const fieldStyles = StyleSheet.create({
+    field: { marginBottom: 20 },
+    label: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#333' },
+    darkLabel: { color: '#fff' },
+    required: { color: '#ff4444' },
+    darkRequired: { color: '#ff6666' },
+    input: {
+      backgroundColor: '#fff',
+      borderWidth: 1,
+      borderColor: '#ddd',
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 16,
+      color: '#333',
+    },
+    darkInput: {
+      backgroundColor: '#2c2c2c',
+      borderColor: '#444',
+      color: '#fff',
+    },
+    disabledInput: {
+      backgroundColor: '#f5f5f5',
+      color: '#666',
+    },
+    darkDisabledInput: {
+      backgroundColor: '#1a1a1a',
+      color: '#888',
+    },
+  });
+
+  return (
+    <View style={fieldStyles.field}>
+      <Text style={[fieldStyles.label, isDark && fieldStyles.darkLabel]}>
+        {label}
+        {required && <Text style={[fieldStyles.required, isDark && fieldStyles.darkRequired]}>*</Text>}
+      </Text>
+      <TextInput
+        style={[
+          fieldStyles.input,
+          isDark && fieldStyles.darkInput,
+          !isEditing && fieldStyles.disabledInput,
+          !isEditing && isDark && fieldStyles.darkDisabledInput,
+        ]}
+        value={localValue}
+        onChangeText={handleChange}
+        placeholder={placeholder}
+        placeholderTextColor={isDark ? '#666' : '#999'}
+        editable={isEditing}
+        blurOnSubmit={false}
+        returnKeyType="next"
+      />
+    </View>
+  );
+}
+
+const FieldInput = React.memo(FieldInputUncontrolled, (prevProps, nextProps) => {
+  const shouldSkipRender = 
+    prevProps.fieldKey === nextProps.fieldKey &&
+    prevProps.initialValue === nextProps.initialValue &&
+    prevProps.isEditing === nextProps.isEditing &&
+    prevProps.isDark === nextProps.isDark &&
+    prevProps.label === nextProps.label &&
+    prevProps.placeholder === nextProps.placeholder &&
+    prevProps.required === nextProps.required &&
+    prevProps.onChangeText === nextProps.onChangeText;
+  
+  console.log(`[FieldInput-${nextProps.fieldKey}] memo comparison`, {
+    shouldSkipRender,
+    initialValueChanged: prevProps.initialValue !== nextProps.initialValue,
+    isEditingChanged: prevProps.isEditing !== nextProps.isEditing,
+    isDarkChanged: prevProps.isDark !== nextProps.isDark,
+    onChangeTextChanged: prevProps.onChangeText !== nextProps.onChangeText,
+  });
+  
+  return shouldSkipRender;
+});
+
+// Collapsible Section Component - moved outside ProfileScreen to prevent recreation
+interface CollapsibleSectionProps {
+  sectionKey: string;
+  title: string;
+  children: React.ReactNode;
+  subtitle?: string;
+  badge?: React.ReactNode;
+  onEdit?: () => void;
+  showEdit?: boolean;
+  isDark: boolean;
+  isExpanded: boolean;
+  isEditing: boolean;
+  animationValue: Animated.Value;
+  onToggle: (sectionKey: string, animationValue: Animated.Value) => void;
+}
+
+const CollapsibleSection = React.memo(({
+  sectionKey,
+  title,
+  children,
+  subtitle,
+  badge,
+  onEdit,
+  showEdit = true,
+  isDark,
+  isExpanded,
+  isEditing,
+  animationValue,
+  onToggle,
+}: CollapsibleSectionProps) => {
+  const rotateInterpolate = animationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
+  
+  const maxHeight = animationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 2000],
+  });
+
+  return (
+    <View style={[styles.section, isDark && styles.darkCard]}>
+      <TouchableOpacity
+        style={styles.sectionHeader}
+        onPress={() => onToggle(sectionKey, animationValue)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.sectionHeaderLeft}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
+              {title}
+            </Text>
+            {badge && badge}
+          </View>
+          {subtitle && (
+            <Text style={[styles.sectionSubtitle, isDark && styles.darkSubtitle]}>
+              {subtitle}
+            </Text>
+          )}
+        </View>
+        <View style={styles.sectionHeaderRight}>
+          {showEdit && onEdit && (
+            <TouchableOpacity
+              style={[styles.iconButton, isDark && styles.darkIconButton]}
+              onPress={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons
+                name={isEditing ? "checkmark-circle" : "create-outline"}
+                size={22}
+                color={isEditing ? (isDark ? "#4CAF50" : "#4CAF50") : (isDark ? "#007AFF" : "#007AFF")}
+              />
+            </TouchableOpacity>
+          )}
+          <Animated.View style={{ transform: [{ rotate: rotateInterpolate }] }}>
+            <Ionicons
+              name="chevron-down"
+              size={24}
+              color={isDark ? "#fff" : "#333"}
+            />
+          </Animated.View>
+        </View>
+      </TouchableOpacity>
+      
+      <Animated.View style={{ maxHeight, overflow: 'hidden' }}>
+        <View style={styles.sectionContent}>
+          {children}
+        </View>
+      </Animated.View>
+    </View>
+  );
+});
+
 export default function ProfileScreen() {
+  const renderCount = useRef(0);
+  renderCount.current += 1;
+  
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { profile, saveProfile, loadProfile, isComplete } = useProfileStore();
+  // Use selective subscriptions to prevent unnecessary re-renders
+  const profile = useProfileStore((state) => state.profile);
+  const saveProfile = useProfileStore((state) => state.saveProfile);
+  const loadProfile = useProfileStore((state) => state.loadProfile);
+  // Compute isComplete locally instead of from store to avoid re-renders
+  const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const [formData, setFormData] = useState<Partial<Profile>>({});
   const [isEditing, setIsEditing] = useState(false);
+  
+  console.log(`[ProfileScreen] Render #${renderCount.current}`, {
+    isEditing,
+    hasProfile: !!profile,
+    formDataKeys: Object.keys(formData),
+  });
+  
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [selectedHospital, setSelectedHospital] = useState('');
   const [isDelegateAutoFilled, setIsDelegateAutoFilled] = useState(false);
   const [isSMO, setIsSMO] = useState(false);
+  const [customHospitals, setCustomHospitals] = useState<string[]>([]);
+  const [customDepartments, setCustomDepartments] = useState<string[]>([]);
+  
+  // Track if user is currently typing to prevent interrupting updates
+  const isTypingRef = useRef(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Section expand/collapse state (all collapsed by default)
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    employeeDetails: false,
+    organisation: false,
+    delegateDetails: false,
+    settings: false,
+    widgetSetup: false,
+  });
+  
+  // Animation values for each section
+  const employeeDetailsAnimation = useRef(new Animated.Value(0)).current;
+  const organisationAnimation = useRef(new Animated.Value(0)).current;
+  const delegateDetailsAnimation = useRef(new Animated.Value(0)).current;
+  const settingsAnimation = useRef(new Animated.Value(0)).current;
+  const widgetSetupAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadProfile();
   }, []);
 
   // Refresh profile when screen gains focus (prevents stale completeness state)
+  // But don't reload if we're currently editing to prevent keyboard dismissal
   useFocusEffect(
     React.useCallback(() => {
-      loadProfile();
-    }, [loadProfile])
+      // Only reload if not editing to prevent interrupting user input
+      if (!isEditing) {
+        loadProfile();
+      }
+    }, [isEditing]) // Include isEditing to check if we should reload
   );
 
+  // Only update formData from profile when NOT editing and NOT typing to prevent keyboard dismissal
   useEffect(() => {
-    if (profile) {
+    console.log(`[ProfileScreen] profile/isEditing useEffect`, {
+      hasProfile: !!profile,
+      isEditing,
+      isTyping: isTypingRef.current,
+    });
+    if (profile && !isEditing && !isTypingRef.current) {
+      console.log(`[ProfileScreen] Updating formData from profile`);
       setFormData(profile);
       setSelectedHospital(profile.location || '');
       setIsSMO(profile.isSMO || false);
+    } else {
+      console.log(`[ProfileScreen] Skipping formData update (editing or typing)`);
     }
-  }, [profile]);
+    // Don't update while editing or typing - let the user's changes persist
+  }, [profile, isEditing]);
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSave = async () => {
     if (!formData.fullName || !formData.payrollNumber || !formData.email) {
@@ -121,6 +409,38 @@ export default function ProfileScreen() {
     setIsEditing(false);
   };
 
+  const toggleSection = (sectionKey: string, animationValue: Animated.Value) => {
+    const isExpanded = expandedSections[sectionKey];
+    console.log(`[ProfileScreen] toggleSection called`, { sectionKey, isExpanded, willExpand: !isExpanded });
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionKey]: !isExpanded,
+    }));
+
+    Animated.timing(animationValue, {
+      toValue: isExpanded ? 0 : 1,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const getAnimationValue = (sectionKey: string): Animated.Value => {
+    switch (sectionKey) {
+      case 'employeeDetails':
+        return employeeDetailsAnimation;
+      case 'organisation':
+        return organisationAnimation;
+      case 'delegateDetails':
+        return delegateDetailsAnimation;
+      case 'settings':
+        return settingsAnimation;
+      case 'widgetSetup':
+        return widgetSetupAnimation;
+      default:
+        return employeeDetailsAnimation;
+    }
+  };
+
   const generateEmployeeInitial = (fullName: string): string => {
     const names = fullName.trim().split(' ');
     if (names.length === 1) {
@@ -129,20 +449,41 @@ export default function ProfileScreen() {
     return names.map(name => name.charAt(0)).join('').toUpperCase().substring(0, 3);
   };
 
-  const handleFullNameChange = (value: string) => {
+  const handleFullNameChange = React.useCallback((value: string) => {
+    console.log(`[ProfileScreen] handleFullNameChange called`, { value });
     setFormData(prev => {
       const updated = { ...prev, fullName: value };
       // Auto-generate employee initial from full name
       if (value.trim()) {
         updated.employeeInitial = generateEmployeeInitial(value);
       }
+      console.log(`[ProfileScreen] handleFullNameChange updating formData`, { updated });
       return updated;
     });
-  };
+  }, []);
 
-  const updateField = (field: keyof Profile, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  // Use useCallback to stabilize the updateField function
+  const updateField = React.useCallback((field: keyof Profile, value: string) => {
+    console.log(`[ProfileScreen] updateField called`, { field, value });
+    isTypingRef.current = true;
+    
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    // Set flag to false after user stops typing (300ms of no input)
+    typingTimeoutRef.current = setTimeout(() => {
+      console.log(`[ProfileScreen] typing timeout expired for field: ${field}`);
+      isTypingRef.current = false;
+    }, 300);
+    
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+      console.log(`[ProfileScreen] setFormData updating`, { field, value, newData });
+      return newData;
+    });
+  }, []);
 
   const handleHospitalChange = (hospitalName: string) => {
     setSelectedHospital(hospitalName);
@@ -155,14 +496,8 @@ export default function ProfileScreen() {
   const handleDepartmentChange = (department: string) => {
     setFormData(prev => ({ ...prev, orgUnitName: department }));
     
-    // Auto-fill organisational unit number and delegate details if hospital and department are selected
+    // Auto-fill delegate details if hospital and department are selected
     if (selectedHospital && department) {
-      const orgUnitNo = getOrgUnitForDepartment(selectedHospital, department);
-      if (orgUnitNo) {
-        setFormData(prev => ({ ...prev, orgUnitNo }));
-      }
-      
-      // Auto-fill delegate details
       const delegateInfo = getDelegateForDepartment(selectedHospital, department);
       if (delegateInfo) {
         setFormData(prev => ({ 
@@ -176,31 +511,30 @@ export default function ProfileScreen() {
     }
   };
 
-  const renderField = (
-    label: string,
-    field: keyof Profile,
-    placeholder: string,
-    required: boolean = false
-  ) => (
-    <View style={styles.field}>
-      <Text style={[styles.label, isDark && styles.darkLabel]}>
-        {label} {required && <Text style={[styles.required, isDark && styles.darkRequired]}>*</Text>}
-      </Text>
-      <TextInput
-        style={[
-          styles.input,
-          isDark && styles.darkInput,
-          !isEditing && styles.disabledInput,
-          !isEditing && isDark && styles.darkDisabledInput,
-        ]}
-        value={formData[field] as string || ''}
-        onChangeText={(value) => updateField(field, value)}
-        placeholder={placeholder}
-        placeholderTextColor={isDark ? '#666' : '#999'}
-        editable={isEditing}
-      />
-    </View>
-  );
+  const handleCustomHospitalAdd = (hospital: string) => {
+    if (!customHospitals.includes(hospital)) {
+      setCustomHospitals(prev => [...prev, hospital]);
+    }
+  };
+
+  const handleCustomDepartmentAdd = (department: string) => {
+    if (!customDepartments.includes(department)) {
+      setCustomDepartments(prev => [...prev, department]);
+    }
+  };
+
+  const fieldHandlers = React.useMemo(() => {
+    console.log('[ProfileScreen] fieldHandlers being created');
+    return {
+      payrollNumber: (value: string) => updateField('payrollNumber', value),
+      payLevel: (value: string) => updateField('payLevel', value),
+      employeeInitial: (value: string) => updateField('employeeInitial', value),
+      email: (value: string) => updateField('email', value),
+      orgUnitNo: (value: string) => updateField('orgUnitNo', value),
+      serviceEnquiryNumber: (value: string) => updateField('serviceEnquiryNumber', value),
+      delegateAreaCode: (value: string) => updateField('delegateAreaCode', value),
+    };
+  }, [updateField]);
 
   if (!profile && !isEditing) {
     return (
@@ -215,9 +549,49 @@ export default function ProfileScreen() {
   }
 
   const isProfileComplete = profile ? profileStorage.isProfileComplete(profile) : false;
+  const missingFields = profile && !isProfileComplete ? profileStorage.getMissingFields(profile) : [];
+
+  // Group missing fields by section
+  const missingFieldsBySection = React.useMemo(() => {
+    const grouped: Record<string, { field: keyof Profile; label: string; section: string }[]> = {};
+    missingFields.forEach(field => {
+      if (!grouped[field.section]) {
+        grouped[field.section] = [];
+      }
+      grouped[field.section].push(field);
+    });
+    return grouped;
+  }, [missingFields]);
+
+  // Function to scroll to a section
+  const scrollToSection = React.useCallback((sectionKey: string) => {
+    // Expand the section
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionKey]: true,
+    }));
+    
+    // Animate the section open
+    const animationValue = getAnimationValue(sectionKey);
+    Animated.timing(animationValue, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+    
+    // Enter edit mode if not already editing
+    if (!isEditing) {
+      setIsEditing(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
 
   return (
-    <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+      style={[styles.container, isDark && styles.darkContainer]} 
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.content}>
         {/* Header */}
         <View style={styles.headerContainer}>
@@ -229,50 +603,124 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
-        {/* Employee Details */}
-        <View style={[styles.section, isDark && styles.darkCard]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
-              Employee Details
-            </Text>
-            <View style={styles.sectionActions}>
-              {!isEditing ? (
-                <TouchableOpacity
-                  style={[styles.smallButton, styles.smallPrimary, isDark && styles.darkSmallPrimary]}
-                  onPress={() => setIsEditing(true)}
-                >
-                  <Text style={styles.smallPrimaryText}>Edit</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.smallButton, styles.smallSave, isDark && styles.darkSmallSave]}
-                  onPress={handleSave}
-                >
-                  <Text style={styles.smallSaveText}>Save</Text>
-                </TouchableOpacity>
-              )}
+        {/* Missing Fields Alert */}
+        {!isProfileComplete && missingFields.length > 0 && !isEditing && (
+          <View style={[styles.missingFieldsCard, isDark && styles.darkMissingFieldsCard]}>
+            <View style={styles.missingFieldsHeader}>
+              <Ionicons 
+                name="alert-circle-outline" 
+                size={20} 
+                color={isDark ? "#ff6b6b" : "#ff4444"} 
+              />
+              <Text style={[styles.missingFieldsTitle, isDark && styles.darkMissingFieldsTitle]}>
+                Missing Required Fields
+              </Text>
             </View>
-          </View>
-          
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
-              Full Name <Text style={[styles.required, isDark && styles.darkRequired]}>*</Text>
+            <Text style={[styles.missingFieldsDescription, isDark && styles.darkMissingFieldsDescription]}>
+              Please fill in the following fields to complete your profile:
             </Text>
-            <TextInput
-              style={[
-                styles.input,
-                isDark && styles.darkInput,
-                !isEditing && styles.disabledInput,
-                !isEditing && isDark && styles.darkDisabledInput,
-              ]}
-              value={formData.fullName || ''}
-              onChangeText={handleFullNameChange}
-              placeholder='Enter your full name'
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              editable={isEditing}
-            />
+            {Object.entries(missingFieldsBySection).map(([section, fields]) => (
+              <View key={section} style={styles.missingFieldsGroup}>
+                <TouchableOpacity
+                  onPress={() => {
+                    // Map section names to section keys
+                    const sectionKeyMap: Record<string, string> = {
+                      'Employee Details': 'employeeDetails',
+                      'Organisation': 'organisation',
+                      'Delegate Details': 'delegateDetails',
+                      'Settings': 'settings',
+                    };
+                    const sectionKey = sectionKeyMap[section] || 'employeeDetails';
+                    scrollToSection(sectionKey);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.missingFieldsSectionTitle, isDark && styles.darkMissingFieldsSectionTitle]}>
+                    {section}
+                  </Text>
+                </TouchableOpacity>
+                {fields.map((field, index) => (
+                  <TouchableOpacity
+                    key={field.field}
+                    onPress={() => {
+                      // Map section names to section keys
+                      const sectionKeyMap: Record<string, string> = {
+                        'Employee Details': 'employeeDetails',
+                        'Organisation': 'organisation',
+                        'Delegate Details': 'delegateDetails',
+                        'Settings': 'settings',
+                      };
+                      const sectionKey = sectionKeyMap[section] || 'employeeDetails';
+                      scrollToSection(sectionKey);
+                    }}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.missingFieldItem,
+                      index < fields.length - 1 && styles.missingFieldItemBorder,
+                      isDark && styles.darkMissingFieldItem,
+                      index < fields.length - 1 && isDark && styles.darkMissingFieldItemBorder,
+                    ]}
+                  >
+                    <Ionicons 
+                      name="ellipse-outline" 
+                      size={12} 
+                      color={isDark ? "#ff6b6b" : "#ff4444"} 
+                      style={styles.missingFieldIcon}
+                    />
+                    <Text style={[styles.missingFieldLabel, isDark && styles.darkMissingFieldLabel]}>
+                      {field.label}
+                    </Text>
+                    <Ionicons 
+                      name="chevron-forward" 
+                      size={16} 
+                      color={isDark ? "#999" : "#666"} 
+                    />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ))}
+            <TouchableOpacity
+              style={[styles.editProfileButton, isDark && styles.darkEditProfileButton]}
+              onPress={() => setIsEditing(true)}
+            >
+              <Text style={styles.editProfileButtonText}>Edit Profile</Text>
+            </TouchableOpacity>
           </View>
-          {renderField('Payroll Number', 'payrollNumber', 'Enter payroll number', true)}
+        )}
+
+        {/* Employee Details */}
+        <CollapsibleSection
+          sectionKey="employeeDetails"
+          title="Employee Details"
+          subtitle={formData.fullName ? `${formData.fullName}` : 'Personal information'}
+          onEdit={isEditing ? handleSave : () => setIsEditing(true)}
+          showEdit={!!profile}
+          isDark={isDark}
+          isExpanded={expandedSections.employeeDetails}
+          isEditing={isEditing}
+          animationValue={employeeDetailsAnimation}
+          onToggle={toggleSection}
+        >
+          <FieldInput
+            fieldKey="fullName"
+            label="Full Name"
+            placeholder="Enter your full name"
+            required={true}
+            initialValue={formData.fullName || ''}
+            onChangeText={handleFullNameChange}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
+          <FieldInput
+            fieldKey="payrollNumber"
+            label="Payroll Number"
+            placeholder="Enter payroll number"
+            required={true}
+            initialValue={formData.payrollNumber || ''}
+            onChangeText={fieldHandlers.payrollNumber}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
           
           {/* SMO Toggle */}
           <View style={styles.field}>
@@ -311,37 +759,54 @@ export default function ProfileScreen() {
           </View>
 
           {/* Pay Level - only show when not SMO */}
-          {!isSMO && renderField('Pay Level', 'payLevel', 'Enter pay level', true)}
+          {!isSMO && (
+            <FieldInput
+              fieldKey="payLevel"
+              label="Pay Level"
+              placeholder="Enter pay level"
+              required={true}
+              initialValue={formData.payLevel || ''}
+              onChangeText={fieldHandlers.payLevel}
+              isDark={isDark}
+              isEditing={isEditing}
+            />
+          )}
           
-          {renderField('Employee Initial', 'employeeInitial', 'Auto-generated from full name', true)}
-          {renderField('Email Address', 'email', 'your.name@health.qld.gov.au', true)}
-        </View>
+          <FieldInput
+            fieldKey="employeeInitial"
+            label="Employee Initial"
+            placeholder="Auto-generated from full name"
+            required={true}
+            initialValue={formData.employeeInitial || ''}
+            onChangeText={fieldHandlers.employeeInitial}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
+          <FieldInput
+            fieldKey="email"
+            label="Email Address"
+            placeholder="your.name@health.qld.gov.au"
+            required={true}
+            initialValue={formData.email || ''}
+            onChangeText={fieldHandlers.email}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
+        </CollapsibleSection>
 
         {/* Organisation Details */}
-        <View style={[styles.section, isDark && styles.darkCard]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
-              Organisation
-            </Text>
-            <View style={styles.sectionActions}>
-              {!isEditing ? (
-                <TouchableOpacity
-                  style={[styles.smallButton, styles.smallPrimary, isDark && styles.darkSmallPrimary]}
-                  onPress={() => setIsEditing(true)}
-                >
-                  <Text style={styles.smallPrimaryText}>Edit</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.smallButton, styles.smallSave, isDark && styles.darkSmallSave]}
-                  onPress={handleSave}
-                >
-                  <Text style={styles.smallSaveText}>Save</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-          
+        <CollapsibleSection
+          sectionKey="organisation"
+          title="Organisation"
+          subtitle={selectedHospital ? `${selectedHospital}` : 'Hospital and department details'}
+          onEdit={isEditing ? handleSave : () => setIsEditing(true)}
+          showEdit={!!profile}
+          isDark={isDark}
+          isExpanded={expandedSections.organisation}
+          isEditing={isEditing}
+          animationValue={organisationAnimation}
+          onToggle={toggleSection}
+        >
           <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
               Hospital <Text style={[styles.required, isDark && styles.darkRequired]}>*</Text>
@@ -352,6 +817,8 @@ export default function ProfileScreen() {
               placeholder="Select hospital"
               required={true}
               disabled={!isEditing}
+              customHospitals={customHospitals}
+              onCustomHospitalAdd={handleCustomHospitalAdd}
             />
           </View>
           
@@ -369,148 +836,117 @@ export default function ProfileScreen() {
                 const hospital = QUEENSLAND_HOSPITALS.find(h => h.name === selectedHospital);
                 return hospital ? hospital.departments : [];
               })() : []}
+              customDepartments={customDepartments}
+              onCustomDepartmentAdd={handleCustomDepartmentAdd}
             />
           </View>
           
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
-              Organisation Unit No <Text style={[styles.required, isDark && styles.darkRequired]}>*</Text>
-              {formData.orgUnitNo && selectedHospital && formData.orgUnitName && (
-                <Text style={[styles.autoFilledIndicator, isDark && styles.darkAutoFilledIndicator]}>
-                  {' '}(Auto-filled)
-                </Text>
-              )}
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                isDark && styles.darkInput,
-                !isEditing && styles.disabledInput,
-                !isEditing && isDark && styles.darkDisabledInput,
-                (formData.orgUnitNo && selectedHospital && formData.orgUnitName) && styles.autoFilledInput,
-                (formData.orgUnitNo && selectedHospital && formData.orgUnitName) && isDark && styles.darkAutoFilledInput,
-              ]}
-              value={formData.orgUnitNo || ''}
-              onChangeText={(value) => updateField('orgUnitNo', value)}
-              placeholder={selectedHospital && formData.orgUnitName ? 'Auto-filled from hospital and department' : 'Enter org unit number'}
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              editable={isEditing && !(formData.orgUnitNo && selectedHospital && formData.orgUnitName)}
-            />
-          </View>
-          {renderField('Service Enquiry Number', 'serviceEnquiryNumber', 'Optional')}
-        </View>
+          <FieldInput
+            fieldKey="orgUnitNo"
+            label="Organisation Unit No"
+            placeholder="Enter org unit number"
+            required={true}
+            initialValue={formData.orgUnitNo || ''}
+            onChangeText={fieldHandlers.orgUnitNo}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
+          <FieldInput
+            fieldKey="serviceEnquiryNumber"
+            label="Service Enquiry Number"
+            placeholder="Optional"
+            required={false}
+            initialValue={formData.serviceEnquiryNumber || ''}
+            onChangeText={fieldHandlers.serviceEnquiryNumber}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
+        </CollapsibleSection>
 
         {/* Delegate Details */}
-        <View style={[styles.section, isDark && styles.darkCard]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
-              Delegate Details
-              {isDelegateAutoFilled && (
-                <Text style={[styles.autoFilledIndicator, isDark && styles.darkAutoFilledIndicator]}>
-                  {' '}(Auto-filled)
-                </Text>
-              )}
+        <CollapsibleSection
+          sectionKey="delegateDetails"
+          title="Delegate Details"
+          subtitle={formData.delegateName ? `${formData.delegateName}` : 'Delegate contact information'}
+          onEdit={isEditing ? handleSave : () => setIsEditing(true)}
+          showEdit={!!profile}
+          badge={isDelegateAutoFilled ? (
+            <Text style={[styles.autoFilledIndicator, isDark && styles.darkAutoFilledIndicator]}>
+              {' '}(Auto-filled)
             </Text>
-            <View style={styles.sectionActions}>
-              {!isEditing ? (
-                <TouchableOpacity
-                  style={[styles.smallButton, styles.smallPrimary, isDark && styles.darkSmallPrimary]}
-                  onPress={() => setIsEditing(true)}
-                >
-                  <Text style={styles.smallPrimaryText}>Edit</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.smallButton, styles.smallSave, isDark && styles.darkSmallSave]}
-                  onPress={handleSave}
-                >
-                  <Text style={styles.smallSaveText}>Save</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
+          ) : undefined}
+          isDark={isDark}
+          isExpanded={expandedSections.delegateDetails}
+          isEditing={isEditing}
+          animationValue={delegateDetailsAnimation}
+          onToggle={toggleSection}
+        >
+          <FieldInput
+            fieldKey="delegateName"
+            label="Delegate Name"
+            placeholder="Enter delegate name"
+            required={true}
+            initialValue={formData.delegateName || ''}
+            onChangeText={(value) => {
+              updateField('delegateName', value);
+              setIsDelegateAutoFilled(false); // Clear auto-fill indicator when manually edited
+            }}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
           
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
-              Delegate Name <Text style={[styles.required, isDark && styles.darkRequired]}>*</Text>
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                isDark && styles.darkInput,
-                !isEditing && styles.disabledInput,
-                !isEditing && isDark && styles.darkDisabledInput,
-                isDelegateAutoFilled && styles.autoFilledInput,
-                isDelegateAutoFilled && isDark && styles.darkAutoFilledInput,
-              ]}
-              value={formData.delegateName || ''}
-              onChangeText={(value) => {
-                updateField('delegateName', value);
-                setIsDelegateAutoFilled(false); // Clear auto-fill indicator when manually edited
-              }}
-              placeholder="Enter delegate name"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              editable={isEditing}
-            />
-          </View>
+          <FieldInput
+            fieldKey="delegatePosition"
+            label="Delegate Position"
+            placeholder="Enter delegate position"
+            required={true}
+            initialValue={formData.delegatePosition || ''}
+            onChangeText={(value) => {
+              updateField('delegatePosition', value);
+              setIsDelegateAutoFilled(false); // Clear auto-fill indicator when manually edited
+            }}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
           
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
-              Delegate Position <Text style={[styles.required, isDark && styles.darkRequired]}>*</Text>
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                isDark && styles.darkInput,
-                !isEditing && styles.disabledInput,
-                !isEditing && isDark && styles.darkDisabledInput,
-                isDelegateAutoFilled && styles.autoFilledInput,
-                isDelegateAutoFilled && isDark && styles.darkAutoFilledInput,
-              ]}
-              value={formData.delegatePosition || ''}
-              onChangeText={(value) => {
-                updateField('delegatePosition', value);
-                setIsDelegateAutoFilled(false); // Clear auto-fill indicator when manually edited
-              }}
-              placeholder="Enter delegate position"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              editable={isEditing}
-            />
-          </View>
+          <FieldInput
+            fieldKey="delegateAreaCode"
+            label="Area Code"
+            placeholder="(07)"
+            required={true}
+            initialValue={formData.delegateAreaCode || ''}
+            onChangeText={fieldHandlers.delegateAreaCode}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
           
-          {renderField('Area Code', 'delegateAreaCode', '(07)', true)}
-          
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
-              Phone Number <Text style={[styles.required, isDark && styles.darkRequired]}>*</Text>
-            </Text>
-            <TextInput
-              style={[
-                styles.input,
-                isDark && styles.darkInput,
-                !isEditing && styles.disabledInput,
-                !isEditing && isDark && styles.darkDisabledInput,
-                isDelegateAutoFilled && styles.autoFilledInput,
-                isDelegateAutoFilled && isDark && styles.darkAutoFilledInput,
-              ]}
-              value={formData.delegatePhone || ''}
-              onChangeText={(value) => {
-                updateField('delegatePhone', value);
-                setIsDelegateAutoFilled(false); // Clear auto-fill indicator when manually edited
-              }}
-              placeholder="Enter phone number"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              editable={isEditing}
-            />
-          </View>
-        </View>
+          <FieldInput
+            fieldKey="delegatePhone"
+            label="Phone Number"
+            placeholder="Enter phone number"
+            required={true}
+            initialValue={formData.delegatePhone || ''}
+            onChangeText={(value) => {
+              updateField('delegatePhone', value);
+              setIsDelegateAutoFilled(false); // Clear auto-fill indicator when manually edited
+            }}
+            isDark={isDark}
+            isEditing={isEditing}
+          />
+        </CollapsibleSection>
 
         {/* Settings */}
-        <View style={[styles.section, isDark && styles.darkCard]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>
-            Settings
-          </Text>
-          
+        <CollapsibleSection
+          sectionKey="settings"
+          title="Settings"
+          subtitle="Email, notifications, and preferences"
+          showEdit={false}
+          isDark={isDark}
+          isExpanded={expandedSections.settings}
+          isEditing={isEditing}
+          animationValue={settingsAnimation}
+          onToggle={toggleSection}
+        >
           <TouchableOpacity
             style={[styles.settingRow, isDark && styles.darkSettingRow]}
             onPress={() => router.push('/email-settings')}
@@ -518,9 +954,12 @@ export default function ProfileScreen() {
             <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
               Email Settings
             </Text>
-            <Text style={[styles.settingValue, isDark && styles.darkSettingValue]}>
-              Customize email template →
-            </Text>
+            <View style={styles.settingRight}>
+              <Text style={[styles.settingValue, isDark && styles.darkSettingValue]}>
+                Customize email template
+              </Text>
+              <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+            </View>
           </TouchableOpacity>
           
           <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
@@ -543,13 +982,20 @@ export default function ProfileScreen() {
               Australia/Brisbane
             </Text>
           </View>
-        </View>
+        </CollapsibleSection>
 
         {/* Widget Setup */}
-        <View style={[styles.section, isDark && styles.darkCard]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-            Home Screen Widget
-          </Text>
+        <CollapsibleSection
+          sectionKey="widgetSetup"
+          title="Home Screen Widget"
+          subtitle="Quick access to start or end shifts"
+          showEdit={false}
+          isDark={isDark}
+          isExpanded={expandedSections.widgetSetup}
+          isEditing={isEditing}
+          animationValue={widgetSetupAnimation}
+          onToggle={toggleSection}
+        >
           <Text style={[styles.description, isDark && styles.darkText]}>
             Add the Overtime+ widget to your home screen to quickly start or end shifts.
           </Text>
@@ -575,11 +1021,11 @@ export default function ProfileScreen() {
               4. Drag to your home screen
             </Text>
           </View>
-        </View>
+        </CollapsibleSection>
 
         {/* Action Buttons */}
-        <View style={styles.actions}>
-          {isEditing ? (
+        {isEditing && (
+          <View style={styles.actions}>
             <View style={styles.editActions}>
               <TouchableOpacity
                 style={[styles.button, styles.cancelButton, isDark && styles.darkCancelButton]}
@@ -591,26 +1037,11 @@ export default function ProfileScreen() {
                 style={[styles.button, styles.saveButton, isDark && styles.darkSaveButton]}
                 onPress={handleSave}
               >
-                <Text style={styles.saveButtonText}>Save</Text>
+                <Text style={styles.saveButtonText}>Save All</Text>
               </TouchableOpacity>
             </View>
-          ) : (
-            <>
-              <TouchableOpacity
-                style={[styles.button, styles.editButton, isDark && styles.darkEditButton]}
-                onPress={() => setIsEditing(true)}
-              >
-                <Text style={styles.editButtonText}>Edit Profile</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, styles.clearDataButton, isDark && styles.darkClearDataButton]}
-                onPress={() => router.push('/clear-data')}
-              >
-                <Text style={styles.clearDataButtonText}>Clear Test Data</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -647,19 +1078,57 @@ const styles = StyleSheet.create({
   section: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 20,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    overflow: 'hidden',
+  },
+  darkCard: {
+    backgroundColor: '#1c1c1e',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    paddingBottom: 16,
+  },
+  sectionHeaderLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  sectionHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 16,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  sectionContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  iconButton: {
+    padding: 4,
+  },
+  darkIconButton: {
+    // Additional styles if needed
   },
   field: {
     marginBottom: 16,
@@ -701,6 +1170,11 @@ const styles = StyleSheet.create({
   settingLabel: {
     fontSize: 16,
     color: '#333',
+  },
+  settingRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   settingValue: {
     fontSize: 14,
@@ -757,9 +1231,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
-  editButton: {
-    backgroundColor: '#007AFF',
-  },
   saveButton: {
     backgroundColor: '#4CAF50',
   },
@@ -767,11 +1238,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     borderWidth: 1,
     borderColor: '#ddd',
-  },
-  editButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   saveButtonText: {
     color: '#fff',
@@ -782,15 +1248,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: '500',
-  },
-  clearDataButton: {
-    backgroundColor: '#ff3b30',
-    marginTop: 12,
-  },
-  clearDataButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   // Enhanced dark mode styles
   darkSubtitle: {
@@ -818,9 +1275,6 @@ const styles = StyleSheet.create({
   darkSettingValue: {
     color: '#999',
   },
-  darkEditButton: {
-    backgroundColor: '#007AFF',
-  },
   darkSaveButton: {
     backgroundColor: '#4CAF50',
   },
@@ -830,9 +1284,6 @@ const styles = StyleSheet.create({
   },
   darkCancelButtonText: {
     color: '#fff',
-  },
-  darkClearDataButton: {
-    backgroundColor: '#ff3b30',
   },
   autoFilledIndicator: {
     fontSize: 12,
@@ -909,5 +1360,103 @@ const styles = StyleSheet.create({
     color: '#666',
     lineHeight: 20,
     marginBottom: 12,
+  },
+  description: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  missingFieldsCard: {
+    backgroundColor: '#fff3cd',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#ffc107',
+  },
+  darkMissingFieldsCard: {
+    backgroundColor: '#2a2415',
+    borderColor: '#ff9800',
+  },
+  missingFieldsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  missingFieldsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#856404',
+  },
+  darkMissingFieldsTitle: {
+    color: '#ffab40',
+  },
+  missingFieldsDescription: {
+    fontSize: 14,
+    color: '#856404',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  darkMissingFieldsDescription: {
+    color: '#ffab40',
+  },
+  missingFieldsGroup: {
+    marginBottom: 12,
+  },
+  missingFieldsSectionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#856404',
+    marginBottom: 8,
+  },
+  darkMissingFieldsSectionTitle: {
+    color: '#ffab40',
+  },
+  missingFieldItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingLeft: 4,
+    gap: 10,
+  },
+  missingFieldItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#ffc107',
+  },
+  darkMissingFieldItem: {
+    // Additional dark mode styles if needed
+  },
+  darkMissingFieldItemBorder: {
+    borderBottomColor: '#ff9800',
+  },
+  missingFieldIcon: {
+    marginRight: 4,
+  },
+  missingFieldLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: '#856404',
+    fontWeight: '500',
+  },
+  darkMissingFieldLabel: {
+    color: '#ffab40',
+  },
+  editProfileButton: {
+    backgroundColor: '#ffc107',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  darkEditProfileButton: {
+    backgroundColor: '#ff9800',
+  },
+  editProfileButtonText: {
+    color: '#000',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

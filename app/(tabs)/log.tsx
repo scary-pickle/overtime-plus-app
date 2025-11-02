@@ -68,14 +68,8 @@ export default function LogScreen() {
   };
 
   const handleCloseAddMenu = () => {
-    Animated.spring(menuAnimation, {
-      toValue: 0,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 11,
-    }).start(() => {
-      setShowAddMenu(false);
-    });
+    setShowAddMenu(false);
+    menuAnimation.setValue(0);
   };
 
   const handleNewLog = () => {
@@ -855,6 +849,7 @@ const styles = StyleSheet.create({
     borderColor: '#e0e0e0',
     minWidth: 40,
     position: 'relative',
+    overflow: 'hidden',
   },
   darkFilterButton: {
     backgroundColor: '#1c1c1e',
@@ -897,22 +892,9 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#007AFF',
   },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
   activeFilterButton: {
     backgroundColor: '#007AFF',
     borderColor: '#007AFF',
-  },
-  darkFilterButton: {
-    backgroundColor: '#2c2c2e',
-    borderColor: '#333',
   },
   darkActiveFilterButton: {
     backgroundColor: '#007AFF',
@@ -1101,9 +1083,6 @@ const styles = StyleSheet.create({
     color: '#2e7d32',
     marginBottom: 4,
   },
-  darkText: {
-    color: '#fff',
-  },
   exportSubtitle: {
     fontSize: 14,
     color: '#4CAF50',
@@ -1247,18 +1226,19 @@ const styles = StyleSheet.create({
   // Filter Dropdown Styles
   filterDropdown: {
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 4,
+    elevation: 3,
     maxHeight: 400,
   },
   darkFilterDropdown: {
     backgroundColor: '#1c1c1e',
-    borderBottomColor: '#333',
   },
   filterDropdownContent: {
     paddingHorizontal: 16,
@@ -1271,7 +1251,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 0,
+    marginBottom: 12,
   },
   statusFilterScroll: {
     marginHorizontal: -16,

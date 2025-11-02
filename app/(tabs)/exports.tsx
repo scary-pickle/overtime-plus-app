@@ -656,7 +656,7 @@ export default function ExportsScreen() {
           {!selectionMode && (
             <View style={styles.exportActions}>
               <TouchableOpacity
-                style={[styles.actionButton, styles.submitButton]}
+                style={[styles.cardActionButton, styles.submitButton]}
                 onPress={() => handleSubmitEmail(item)}
                 disabled={submittingId === item.id}
               >
@@ -667,13 +667,13 @@ export default function ExportsScreen() {
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.actionButton, styles.shareButton]}
+                style={[styles.cardActionButton, styles.shareButton]}
                 onPress={() => handleSharePDF(item)}
               >
                 <Ionicons name="share" size={16} color="#fff" />
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.actionButton, styles.moreButton]}
+                style={[styles.cardActionButton, styles.moreButton]}
                 onPress={() => toggleExpandedActions(item.id)}
               >
                 <Ionicons name={expandedActionIds.has(item.id) ? 'close' : 'ellipsis-vertical'} size={16} color="#fff" />
@@ -682,7 +682,7 @@ export default function ExportsScreen() {
                 <View style={styles.inlineOverlay} pointerEvents="auto">
                   <View style={styles.inlineButtons} pointerEvents="auto">
                     <TouchableOpacity
-                      style={[styles.actionButton, styles.editButton]}
+                      style={[styles.cardActionButton, styles.editButton]}
                       onPress={() => {
                         console.log('[EXPORTS] Edit button pressed for batch:', item.id);
                         handleEditName(item);
@@ -691,7 +691,7 @@ export default function ExportsScreen() {
                       <Ionicons name="create" size={16} color="#fff" />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.actionButton, styles.deleteButton]}
+                      style={[styles.cardActionButton, styles.deleteButton]}
                       onPress={() => {
                         console.log('[EXPORTS] Delete button pressed for batch:', item.id);
                         handleDeleteBatch(item);
@@ -786,13 +786,13 @@ export default function ExportsScreen() {
               <>
                 <TouchableOpacity
                   onPress={handleBatchDelete}
-                  style={[styles.actionButton, styles.deleteActionButton]}
-                >
-                  <Ionicons name="trash" size={16} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleBatchShare}
-                  style={[styles.actionButton, styles.shareActionButton]}
+                style={[styles.cardActionButton, styles.deleteActionButton]}
+              >
+                <Ionicons name="trash" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleBatchShare}
+                style={[styles.cardActionButton, styles.shareActionButton]}
                   disabled={isBatchSharing}
                 >
                   {isBatchSharing ? (
@@ -805,22 +805,26 @@ export default function ExportsScreen() {
             )}
             <TouchableOpacity
               onPress={handleCancelSelection}
-              style={[styles.actionButton, styles.cancelActionButton]}
+              style={[styles.filterButton, isDark && styles.darkFilterButton]}
             >
-              <Text style={styles.cancelActionButtonText}>Cancel</Text>
+              <Ionicons 
+                name="close" 
+                size={18} 
+                color={isDark ? '#999' : '#666'} 
+              />
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.normalModeButtons}>
             <TouchableOpacity
               onPress={() => setSelectionMode(true)}
-              style={[styles.actionButton, styles.selectActionButton]}
+              style={[styles.filterButton, isDark && styles.darkFilterButton]}
             >
               <Ionicons name="checkbox-outline" size={18} color={isDark ? '#999' : '#666'} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleToggleFilter}
-              style={[styles.actionButton, styles.filterActionButton]}
+              style={[styles.filterButton, isDark && styles.darkFilterButton]}
             >
               <Ionicons 
                 name={isFilterExpanded ? "chevron-up" : "options"} 
@@ -828,8 +832,8 @@ export default function ExportsScreen() {
                 color={(submissionStatusFilter !== 'all' || dateFilter !== 'all') ? '#007AFF' : (isDark ? '#999' : '#666')} 
               />
               {(submissionStatusFilter !== 'all' || dateFilter !== 'all') && (
-                <View style={styles.filterActionButtonBadge}>
-                  <View style={styles.filterActionButtonDot} />
+                <View style={styles.filterButtonBadge}>
+                  <View style={styles.filterButtonDot} />
                 </View>
               )}
             </TouchableOpacity>
@@ -1050,25 +1054,68 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
   },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    minWidth: 40,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  darkFilterButton: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#333',
+  },
+  filterButtonBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#007AFF',
+  },
+  filterButtonDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#007AFF',
+  },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#fff',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
     minWidth: 40,
+    position: 'relative',
+    overflow: 'hidden',
   },
   selectActionButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    // Uses base actionButton styles
+  },
+  darkSelectActionButton: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#333',
+    borderRadius: 12,
   },
   filterActionButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    position: 'relative',
+    // Uses base actionButton styles
+  },
+  darkFilterActionButton: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#333',
+    borderRadius: 12,
   },
   deleteActionButton: {
     backgroundColor: '#FF3B30',
@@ -1082,25 +1129,25 @@ const styles = StyleSheet.create({
     borderColor: '#e0e0e0',
     paddingHorizontal: 16,
   },
+  darkCancelActionButton: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#333',
+  },
   cancelActionButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#666',
   },
-  filterActionButtonBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#007AFF',
+  darkCancelActionButtonText: {
+    color: '#fff',
   },
-  filterActionButtonDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#007AFF',
+  exitActionButton: {
+    // Uses base actionButton styles
+  },
+  darkExitActionButton: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#333',
+    borderRadius: 12,
   },
   centerContent: {
     justifyContent: 'center',
@@ -1142,9 +1189,6 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 4,
   },
-  darkText: {
-    color: '#fff',
-  },
   exportDate: {
     fontSize: 14,
     color: '#666',
@@ -1155,7 +1199,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 20, // Higher than card to ensure buttons are above dismiss overlay
   },
-  actionButton: {
+  cardActionButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -1345,18 +1389,19 @@ const styles = StyleSheet.create({
   },
   filterDropdown: {
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 4,
+    elevation: 3,
     maxHeight: 400,
   },
   darkFilterDropdown: {
     backgroundColor: '#1c1c1e',
-    borderBottomColor: '#333',
   },
   filterDropdownContent: {
     paddingHorizontal: 16,
@@ -1369,9 +1414,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 0,
+    marginBottom: 12,
   },
   statusFilterScroll: {
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
+  },
+  secondaryFilterScroll: {
     marginHorizontal: -16,
     paddingHorizontal: 16,
   },
@@ -1380,22 +1429,9 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingRight: 16,
   },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
   activeFilterButton: {
     backgroundColor: '#007AFF',
     borderColor: '#007AFF',
-  },
-  darkFilterButton: {
-    backgroundColor: '#2c2c2e',
-    borderColor: '#333',
   },
   darkActiveFilterButton: {
     backgroundColor: '#007AFF',
