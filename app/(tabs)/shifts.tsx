@@ -278,6 +278,11 @@ export default function ShiftsScreen() {
         renderItem={() => null}
         ListHeaderComponent={
           <View style={styles.content}>
+            {/* Header */}
+            <Text style={[styles.title, isDark && styles.darkText]}>
+              Shifts
+            </Text>
+
             {/* Calendar Picker */}
             <View style={styles.calendarSection}>
               <ShiftsCalendarView
@@ -353,7 +358,17 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 80,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 16,
+  },
+  darkText: {
+    color: '#fff',
   },
   calendarSection: {
     marginBottom: 8,

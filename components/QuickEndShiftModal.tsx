@@ -15,6 +15,7 @@ import { OvertimeLog } from '../types';
 import { useProfileStore } from '../lib/state/profileStore';
 import { useLogsStore } from '../lib/state/logsStore';
 import { computeMinutes, formatMinutes, getCurrentTime, getShiftStartDate, getCurrentDate } from '../lib/time';
+import { updateWidgetStatus } from '../lib/widget/widgetStatusUpdater';
 import { TimeInput } from './TimeInput';
 import { SharedTimePickerProvider } from './SharedTimePicker';
 import { NAButton } from './NAButton';
@@ -197,6 +198,9 @@ export function QuickEndShiftModal({
       if (draftLog.isActiveShift) {
         await clearActiveShift(draftLog.id);
       }
+      
+      // Update widget status
+      await updateWidgetStatus();
 
       Alert.alert('Success', 'Shift logged successfully!', [
         { text: 'OK', onPress: () => {
@@ -561,13 +565,13 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   section: {
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
   },
   darkCard: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#1c1c1e',
   },
   sectionHeader: {
     flexDirection: 'row',

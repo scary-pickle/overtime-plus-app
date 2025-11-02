@@ -112,3 +112,26 @@ export type ValidationRules = {
     categories: string[];
   };
 };
+
+export type LogTemplate = {
+  id: string;
+  name: string; // user-friendly name like "Weekend ED Call"
+  // Actual times are NOT stored in templates - they're left blank when using template
+  rosteredStart?: string | 'N/A';
+  rosteredFinish?: string | 'N/A';
+  mealBreakMinutes?: number;
+  category: 'Overtime'|'Oncall'|'HP Emergency Clinical on Call'|'HPDO Priority on Call'|'Recall Offsite'|'Recall Onsite'|'Recall Offsite Normal Duties (QPSOOE award)'|'Recall Telephone Advice (Medical)'|'Change shift'|'Change shift - cancel leave';
+  comments?: string;
+  concurrentEmployment?: boolean;
+  smoCategories?: {       // SMO-specific category checkboxes
+    vmoAdditionalHours?: boolean;
+    overtime?: boolean;
+    oncall?: boolean;
+    physicalRecall?: boolean;
+    digitalRecall?: boolean;
+    extraShift?: boolean;
+    approvedForPayment?: boolean;
+  };
+  createdAt: string;
+  updatedAt: string;
+};

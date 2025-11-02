@@ -1,7 +1,7 @@
 import * as MailComposer from 'expo-mail-composer';
 import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
-import { Profile } from '../../types';
+import { Profile, ExportBatch } from '../../types';
 import { getDelegateForDepartment } from '../data/hospitalDepartments';
 
 /**
@@ -62,7 +62,8 @@ export function composeAVACEmail(
   profile: Profile,
   pdfUri: string,
   recipientEmail: string,
-  recipientName?: string
+  recipientName?: string,
+  exportBatch?: ExportBatch
 ): {
   recipients: string[];
   subject: string;
@@ -72,11 +73,15 @@ export function composeAVACEmail(
   // Use custom template or default
   const template = profile.emailTemplate || DEFAULT_EMAIL_TEMPLATE;
   
+  // Calculate total hours from export batch or default to 0
+  const totalMinutes = exportBatch?.totalMinutes || 0;
+  const totalHours = Math.floor(totalMinutes / 60);
+  
   // Prepare template variables
   const variables = {
     'User Name': profile.fullName,
     'Date': new Date().toLocaleDateString('en-AU'),
-    'Total Hours': Math.floor(0 / 60).toString(), // Will be calculated from logs
+    'Total Hours': totalHours.toString(),
   };
   
   // Parse template
@@ -97,7 +102,7 @@ export function composeAVACEmail(
  * Send AVAC email using mailto: URL (respects default mail app but no attachment)
  * This opens the user's default email app (e.g., Outlook if set as default)
  */
-export async function sendAVACEmailViaMailto(profile: Profile): Promise<{
+export async function sendAVACEmailViaMailto(profile: Profile, exportBatch?: ExportBatch): Promise<{
   success: boolean;
   error?: string;
   needsAttachment?: boolean;
@@ -115,11 +120,15 @@ export async function sendAVACEmailViaMailto(profile: Profile): Promise<{
     // Use custom template or default
     const template = profile.emailTemplate || DEFAULT_EMAIL_TEMPLATE;
     
+    // Calculate total hours from export batch or default to 0
+    const totalMinutes = exportBatch?.totalMinutes || 0;
+    const totalHours = Math.floor(totalMinutes / 60);
+    
     // Prepare template variables
     const variables = {
       'User Name': profile.fullName,
       'Date': new Date().toLocaleDateString('en-AU'),
-      'Total Hours': '0', // Will be calculated from logs
+      'Total Hours': totalHours.toString(),
     };
     
     // Parse template
@@ -159,7 +168,7 @@ export async function sendAVACEmailViaMailto(profile: Profile): Promise<{
  * Send AVAC email using device's email app (Apple Mail only with attachment)
  * Note: This always opens Apple Mail, regardless of default mail app setting
  */
-export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: string): Promise<{
+export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: string, exportBatch?: ExportBatch): Promise<{
   success: boolean;
   error?: string;
 }> {
@@ -183,7 +192,7 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
     }
     
     // Compose email
-    const emailData = composeAVACEmail(profile, pdfUri, recipient.email, recipient.name);
+    const emailData = composeAVACEmail(profile, pdfUri, recipient.email, recipient.name, exportBatch);
     
     // Open email composer (always opens Apple Mail)
     const result = await MailComposer.composeAsync({
@@ -230,7 +239,7 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
  * Get recipient information for AVAC submission
  * Returns recipient email and formatted message for sharing
  */
-export async function getAVACRecipientInfo(profile: Profile): Promise<{
+export async function getAVACRecipientInfo(profile: Profile, exportBatch?: ExportBatch): Promise<{
   success: boolean;
   error?: string;
   recipientEmail?: string;
@@ -251,11 +260,15 @@ export async function getAVACRecipientInfo(profile: Profile): Promise<{
     // Use custom template or default
     const template = profile.emailTemplate || DEFAULT_EMAIL_TEMPLATE;
     
+    // Calculate total hours from export batch or default to 0
+    const totalMinutes = exportBatch?.totalMinutes || 0;
+    const totalHours = Math.floor(totalMinutes / 60);
+    
     // Prepare template variables
     const variables = {
       'User Name': profile.fullName,
       'Date': new Date().toLocaleDateString('en-AU'),
-      'Total Hours': '0', // Will be calculated from logs
+      'Total Hours': totalHours.toString(),
     };
     
     // Parse template
@@ -282,7 +295,7 @@ export async function getAVACRecipientInfo(profile: Profile): Promise<{
  * Send AVAC email using the method specified in user profile
  * Defaults to share-sheet method if not specified
  */
-export async function sendAVACEmail(profile: Profile, pdfUri: string): Promise<{
+export async function sendAVACEmail(profile: Profile, pdfUri: string, exportBatch?: ExportBatch): Promise<{
   success: boolean;
   error?: string;
   recipientEmail?: string;
@@ -296,14 +309,14 @@ export async function sendAVACEmail(profile: Profile, pdfUri: string): Promise<{
   
   if (method === 'apple-mail') {
     // Use expo-mail-composer (Apple Mail with full pre-fill including attachment)
-    const result = await sendAVACEmailWithAttachment(profile, pdfUri);
+    const result = await sendAVACEmailWithAttachment(profile, pdfUri, exportBatch);
     return {
       ...result,
       useAppleMail: true
     };
   } else {
     // Use share sheet method (works with Outlook, requires clipboard paste)
-    const recipientInfo = await getAVACRecipientInfo(profile);
+    const recipientInfo = await getAVACRecipientInfo(profile, exportBatch);
     
     if (!recipientInfo.success) {
       return {

@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   subtitle: { marginTop: 2, color: '#666', fontSize: 12 },
   darkSubtitle: { color: '#aaa' },
   darkText: { color: '#fff' },
-  segment: { flexDirection: 'row', backgroundColor: '#f2f2f7', marginHorizontal: 16, borderRadius: 12, overflow: 'hidden' },
+  segment: { flexDirection: 'row', backgroundColor: '#f2f2f7', marginHorizontal: 16, marginTop: 16, borderRadius: 12, overflow: 'hidden' },
   darkSegment: { backgroundColor: '#1c1c1e' },
   segmentBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
   segmentBtnActive: { backgroundColor: '#fff', borderRadius: 12 },

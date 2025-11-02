@@ -220,7 +220,7 @@ export default function ProfileScreen() {
     <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
       <View style={styles.content}>
         {/* Header */}
-        <View style={[styles.header, isDark && styles.darkCard]}>
+        <View style={styles.headerContainer}>
           <Text style={[styles.title, isDark && styles.darkText]}>
             Profile
           </Text>
@@ -545,6 +545,38 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Widget Setup */}
+        <View style={[styles.section, isDark && styles.darkCard]}>
+          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+            Home Screen Widget
+          </Text>
+          <Text style={[styles.description, isDark && styles.darkText]}>
+            Add the Overtime+ widget to your home screen to quickly start or end shifts.
+          </Text>
+          
+          <View style={styles.widgetInstructions}>
+            <Text style={[styles.instructionTitle, isDark && styles.darkText]}>
+              iOS:
+            </Text>
+            <Text style={[styles.instructionText, isDark && styles.darkText]}>
+              1. Long press on your home screen{'\n'}
+              2. Tap the "+" button{'\n'}
+              3. Search for "Overtime+"{'\n'}
+              4. Select widget size and tap "Add Widget"
+            </Text>
+            
+            <Text style={[styles.instructionTitle, isDark && styles.darkText]}>
+              Android:
+            </Text>
+            <Text style={[styles.instructionText, isDark && styles.darkText]}>
+              1. Long press on your home screen{'\n'}
+              2. Select "Widgets"{'\n'}
+              3. Find "Overtime+"{'\n'}
+              4. Drag to your home screen
+            </Text>
+          </View>
+        </View>
+
         {/* Action Buttons */}
         <View style={styles.actions}>
           {isEditing ? (
@@ -594,20 +626,10 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingTop: 80,
   },
-  header: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
+  headerContainer: {
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  darkCard: {
-    backgroundColor: '#1c1c1e',
   },
   title: {
     fontSize: 24,
@@ -871,5 +893,21 @@ const styles = StyleSheet.create({
   },
   switch: {
     transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }],
+  },
+  widgetInstructions: {
+    marginTop: 12,
+    gap: 16,
+  },
+  instructionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 6,
+  },
+  instructionText: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 12,
   },
 });

@@ -20,6 +20,7 @@ import { getRosterForDate } from '../../lib/roster';
 import { LateBadge } from '../../components/LateBadge';
 import { EmptyState } from '../../components/EmptyState';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
+import { updateWidgetStatus } from '../../lib/widget/widgetStatusUpdater';
 import { OvertimeLog } from '../../types';
 // Analytics charts preview removed from Home; link provided on Weekly card instead
 
@@ -235,6 +236,9 @@ export default function HomeScreen() {
 
       await addLog(draftLog);
       setActiveShiftDraft(draftLog);
+      
+      // Update widget status
+      await updateWidgetStatus();
 
       const message = roster 
         ? `Shift started at ${currentActualTime}` 
@@ -374,14 +378,6 @@ export default function HomeScreen() {
   const readyLogs = getReadyLogs();
   const pendingCount = draftLogs.length + readyLogs.length;
 
-  // Debug information
-  console.log('Home Screen Debug:', {
-    hasProfile,
-    isComplete,
-    profile: profile ? 'Profile exists' : 'No profile',
-    profileKeys: profile ? Object.keys(profile) : 'No profile'
-  });
-
   if (!hasProfile) {
     return (
       <ScrollView 
@@ -448,6 +444,11 @@ export default function HomeScreen() {
       }
     >
       <View style={styles.content}>
+        {/* Header */}
+        <Text style={[styles.title, isDark && styles.darkText]}>
+          Home
+        </Text>
+
         {/* Today Card */}
         <View style={[styles.todayCard, isDark && styles.darkCard]}>
           <Text style={[styles.todayTitle, isDark && styles.darkText]}>
@@ -631,6 +632,13 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingTop: 80,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 16,
   },
   todayCard: {
     backgroundColor: '#fff',

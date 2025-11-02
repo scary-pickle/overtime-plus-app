@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,17 +11,24 @@ import {
   RefreshControl,
   TextInput,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
-import { getInfoAsync } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system';
+import { Paths } from 'expo-file-system';
+import { getInfoAsync, readAsStringAsync, writeAsStringAsync, deleteAsync } from 'expo-file-system/legacy';
+import { PDFDocument } from 'pdf-lib';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { formatMinutes } from '../../lib/time';
 import { ExportBatch } from '../../types';
 import { sendAVACEmail } from '../../lib/email/emailService';
+
+type SubmissionStatusFilter = 'all' | 'submitted' | 'notSubmitted';
+type DateFilter = 'all' | 'today' | 'thisWeek' | 'thisMonth' | 'lastMonth' | 'thisYear';
 
 export default function ExportsScreen() {
   const router = useRouter();
@@ -36,10 +43,151 @@ export default function ExportsScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [expandedActionIds, setExpandedActionIds] = useState<Set<string>>(new Set());
+  const [submissionStatusFilter, setSubmissionStatusFilter] = useState<SubmissionStatusFilter>('all');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
+  const [isDateExpanded, setIsDateExpanded] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
+  const [isBatchSharing, setIsBatchSharing] = useState(false);
 
   useEffect(() => {
     loadExportBatches();
   }, []);
+
+  const handleToggleFilter = () => {
+    setIsFilterExpanded(!isFilterExpanded);
+  };
+
+
+  const handleSubmissionStatusFilterChange = (status: SubmissionStatusFilter) => {
+    if (submissionStatusFilter === status) {
+      setSubmissionStatusFilter('all');
+    } else {
+      setSubmissionStatusFilter(status);
+    }
+  };
+
+  const handleDateFilterChange = (filter: DateFilter) => {
+    if (dateFilter === filter) {
+      setDateFilter('all');
+    } else {
+      setDateFilter(filter);
+    }
+  };
+
+  const getFilteredBatches = () => {
+    let filtered = exportBatches;
+
+    // Apply submission status filter
+    if (submissionStatusFilter !== 'all') {
+      filtered = filtered.filter(batch => {
+        if (submissionStatusFilter === 'submitted') {
+          return batch.submittedAt !== undefined;
+        } else {
+          return batch.submittedAt === undefined;
+        }
+      });
+    }
+
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      filtered = filtered.filter(batch => {
+        const batchDate = new Date(batch.createdAt);
+        const batchDateOnly = new Date(batchDate.getFullYear(), batchDate.getMonth(), batchDate.getDate());
+
+        switch (dateFilter) {
+          case 'today':
+            return batchDateOnly.getTime() === today.getTime();
+          
+          case 'thisWeek': {
+            const weekStart = new Date(today);
+            weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+            weekStart.setHours(0, 0, 0, 0);
+            const todayEnd = new Date(today);
+            todayEnd.setHours(23, 59, 59, 999);
+            return batchDateOnly.getTime() >= weekStart.getTime() && batchDateOnly.getTime() <= todayEnd.getTime();
+          }
+          
+          case 'thisMonth':
+            return batchDate.getMonth() === now.getMonth() && 
+                   batchDate.getFullYear() === now.getFullYear();
+          
+          case 'lastMonth': {
+            const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            lastMonthStart.setHours(0, 0, 0, 0);
+            const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            thisMonthStart.setHours(0, 0, 0, 0);
+            return batchDateOnly.getTime() >= lastMonthStart.getTime() && batchDateOnly.getTime() < thisMonthStart.getTime();
+          }
+          
+          case 'thisYear':
+            return batchDate.getFullYear() === now.getFullYear();
+          
+          default:
+            return true;
+        }
+      });
+    }
+
+    return filtered;
+  };
+
+  const renderFilterButton = (status: SubmissionStatusFilter, label: string) => {
+    const isActive = submissionStatusFilter === status && submissionStatusFilter !== 'all';
+    const count = status === 'all' ? exportBatches.length :
+                  status === 'submitted' ? exportBatches.filter(b => b.submittedAt).length :
+                  exportBatches.filter(b => !b.submittedAt).length;
+    
+    return (
+      <TouchableOpacity
+        style={[
+          styles.filterButton,
+          isActive && styles.activeFilterButton,
+          isDark && styles.darkFilterButton,
+          isActive && isDark && styles.darkActiveFilterButton,
+        ]}
+        onPress={() => handleSubmissionStatusFilterChange(status)}
+      >
+        <Text
+          style={[
+            styles.filterButtonText,
+            isActive && styles.activeFilterButtonText,
+            isDark && styles.darkFilterButtonText,
+            isActive && isDark && styles.darkActiveFilterButtonText,
+          ]}
+        >
+          {label} ({count})
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderDateFilterButton = (filter: DateFilter, label: string, isActive: boolean) => (
+    <TouchableOpacity
+      style={[
+        styles.secondaryFilterButton,
+        isActive && styles.activeSecondaryFilterButton,
+        isDark && styles.darkSecondaryFilterButton,
+        isActive && isDark && styles.darkActiveSecondaryFilterButton,
+      ]}
+      onPress={() => handleDateFilterChange(filter)}
+    >
+      <Text
+        style={[
+          styles.secondaryFilterButtonText,
+          isActive && styles.activeSecondaryFilterButtonText,
+          isDark && styles.darkSecondaryFilterButtonText,
+          isActive && isDark && styles.darkActiveSecondaryFilterButtonText,
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -198,7 +346,7 @@ export default function ExportsScreen() {
 
     setSubmittingId(batch.id);
     try {
-      const result = await sendAVACEmail(profile, batch.pdfUri);
+      const result = await sendAVACEmail(profile, batch.pdfUri, batch);
       
       if (result.success && result.useAppleMail) {
         // Apple Mail method - everything is pre-filled with attachment
@@ -265,15 +413,233 @@ export default function ExportsScreen() {
     }
   };
 
+  const handleToggleBatchSelection = (batchId: string) => {
+    setSelectedBatchIds(prev => {
+      const next = new Set(prev);
+      if (next.has(batchId)) {
+        next.delete(batchId);
+      } else {
+        next.add(batchId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    const filtered = getFilteredBatches();
+    const allBatchIds = new Set(filtered.map(batch => batch.id));
+    setSelectedBatchIds(allBatchIds);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedBatchIds(new Set());
+  };
+
+  const handleCancelSelection = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedBatchIds(new Set());
+  }, []);
+
+  const handleBatchDelete = useCallback(() => {
+    if (selectedBatchIds.size === 0) return;
+
+    const filtered = getFilteredBatches();
+    const selectedBatches = filtered.filter(batch => 
+      selectedBatchIds.has(batch.id)
+    );
+
+    if (selectedBatches.length === 0) return;
+
+    const batchCount = selectedBatches.length;
+    const batchNames = selectedBatches
+      .slice(0, 3)
+      .map(batch => batch.customName || `Export #${batch.id.split('_')[1]}`)
+      .join('\n');
+    const moreText = batchCount > 3 ? `\n...and ${batchCount - 3} more` : '';
+
+    Alert.alert(
+      'Delete Exports',
+      `Are you sure you want to delete ${batchCount} export${batchCount > 1 ? 's' : ''}? This action cannot be undone.\n\n${batchNames}${moreText}`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => console.log('[EXPORTS] Batch delete cancelled')
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            console.log('[EXPORTS] Batch delete confirmed, deleting', batchCount, 'exports');
+            
+            // Delete all selected batches
+            selectedBatches.forEach(batch => {
+              deleteExportBatch(batch.id);
+            });
+            
+            // Exit selection mode
+            setSelectionMode(false);
+            setSelectedBatchIds(new Set());
+          },
+        },
+      ]
+    );
+  }, [selectedBatchIds, exportBatches, submissionStatusFilter, dateFilter, deleteExportBatch]);
+
+  const handleBatchShare = useCallback(async () => {
+    if (selectedBatchIds.size === 0) return;
+
+    const filtered = getFilteredBatches();
+    const selectedBatches = filtered.filter(batch => 
+      selectedBatchIds.has(batch.id) && batch.pdfUri
+    );
+
+    if (selectedBatches.length === 0) {
+      Alert.alert('No Valid Exports', 'Selected exports do not have PDF files available.');
+      return;
+    }
+
+    if (selectedBatches.length === 1) {
+      // Single file - just share it normally
+      handleSharePDF(selectedBatches[0]);
+      setSelectionMode(false);
+      setSelectedBatchIds(new Set());
+      return;
+    }
+
+    // Multiple files - merge PDFs into one and share it
+    setIsBatchSharing(true);
+    
+    try {
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Sharing not available', 'Sharing is not available on this device.');
+        setIsBatchSharing(false);
+        return;
+      }
+
+      // Create a new PDF document to merge all PDFs into
+      const mergedPdf = await PDFDocument.create();
+      
+      // Read all PDF files and merge their pages into the merged PDF
+      for (const batch of selectedBatches) {
+        try {
+          // Read PDF file as base64
+          const pdfBase64 = await readAsStringAsync(batch.pdfUri, {
+            encoding: 'base64',
+          });
+          
+          // Convert base64 to Uint8Array
+          const binaryString = atob(pdfBase64);
+          const pdfBytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            pdfBytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          // Load the PDF document
+          const pdfDoc = await PDFDocument.load(pdfBytes);
+          
+          // Copy all pages from this PDF to the merged PDF
+          const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+          pages.forEach((page) => mergedPdf.addPage(page));
+          
+        } catch (error) {
+          console.error(`Failed to read or merge PDF ${batch.id}:`, error);
+          Alert.alert('Error', `Failed to read PDF: ${batch.customName || batch.id}. Skipping...`);
+        }
+      }
+
+      // Generate the merged PDF bytes
+      const mergedPdfBytes = await mergedPdf.save();
+      
+      // Convert Uint8Array to base64 string
+      let base64String: string;
+      try {
+        const binaryString = String.fromCharCode(...mergedPdfBytes);
+        base64String = btoa(binaryString);
+      } catch (error) {
+        // Fallback for large files
+        const chunks: string[] = [];
+        const chunkSize = 8192;
+        for (let i = 0; i < mergedPdfBytes.length; i += chunkSize) {
+          const chunk = mergedPdfBytes.slice(i, i + chunkSize);
+          chunks.push(String.fromCharCode(...chunk));
+        }
+        base64String = btoa(chunks.join(''));
+      }
+      
+      // Save merged PDF file to temporary directory
+      const mergedFileName = `AVAC_Merged_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
+      const mergedPdfUri = `${Paths.cache.uri}/${mergedFileName}`;
+      
+      // Write merged PDF file
+      await writeAsStringAsync(mergedPdfUri, base64String, {
+        encoding: 'base64',
+      });
+
+      // Share the merged PDF file
+      await Sharing.shareAsync(mergedPdfUri, {
+        mimeType: 'application/pdf',
+        dialogTitle: `Share Merged AVAC Export${selectedBatches.length > 1 ? 's' : ''} (${selectedBatches.length} file${selectedBatches.length > 1 ? 's' : ''} merged)`,
+        UTI: 'com.adobe.pdf',
+      });
+
+      // Clean up merged PDF file after a delay
+      setTimeout(async () => {
+        try {
+          const fileInfo = await getInfoAsync(mergedPdfUri);
+          if (fileInfo.exists) {
+            await deleteAsync(mergedPdfUri, { idempotent: true });
+          }
+        } catch (error) {
+          console.error('Failed to clean up merged PDF file:', error);
+        }
+      }, 10000); // Clean up after 10 seconds
+
+      setSelectionMode(false);
+      setSelectedBatchIds(new Set());
+    } catch (error) {
+      console.error('Batch sharing failed:', error);
+      Alert.alert('Sharing Failed', 'Failed to merge or share PDF files. Please try again.');
+    } finally {
+      setIsBatchSharing(false);
+    }
+  }, [selectedBatchIds, exportBatches, submissionStatusFilter, dateFilter, handleSharePDF]);
+
   const renderExportItem = ({ item }: { item: ExportBatch }) => {
     const totalHours = Math.floor(item.totalMinutes / 60);
     const remainingMinutes = item.totalMinutes % 60;
     const createdDate = new Date(item.createdAt);
+    const isSelected = selectedBatchIds.has(item.id);
 
     return (
-      <View style={[styles.exportCard, isDark && styles.darkCard]}>
+      <TouchableOpacity
+        style={[
+          styles.exportCard,
+          isDark && styles.darkCard,
+          selectionMode && isSelected && styles.selectedCard,
+        ]}
+        onPress={selectionMode ? () => handleToggleBatchSelection(item.id) : undefined}
+        activeOpacity={selectionMode ? 0.7 : 1}
+      >
         <View style={styles.exportHeader}>
-          <View style={styles.exportInfo}>
+          {selectionMode && (
+            <TouchableOpacity
+              style={styles.checkboxContainer}
+              onPress={() => handleToggleBatchSelection(item.id)}
+            >
+              <View style={[
+                styles.checkbox,
+                isSelected && styles.checkboxSelected,
+                isDark && styles.darkCheckbox,
+                isSelected && isDark && styles.darkCheckboxSelected,
+              ]}>
+                {isSelected && (
+                  <Ionicons name="checkmark" size={16} color="#fff" />
+                )}
+              </View>
+            </TouchableOpacity>
+          )}
+          <View style={[styles.exportInfo, selectionMode && styles.exportInfoWithCheckbox]}>
             <Text style={[styles.exportTitle, isDark && styles.darkText]}>
               {item.customName || `Export #${item.id.split('_')[1]}`}
             </Text>
@@ -287,55 +653,57 @@ export default function ExportsScreen() {
               })}
             </Text>
           </View>
-          <View style={styles.exportActions}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.submitButton]}
-              onPress={() => handleSubmitEmail(item)}
-              disabled={submittingId === item.id}
-            >
-              {submittingId === item.id ? (
-                <ActivityIndicator size={16} color="#fff" />
-              ) : (
-                <Ionicons name="mail" size={16} color="#fff" />
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.shareButton]}
-              onPress={() => handleSharePDF(item)}
-            >
-              <Ionicons name="share" size={16} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.moreButton]}
-              onPress={() => toggleExpandedActions(item.id)}
-            >
-              <Ionicons name={expandedActionIds.has(item.id) ? 'close' : 'ellipsis-vertical'} size={16} color="#fff" />
-            </TouchableOpacity>
-            {expandedActionIds.has(item.id) && (
-              <View style={styles.inlineOverlay} pointerEvents="auto">
-                <View style={styles.inlineButtons} pointerEvents="auto">
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.editButton]}
-                    onPress={() => {
-                      console.log('[EXPORTS] Edit button pressed for batch:', item.id);
-                      handleEditName(item);
-                    }}
-                  >
-                    <Ionicons name="create" size={16} color="#fff" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.deleteButton]}
-                    onPress={() => {
-                      console.log('[EXPORTS] Delete button pressed for batch:', item.id);
-                      handleDeleteBatch(item);
-                    }}
-                  >
-                    <Ionicons name="trash" size={16} color="#fff" />
-                  </TouchableOpacity>
+          {!selectionMode && (
+            <View style={styles.exportActions}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.submitButton]}
+                onPress={() => handleSubmitEmail(item)}
+                disabled={submittingId === item.id}
+              >
+                {submittingId === item.id ? (
+                  <ActivityIndicator size={16} color="#fff" />
+                ) : (
+                  <Ionicons name="mail" size={16} color="#fff" />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.shareButton]}
+                onPress={() => handleSharePDF(item)}
+              >
+                <Ionicons name="share" size={16} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.moreButton]}
+                onPress={() => toggleExpandedActions(item.id)}
+              >
+                <Ionicons name={expandedActionIds.has(item.id) ? 'close' : 'ellipsis-vertical'} size={16} color="#fff" />
+              </TouchableOpacity>
+              {expandedActionIds.has(item.id) && (
+                <View style={styles.inlineOverlay} pointerEvents="auto">
+                  <View style={styles.inlineButtons} pointerEvents="auto">
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.editButton]}
+                      onPress={() => {
+                        console.log('[EXPORTS] Edit button pressed for batch:', item.id);
+                        handleEditName(item);
+                      }}
+                    >
+                      <Ionicons name="create" size={16} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.deleteButton]}
+                      onPress={() => {
+                        console.log('[EXPORTS] Delete button pressed for batch:', item.id);
+                        handleDeleteBatch(item);
+                      }}
+                    >
+                      <Ionicons name="trash" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            )}
-          </View>
+              )}
+            </View>
+          )}
         </View>
 
         <View style={styles.exportDetails}>
@@ -370,7 +738,7 @@ export default function ExportsScreen() {
             </Text>
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -403,10 +771,197 @@ export default function ExportsScreen() {
     );
   }
 
+  const filteredBatches = getFilteredBatches();
+
   return (
     <View style={[styles.container, isDark && styles.darkContainer]}>
+      {/* Header */}
+      <View style={styles.headerContainer}>
+        <Text style={[styles.title, isDark && styles.darkText]}>
+          Exports
+        </Text>
+        {selectionMode ? (
+          <View style={styles.selectionModeButtons}>
+            {selectedBatchIds.size > 0 && (
+              <>
+                <TouchableOpacity
+                  onPress={handleBatchDelete}
+                  style={[styles.actionButton, styles.deleteActionButton]}
+                >
+                  <Ionicons name="trash" size={16} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleBatchShare}
+                  style={[styles.actionButton, styles.shareActionButton]}
+                  disabled={isBatchSharing}
+                >
+                  {isBatchSharing ? (
+                    <ActivityIndicator size={14} color="#fff" />
+                  ) : (
+                    <Ionicons name="share" size={16} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity
+              onPress={handleCancelSelection}
+              style={[styles.actionButton, styles.cancelActionButton]}
+            >
+              <Text style={styles.cancelActionButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.normalModeButtons}>
+            <TouchableOpacity
+              onPress={() => setSelectionMode(true)}
+              style={[styles.actionButton, styles.selectActionButton]}
+            >
+              <Ionicons name="checkbox-outline" size={18} color={isDark ? '#999' : '#666'} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleToggleFilter}
+              style={[styles.actionButton, styles.filterActionButton]}
+            >
+              <Ionicons 
+                name={isFilterExpanded ? "chevron-up" : "options"} 
+                size={18} 
+                color={(submissionStatusFilter !== 'all' || dateFilter !== 'all') ? '#007AFF' : (isDark ? '#999' : '#666')} 
+              />
+              {(submissionStatusFilter !== 'all' || dateFilter !== 'all') && (
+                <View style={styles.filterActionButtonBadge}>
+                  <View style={styles.filterActionButtonDot} />
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* Filter Dropdown - Expands Below Header */}
+      {isFilterExpanded && (
+        <View style={[styles.filterDropdown, isDark && styles.darkFilterDropdown]}>
+          <ScrollView style={styles.filterDropdownContent} showsVerticalScrollIndicator={false}>
+            {/* Submission Status Filters */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterSectionTitle, isDark && styles.darkText]}>Submission Status</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusFilterScroll}>
+                <View style={styles.filterButtonRow}>
+                  {renderFilterButton('all', 'All')}
+                  {renderFilterButton('submitted', 'Submitted')}
+                  {renderFilterButton('notSubmitted', 'Not Submitted')}
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* Date Filter Section */}
+            <View style={styles.filterSection}>
+              <TouchableOpacity
+                style={[
+                  styles.filterTypeHeader,
+                  isDateExpanded && styles.filterTypeHeaderExpanded,
+                  isDark && styles.darkFilterTypeHeader,
+                  isDateExpanded && isDark && styles.darkFilterTypeHeaderExpanded,
+                ]}
+                onPress={() => setIsDateExpanded(!isDateExpanded)}
+              >
+                <View style={styles.filterTypeHeaderContent}>
+                  <View style={[
+                    styles.filterTypeIconContainer,
+                    dateFilter !== 'all' && styles.filterTypeIconContainerActive,
+                    isDark && styles.darkFilterTypeIconContainer,
+                    dateFilter !== 'all' && isDark && styles.darkFilterTypeIconContainerActive,
+                  ]}>
+                    <Ionicons 
+                      name="calendar" 
+                      size={14} 
+                      color={dateFilter !== 'all' ? '#fff' : (isDark ? '#999' : '#666')} 
+                    />
+                  </View>
+                  <View style={styles.filterTypeTextContainer}>
+                    <Text style={[styles.filterSectionTitle, isDark && styles.darkText]}>Date</Text>
+                    {dateFilter !== 'all' && (
+                      <Text style={[styles.filterActiveIndicator, isDark && styles.darkFilterActiveIndicator]}>
+                        {dateFilter === 'today' ? 'Today' :
+                         dateFilter === 'thisWeek' ? 'This Week' :
+                         dateFilter === 'thisMonth' ? 'This Month' :
+                         dateFilter === 'lastMonth' ? 'Last Month' :
+                         dateFilter === 'thisYear' ? 'This Year' : dateFilter}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.filterTypeChevronContainer}>
+                  <Ionicons 
+                    name={isDateExpanded ? "chevron-up" : "chevron-down"} 
+                    size={16} 
+                    color={isDark ? '#999' : '#666'} 
+                  />
+                </View>
+              </TouchableOpacity>
+              
+              {isDateExpanded && (
+                <View style={[
+                  styles.expandedContentContainer,
+                  isDark && styles.darkExpandedContentContainer,
+                ]}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.secondaryFilterScroll}>
+                    {renderDateFilterButton('all', 'All Time', dateFilter === 'all')}
+                    {renderDateFilterButton('today', 'Today', dateFilter === 'today')}
+                    {renderDateFilterButton('thisWeek', 'This Week', dateFilter === 'thisWeek')}
+                    {renderDateFilterButton('thisMonth', 'This Month', dateFilter === 'thisMonth')}
+                    {renderDateFilterButton('lastMonth', 'Last Month', dateFilter === 'lastMonth')}
+                    {renderDateFilterButton('thisYear', 'This Year', dateFilter === 'thisYear')}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+
+            {/* Clear All Button */}
+            {(submissionStatusFilter !== 'all' || dateFilter !== 'all') && (
+              <TouchableOpacity
+                style={[styles.clearAllButton, isDark && styles.darkClearAllButton]}
+                onPress={() => {
+                  setSubmissionStatusFilter('all');
+                  setDateFilter('all');
+                }}
+              >
+                <Ionicons name="refresh" size={16} color={isDark ? '#fff' : '#007AFF'} />
+                <Text style={[styles.clearAllButtonText, isDark && styles.darkClearAllButtonText]}>
+                  Clear All Filters
+                </Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      {selectionMode && selectedBatchIds.size > 0 && (
+        <View style={[styles.selectionBar, isDark && styles.darkSelectionBar]}>
+          <TouchableOpacity
+            style={styles.selectionButton}
+            onPress={() => {
+              const filtered = getFilteredBatches();
+              if (selectedBatchIds.size === filtered.length) {
+                handleDeselectAll();
+              } else {
+                handleSelectAll();
+              }
+            }}
+          >
+            <Text style={[styles.selectionButtonText, isDark && styles.selectionButtonTextDark]}>
+              {(() => {
+                const filtered = getFilteredBatches();
+                return selectedBatchIds.size === filtered.length ? 'Deselect All' : 'Select All';
+              })()}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.selectionCount, isDark && styles.selectionCountDark]}>
+            {selectedBatchIds.size} selected
+          </Text>
+        </View>
+      )}
       <FlatList
-        data={exportBatches}
+        data={filteredBatches}
         renderItem={renderExportItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
@@ -468,6 +1023,84 @@ const styles = StyleSheet.create({
   },
   darkContainer: {
     backgroundColor: '#000',
+  },
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  darkText: {
+    color: '#fff',
+  },
+  selectionModeButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  normalModeButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    minWidth: 40,
+  },
+  selectActionButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  filterActionButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    position: 'relative',
+  },
+  deleteActionButton: {
+    backgroundColor: '#FF3B30',
+  },
+  shareActionButton: {
+    backgroundColor: '#007AFF',
+  },
+  cancelActionButton: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    paddingHorizontal: 16,
+  },
+  cancelActionButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  filterActionButtonBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#007AFF',
+  },
+  filterActionButtonDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#007AFF',
   },
   centerContent: {
     justifyContent: 'center',
@@ -687,5 +1320,309 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  // removed menu styles (replaced by inline expansion)
+  // Filter Styles (matching logs screen)
+  headerFilterButton: {
+    marginRight: 8,
+    padding: 8,
+    position: 'relative',
+  },
+  headerFilterBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerFilterDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#007AFF',
+  },
+  filterDropdown: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+    maxHeight: 400,
+  },
+  darkFilterDropdown: {
+    backgroundColor: '#1c1c1e',
+    borderBottomColor: '#333',
+  },
+  filterDropdownContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  filterSection: {
+    marginBottom: 12,
+  },
+  filterSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 0,
+  },
+  statusFilterScroll: {
+    marginHorizontal: -16,
+    paddingHorizontal: 16,
+  },
+  filterButtonRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 16,
+  },
+  filterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  activeFilterButton: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  darkFilterButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  darkActiveFilterButton: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  filterButtonText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  activeFilterButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  darkFilterButtonText: {
+    color: '#999',
+  },
+  darkActiveFilterButtonText: {
+    color: '#fff',
+  },
+  filterTypeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 2,
+  },
+  filterTypeHeaderExpanded: {
+    backgroundColor: 'transparent',
+  },
+  darkFilterTypeHeader: {
+    backgroundColor: 'transparent',
+  },
+  darkFilterTypeHeaderExpanded: {
+    backgroundColor: 'transparent',
+  },
+  filterTypeHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  filterTypeIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterTypeIconContainerActive: {
+    backgroundColor: '#007AFF',
+  },
+  darkFilterTypeIconContainer: {
+    backgroundColor: 'transparent',
+  },
+  darkFilterTypeIconContainerActive: {
+    backgroundColor: '#007AFF',
+  },
+  filterTypeTextContainer: {
+    flex: 1,
+  },
+  filterActiveIndicator: {
+    fontSize: 11,
+    color: '#007AFF',
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  darkFilterActiveIndicator: {
+    color: '#007AFF',
+  },
+  filterTypeChevronContainer: {
+    marginLeft: 4,
+  },
+  expandedContentContainer: {
+    paddingTop: 4,
+    paddingBottom: 2,
+    paddingHorizontal: 0,
+    marginTop: 2,
+  },
+  darkExpandedContentContainer: {
+    backgroundColor: 'transparent',
+  },
+  secondaryFilterButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  activeSecondaryFilterButton: {
+    backgroundColor: '#34C759',
+    borderColor: '#34C759',
+  },
+  darkSecondaryFilterButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  darkActiveSecondaryFilterButton: {
+    backgroundColor: '#34C759',
+    borderColor: '#34C759',
+  },
+  secondaryFilterButtonText: {
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '500',
+  },
+  activeSecondaryFilterButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  darkSecondaryFilterButtonText: {
+    color: '#999',
+  },
+  darkActiveSecondaryFilterButtonText: {
+    color: '#fff',
+  },
+  clearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginTop: 8,
+  },
+  darkClearAllButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  clearAllButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  darkClearAllButtonText: {
+    color: '#007AFF',
+  },
+  // Selection Mode Styles
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerActionButton: {
+    padding: 4,
+  },
+  headerCancelText: {
+    fontSize: 17,
+    color: '#007AFF',
+    fontWeight: '400',
+  },
+  headerCancelTextDark: {
+    color: '#0A84FF',
+  },
+  selectedCard: {
+    borderWidth: 2,
+    borderColor: '#007AFF',
+  },
+  checkboxContainer: {
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#ccc',
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  darkCheckbox: {
+    borderColor: '#666',
+  },
+  darkCheckboxSelected: {
+    backgroundColor: '#0A84FF',
+    borderColor: '#0A84FF',
+  },
+  exportInfoWithCheckbox: {
+    flex: 1,
+  },
+  selectionBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  darkSelectionBar: {
+    backgroundColor: '#1c1c1e',
+    borderBottomColor: '#333',
+  },
+  selectionButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  selectionButtonText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  selectionButtonTextDark: {
+    color: '#0A84FF',
+  },
+  selectionCount: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+  },
+  selectionCountDark: {
+    color: '#999',
+  },
 });

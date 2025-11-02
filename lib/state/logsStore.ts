@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { OvertimeLog, ExportBatch, MinutesCalculation } from '../../types';
 import { database } from '../db/sqlite';
-import { computeMinutes, roundToNearest5 } from '../time';
+import { computeMinutes, roundToNearest5, getPreviousISODate, getCurrentDate } from '../time';
 
 interface LogsState {
   logs: OvertimeLog[];
@@ -39,6 +39,10 @@ interface LogsState {
   // Duplicate prevention
   hasLoggedShiftForDate: (date: string) => boolean;
   getLoggedShiftForDate: (date: string) => OvertimeLog | null;
+  
+  // Helper methods for template/yesterday features
+  getYesterdayLog: () => OvertimeLog | null;
+  getMostRecentLogBeforeDate: (date: string) => OvertimeLog | null;
 }
 
 export const useLogsStore = create<LogsState>((set, get) => ({
@@ -378,5 +382,34 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       log.date === date && 
       (log.status === 'ready' || log.status === 'exported')
     ) || null;
+  },
+  
+  // Helper methods for template/yesterday features
+  getYesterdayLog: () => {
+    const { logs } = get();
+    const yesterday = getPreviousISODate(getCurrentDate());
+    // Find the most recent log from yesterday (could be draft, ready, or exported)
+    // Sort by createdAt descending to get the most recent one
+    const yesterdayLogs = logs
+      .filter(log => log.date === yesterday)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    return yesterdayLogs[0] || null;
+  },
+  
+  getMostRecentLogBeforeDate: (date: string) => {
+    const { logs } = get();
+    // Find logs with date before the given date, sorted by date descending, then by createdAt descending
+    const logsBeforeDate = logs
+      .filter(log => log.date < date)
+      .sort((a, b) => {
+        // First sort by date descending
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        // Then sort by createdAt descending
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    
+    return logsBeforeDate[0] || null;
   }
 }));

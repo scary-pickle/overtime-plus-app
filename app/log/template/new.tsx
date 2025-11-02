@@ -8,21 +8,14 @@ import {
   Alert,
   useColorScheme,
   TextInput,
-  Modal,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useProfileStore } from '../../lib/state/profileStore';
-import { useShiftsStore } from '../../lib/state/shiftsStore';
-import { useLogsStore } from '../../lib/state/logsStore';
-import { TimeInput } from '../../components/TimeInput';
-import { CalendarPicker } from '../../components/CalendarPicker';
-import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
-import { NAButton } from '../../components/NAButton';
-import { computeMinutes, formatMinutes, getCurrentDate, getCurrentTime } from '../../lib/time';
-import { getRosterForDate } from '../../lib/roster';
-import { OvertimeLog } from '../../types';
+import { useRouter } from 'expo-router';
+import { useProfileStore } from '../../../lib/state/profileStore';
+import { useTemplatesStore } from '../../../lib/state/templatesStore';
+import { NAButton } from '../../../components/NAButton';
+import { SharedTimePickerProvider } from '../../../components/SharedTimePicker';
+import { TimeInput } from '../../../components/TimeInput';
+import { LogTemplate } from '../../../types';
 
 const CATEGORIES = [
   'Overtime',
@@ -37,94 +30,33 @@ const CATEGORIES = [
   'Change shift - cancel leave',
 ] as const;
 
-export default function EditLogScreen() {
+export default function NewTemplateScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   
-  const { profile, initials } = useProfileStore();
-  const { shifts, getRosterFor } = useShiftsStore();
-  const { logs, updateLog } = useLogsStore();
+  const { profile } = useProfileStore();
+  const { addTemplate } = useTemplatesStore();
   
-  const [log, setLog] = useState<OvertimeLog | null>(null);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [actualStart, setActualStart] = useState('');
-  const [actualFinish, setActualFinish] = useState('');
+  const [templateName, setTemplateName] = useState('');
   const [rosteredStart, setRosteredStart] = useState('');
   const [rosteredFinish, setRosteredFinish] = useState('');
   const [rosteredTimesNA, setRosteredTimesNA] = useState(false);
-  const [actualTimesNA, setActualTimesNA] = useState(false);
   const [mealBreakMinutes, setMealBreakMinutes] = useState(30);
   const [showMealBreakPicker, setShowMealBreakPicker] = useState(false);
   const [category, setCategory] = useState<typeof CATEGORIES[number]>('Overtime');
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [comments, setComments] = useState('');
-  const [isCalculating, setIsCalculating] = useState(false);
-  const [minutesCalculation, setMinutesCalculation] = useState<any>(null);
-  const [wasExported, setWasExported] = useState(false);
-  const [showExportedWarning, setShowExportedWarning] = useState(false);
+  const [concurrentEmployment, setConcurrentEmployment] = useState(false);
+  const [showOtherOptions, setShowOtherOptions] = useState(false);
   const [smoCategories, setSmoCategories] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (id) {
-      const foundLog = logs.find(l => l.id === id);
-      if (foundLog) {
-        setLog(foundLog);
-        // Convert ISO date to YYYY-MM-DD format for CalendarPicker
-        const logDate = new Date(foundLog.date).toISOString().split('T')[0];
-        setSelectedDate(logDate);
-        setActualStart(foundLog.actualStart);
-        setActualFinish(foundLog.actualFinish);
-        setRosteredStart(foundLog.rosteredStart || '');
-        setRosteredFinish(foundLog.rosteredFinish || '');
-        setRosteredTimesNA(foundLog.rosteredStart === 'N/A' || foundLog.rosteredFinish === 'N/A');
-        setActualTimesNA(foundLog.actualStart === 'N/A' || foundLog.actualFinish === 'N/A');
-        setMealBreakMinutes(foundLog.mealBreakMinutes || 30);
-        setCategory(foundLog.category);
-        setComments(foundLog.comments || '');
-        setWasExported(foundLog.status === 'exported');
-        setSmoCategories(foundLog.smoCategories || {});
-        
-        // Show warning if log was previously exported
-        if (foundLog.status === 'exported') {
-          setShowExportedWarning(true);
-        }
-      } else {
-        Alert.alert('Error', 'Log not found', [
-          { text: 'OK', onPress: () => router.back() }
-        ]);
-      }
+    // Initialize concurrent employment from profile default
+    if (profile?.concurrentEmploymentDefault !== undefined) {
+      setConcurrentEmployment(profile.concurrentEmploymentDefault);
     }
-  }, [id, logs]);
-
-  useEffect(() => {
-    // Recalculate when times change
-    if (actualStart && actualFinish) {
-      calculateMinutes();
-    }
-  }, [actualStart, actualFinish, mealBreakMinutes, rosteredStart, rosteredFinish]);
-
-  const calculateMinutes = () => {
-    if (!actualStart || !actualFinish || actualStart === 'N/A' || actualFinish === 'N/A') return;
-    
-    setIsCalculating(true);
-    try {
-      const calculation = computeMinutes(
-        actualStart,
-        actualFinish,
-        rosteredStart,
-        rosteredFinish,
-        mealBreakMinutes
-      );
-      setMinutesCalculation(calculation);
-    } catch (error) {
-      console.error('Calculation error:', error);
-    } finally {
-      setIsCalculating(false);
-    }
-  };
+  }, [profile]);
 
   const handleRosteredTimesNA = () => {
     const newNAStatus = !rosteredTimesNA;
@@ -139,110 +71,44 @@ export default function EditLogScreen() {
     }
   };
 
-  const handleActualTimesNA = () => {
-    const newNAStatus = !actualTimesNA;
-    setActualTimesNA(newNAStatus);
-    
-    if (newNAStatus) {
-      setActualStart('N/A');
-      setActualFinish('N/A');
-    } else {
-      setActualStart('');
-      setActualFinish('');
-    }
-  };
-
-  const validateForm = () => {
-    const errors: string[] = [];
-    
-    if (!actualStart) errors.push('Actual start time is required');
-    if (!actualFinish) errors.push('Actual finish time is required');
-    if (!category) errors.push('Category is required');
-    
-    if (actualStart && actualFinish && actualStart >= actualFinish) {
-      errors.push('Finish time must be after start time');
-    }
-    
-    return errors;
-  };
-
   const handleSave = async () => {
-    if (!log) return;
-    
-    const errors = validateForm();
-    if (errors.length > 0) {
-      Alert.alert('Validation Error', errors.join('\n'));
+    if (!templateName.trim()) {
+      Alert.alert('Error', 'Please enter a template name.');
       return;
     }
 
-    if (!minutesCalculation) {
-      Alert.alert('Error', 'Please wait for calculation to complete');
-      return;
+    // Validate rostered times if not N/A
+    if (!rosteredTimesNA) {
+      if (!rosteredStart || !rosteredFinish) {
+        Alert.alert('Error', 'Please enter rostered start and finish times, or mark them as N/A.');
+        return;
+      }
     }
 
-    // Use profile's employeeInitial directly if initials from store is empty
-    const logInitials = initials || profile?.employeeInitial || '';
-    
-    console.log('Updating log with initials:', { 
-      initials, 
-      profile: !!profile, 
-      profileInitial: profile?.employeeInitial,
-      logInitials 
-    });
-    
-    const updatedLog: OvertimeLog = {
-      ...log,
-      date: new Date(selectedDate).toISOString(), // Convert back to ISO format
-      actualStart,
-      actualFinish,
-      rosteredStart: rosteredStart || undefined,
-      rosteredFinish: rosteredFinish || undefined,
+    const template: LogTemplate = {
+      id: `template_${Date.now()}`,
+      name: templateName.trim(),
+      rosteredStart: rosteredTimesNA ? 'N/A' : (rosteredStart || undefined),
+      rosteredFinish: rosteredTimesNA ? 'N/A' : (rosteredFinish || undefined),
       mealBreakMinutes: mealBreakMinutes || undefined,
-      minutesOvertime: minutesCalculation.roundedOvertime,
       category,
       comments: comments || undefined,
-      initials: logInitials, // Update initials from current profile
+      concurrentEmployment: concurrentEmployment || undefined,
       smoCategories: profile?.isSMO ? smoCategories : undefined,
-      status: wasExported ? 'ready' : log.status, // Convert exported logs back to ready
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
     try {
-      await updateLog(updatedLog);
-      Alert.alert(
-        'Success', 
-        wasExported 
-          ? 'Log updated and converted to ready status. This log was previously exported.'
-          : 'Log updated successfully',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
+      await addTemplate(template);
+      Alert.alert('Success', 'Template created successfully!', [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
     } catch (error) {
-      Alert.alert('Error', 'Failed to update log');
+      console.error('Template creation error:', error);
+      Alert.alert('Error', `Failed to create template: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
     }
   };
-
-  const handleCancel = () => {
-    if (wasExported) {
-      Alert.alert(
-        'Cancel Edit',
-        'This log was previously exported. Are you sure you want to cancel without saving changes?',
-        [
-          { text: 'Keep Editing', style: 'cancel' },
-          { text: 'Cancel', style: 'destructive', onPress: () => router.back() }
-        ]
-      );
-    } else {
-      router.back();
-    }
-  };
-
-  if (!log) {
-    return (
-      <View style={[styles.container, isDark && styles.darkContainer]}>
-        <Text style={[styles.loadingText, isDark && styles.darkText]}>Loading...</Text>
-      </View>
-    );
-  }
 
   const renderSMOCategories = () => {
     const smoCategoryOptions = [
@@ -286,7 +152,6 @@ export default function EditLogScreen() {
   };
 
   const renderCategorySelector = () => {
-    // Show SMO categories if user is SMO, otherwise show regular dropdown
     if (profile?.isSMO) {
       return renderSMOCategories();
     }
@@ -309,7 +174,7 @@ export default function EditLogScreen() {
         </TouchableOpacity>
         
         {showCategoryPicker && (
-          <View style={[styles.categoryPickerContainer, isDark && styles.darkPickerContainer]}>
+          <ScrollView style={[styles.categoryPickerContainer, isDark && styles.darkPickerContainer]} showsVerticalScrollIndicator={false}>
             {CATEGORIES.map((cat) => (
               <TouchableOpacity
                 key={cat}
@@ -332,49 +197,8 @@ export default function EditLogScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
         )}
-      </View>
-    );
-  };
-
-  const renderCalculation = () => {
-    if (!minutesCalculation) return null;
-
-    return (
-      <View style={[styles.calculationCard, isDark && styles.darkCalculationCard]}>
-        <Text style={[styles.calculationTitle, isDark && styles.darkText]}>
-          Overtime Calculation
-        </Text>
-        
-        <View style={styles.calculationRow}>
-          <Text style={[styles.calculationLabel, isDark && styles.darkText]}>
-            Time Worked:
-          </Text>
-          <Text style={[styles.calculationValue, isDark && styles.darkText]}>
-            {formatMinutes(minutesCalculation.minutesWorked)}
-          </Text>
-        </View>
-        
-        {rosteredStart && rosteredFinish && (
-          <View style={styles.calculationRow}>
-            <Text style={[styles.calculationLabel, isDark && styles.darkText]}>
-              Time Rostered:
-            </Text>
-            <Text style={[styles.calculationValue, isDark && styles.darkText]}>
-              {formatMinutes(minutesCalculation.minutesRostered)}
-            </Text>
-          </View>
-        )}
-        
-        <View style={[styles.calculationRow, styles.totalRow]}>
-          <Text style={[styles.calculationLabel, styles.totalLabel, isDark && styles.darkText]}>
-            Overtime:
-          </Text>
-          <Text style={[styles.calculationValue, styles.totalValue, isDark && styles.darkText]}>
-            {formatMinutes(minutesCalculation.roundedOvertime)}
-          </Text>
-        </View>
       </View>
     );
   };
@@ -382,42 +206,37 @@ export default function EditLogScreen() {
   return (
     <SharedTimePickerProvider>
       <View style={[styles.container, isDark && styles.darkContainer]}>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={[styles.header, isDark && styles.darkHeader, { paddingTop: insets.top + 12 }]}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={handleCancel}
-            >
-              <Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : '#000'} />
-            </TouchableOpacity>
-            <Text style={[styles.title, isDark && styles.darkText]}>Edit Log</Text>
-            <TouchableOpacity 
-              style={[styles.saveButton, isDark && styles.darkSaveButton]}
-              onPress={handleSave}
-            >
-              <Text style={[styles.saveButtonText, isDark && styles.darkSaveButtonText]}>Save</Text>
-            </TouchableOpacity>
-          </View>
+        <View style={[styles.header, isDark && styles.darkHeader]}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Text style={[styles.backButtonText, isDark && styles.darkText]}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={[styles.title, isDark && styles.darkText]}>Create Template</Text>
+          <TouchableOpacity 
+            style={[styles.saveButton, isDark && styles.darkSaveButton]}
+            onPress={handleSave}
+          >
+            <Text style={[styles.saveButtonText, isDark && styles.darkSaveButtonText]}>Save</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Previously Exported Warning */}
-          {showExportedWarning && (
-            <View style={[styles.warningBanner, isDark && styles.darkWarningBanner]}>
-              <Ionicons name="warning" size={20} color="#ff6b35" />
-              <Text style={[styles.warningText, isDark && styles.darkWarningText]}>
-                This log was previously exported. Editing will convert it back to ready status.
-              </Text>
-            </View>
-          )}
-
+        <ScrollView style={[styles.scrollView, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
           <View style={styles.content}>
-            {/* Date Selection */}
+            {/* Template Name */}
             <View style={[styles.section, isDark && styles.darkCard]}>
-              <Text style={[styles.sectionTitle, isDark && styles.darkText]}>Date</Text>
-              <CalendarPicker
-                value={selectedDate}
-                onChange={setSelectedDate}
-                placeholder="Select date"
+              <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+                Template Name *
+              </Text>
+              <TextInput
+                style={[styles.nameInput, isDark && styles.darkInput, isDark && styles.darkText]}
+                value={templateName}
+                onChangeText={setTemplateName}
+                placeholder="e.g., Weekend ED Call, Night Shift"
+                placeholderTextColor={isDark ? '#666' : '#999'}
+                maxLength={50}
+                autoFocus
               />
             </View>
 
@@ -439,7 +258,7 @@ export default function EditLogScreen() {
                     value={rosteredStart}
                     onChange={setRosteredStart}
                     placeholder="Select rostered start time"
-                    inputId="rostered-start"
+                    inputId="template-rostered-start"
                     disabled={rosteredTimesNA}
                   />
                 </View>
@@ -449,46 +268,14 @@ export default function EditLogScreen() {
                     value={rosteredFinish}
                     onChange={setRosteredFinish}
                     placeholder="Select rostered finish time"
-                    inputId="rostered-finish"
+                    inputId="template-rostered-finish"
                     disabled={rosteredTimesNA}
                   />
                 </View>
               </View>
-            </View>
-
-            {/* Actual Times */}
-            <View style={[styles.section, isDark && styles.darkCard]}>
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-                  Actual Times
-                </Text>
-                <NAButton
-                  onPress={handleActualTimesNA}
-                  isActive={actualTimesNA}
-                />
-              </View>
-              <View style={styles.timeRow}>
-                <View style={styles.timeInput}>
-                  <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
-                  <TimeInput
-                    value={actualStart}
-                    onChange={setActualStart}
-                    placeholder="Select start time"
-                    inputId="actual-start"
-                    disabled={actualTimesNA}
-                  />
-                </View>
-                <View style={styles.timeInput}>
-                  <Text style={[styles.timeLabel, isDark && styles.darkText]}>Finish</Text>
-                  <TimeInput
-                    value={actualFinish}
-                    onChange={setActualFinish}
-                    placeholder="Select finish time"
-                    inputId="actual-finish"
-                    disabled={actualTimesNA}
-                  />
-                </View>
-              </View>
+              <Text style={[styles.hintText, isDark && styles.darkText]}>
+                Note: Actual times are not saved in templates. You'll fill those in when using the template.
+              </Text>
             </View>
 
             {/* Meal Break */}
@@ -557,23 +344,59 @@ export default function EditLogScreen() {
               />
             </View>
 
-
-            {/* Calculation */}
-            {renderCalculation()}
-
-            {/* Previously Exported Indicator */}
-            {wasExported && (
-              <View style={[styles.previouslyExportedCard, isDark && styles.darkPreviouslyExportedCard]}>
-                <Ionicons name="information-circle" size={20} color="#007AFF" />
-                <Text style={[styles.previouslyExportedText, isDark && styles.darkText]}>
-                  Previously exported - will be converted to ready status when saved
+            {/* Other Options */}
+            <View style={[styles.section, isDark && styles.darkCard]}>
+              <TouchableOpacity
+                style={styles.otherSectionHeader}
+                onPress={() => setShowOtherOptions(!showOtherOptions)}
+              >
+                <Text style={[styles.otherSectionTitle, isDark && styles.darkText]}>
+                  Other Options
                 </Text>
-              </View>
-            )}
+                <Text style={[styles.otherSectionArrow, isDark && styles.darkText]}>
+                  {showOtherOptions ? '▲' : '▼'}
+                </Text>
+              </TouchableOpacity>
+              
+              {showOtherOptions && (
+                <View style={styles.otherSectionContent}>
+                  {/* Concurrent Employment */}
+                  <View style={styles.otherOption}>
+                    <Text style={[styles.otherOptionTitle, isDark && styles.darkText]}>
+                      Concurrent Employment
+                    </Text>
+                    <Text style={[styles.otherOptionDescription, isDark && styles.darkText]}>
+                      Check if you work in more than one job at the same time
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.toggleButton, isDark && styles.darkToggleButton]}
+                      onPress={() => setConcurrentEmployment(!concurrentEmployment)}
+                    >
+                      <View style={[styles.toggleContainer, isDark && styles.darkToggleContainer]}>
+                        <View style={[
+                          styles.toggleSwitch,
+                          concurrentEmployment && styles.toggleSwitchActive,
+                          isDark && styles.darkToggleSwitch,
+                          concurrentEmployment && isDark && styles.darkToggleSwitchActive
+                        ]}>
+                          <View style={[
+                            styles.toggleThumb,
+                            concurrentEmployment && styles.toggleThumbActive,
+                            isDark && styles.darkToggleThumb
+                          ]} />
+                        </View>
+                        <Text style={[styles.toggleLabel, isDark && styles.darkText]}>
+                          {concurrentEmployment ? 'Yes' : 'No'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            </View>
           </View>
         </ScrollView>
       </View>
-
     </SharedTimePickerProvider>
   );
 }
@@ -585,9 +408,6 @@ const styles = StyleSheet.create({
   },
   darkContainer: {
     backgroundColor: '#000',
-  },
-  scrollView: {
-    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -606,51 +426,17 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 8,
   },
+  backButtonText: {
+    fontSize: 16,
+    color: '#007AFF',
+  },
   title: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
   },
-  saveButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  darkSaveButton: {
-    backgroundColor: '#007AFF',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  darkSaveButtonText: {
-    color: '#fff',
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff3cd',
-    margin: 16,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ffc107',
-  },
-  darkWarningBanner: {
-    backgroundColor: '#2d2a1a',
-    borderColor: '#ffc107',
-  },
-  warningText: {
+  scrollView: {
     flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#856404',
-    fontWeight: '500',
-  },
-  darkWarningText: {
-    color: '#ffc107',
   },
   content: {
     padding: 12,
@@ -688,6 +474,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#2c2c2e',
     borderColor: '#333',
   },
+  nameInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#fff',
+    fontSize: 16,
+    color: '#333',
+  },
   timeRow: {
     gap: 8,
   },
@@ -699,6 +494,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#333',
     marginBottom: 6,
+  },
+  hintText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   mealBreakButton: {
     borderWidth: 1,
@@ -718,6 +519,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   darkPickerContainer: {
     backgroundColor: '#1c1c1e',
@@ -802,81 +605,102 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
-  calculationCard: {
-    backgroundColor: '#e8f5e8',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-  },
-  darkCalculationCard: {
-    backgroundColor: '#1a2e1a',
-    borderColor: '#4CAF50',
-  },
-  calculationTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#2e7d32',
-    marginBottom: 12,
-  },
-  calculationRow: {
+  otherSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 4,
   },
-  calculationLabel: {
-    fontSize: 14,
+  otherSectionTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#333',
+  },
+  otherSectionArrow: {
+    fontSize: 12,
     color: '#666',
   },
-  calculationValue: {
-    fontSize: 14,
-    color: '#333',
+  otherSectionContent: {
+    marginTop: 16,
+    gap: 20,
+  },
+  otherOption: {
+    gap: 8,
+  },
+  otherOptionTitle: {
+    fontSize: 15,
     fontWeight: '500',
+    color: '#333',
   },
-  totalRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#4CAF50',
-    marginTop: 8,
-    paddingTop: 8,
+  otherOptionDescription: {
+    fontSize: 13,
+    color: '#666',
   },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2e7d32',
+  toggleButton: {
+    paddingVertical: 8,
   },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2e7d32',
-  },
-  previouslyExportedCard: {
+  darkToggleButton: {},
+  toggleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0f8ff',
-    margin: 16,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#007AFF',
+    gap: 12,
   },
-  darkPreviouslyExportedCard: {
-    backgroundColor: '#1a1a2e',
-    borderColor: '#007AFF',
+  darkToggleContainer: {},
+  toggleSwitch: {
+    width: 50,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
   },
-  previouslyExportedText: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#007AFF',
-    fontWeight: '500',
+  darkToggleSwitch: {
+    backgroundColor: '#2c2c2e',
   },
-  loadingText: {
-    textAlign: 'center',
+  toggleSwitchActive: {
+    backgroundColor: '#4CAF50',
+  },
+  darkToggleSwitchActive: {
+    backgroundColor: '#4CAF50',
+  },
+  toggleThumb: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  darkToggleThumb: {
+    backgroundColor: '#fff',
+  },
+  toggleThumbActive: {
+    transform: [{ translateX: 20 }],
+  },
+  toggleLabel: {
     fontSize: 16,
-    color: '#666',
-    marginTop: 50,
+    fontWeight: '500',
+    color: '#333',
+  },
+  saveButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  darkSaveButton: {
+    backgroundColor: '#007AFF',
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  darkSaveButtonText: {
+    color: '#fff',
   },
   smoCategoryOption: {
     flexDirection: 'row',

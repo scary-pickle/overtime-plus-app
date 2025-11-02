@@ -142,6 +142,28 @@ export default function RootLayout() {
             headerShown: false 
           }} 
         />
+        <Stack.Screen 
+          name="widget/[action]" 
+          options={{ 
+            headerShown: false,
+            presentation: 'modal',
+          }} 
+        />
+        <Stack.Screen 
+          name="widget/confirm" 
+          options={{ 
+            headerShown: false,
+            presentation: 'modal',
+          }} 
+        />
+        <Stack.Screen 
+          name="log/template/new" 
+          options={{ 
+            title: 'Create Template',
+            presentation: 'modal',
+            headerShown: false,
+          }} 
+        />
       </Stack>
     </>
   );

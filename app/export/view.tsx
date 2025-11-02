@@ -123,7 +123,7 @@ export default function PDFViewerScreen() {
 
     setIsSubmitting(true);
     try {
-      const result = await sendAVACEmail(profile, exportBatch.pdfUri);
+      const result = await sendAVACEmail(profile, exportBatch.pdfUri, exportBatch);
       
       if (result.success && result.useAppleMail) {
         // Apple Mail method - everything is pre-filled with attachment

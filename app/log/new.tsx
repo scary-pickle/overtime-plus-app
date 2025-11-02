@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,14 @@ import {
   Alert,
   useColorScheme,
   TextInput,
+  Modal,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
+import { useTemplatesStore } from '../../lib/state/templatesStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
@@ -36,12 +39,14 @@ const CATEGORIES = [
 
 export default function NewLogScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ from?: 'yesterday' | 'template' }>();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
   const { profile, initials } = useProfileStore();
   const { shifts, getRosterFor } = useShiftsStore();
-  const { addLog } = useLogsStore();
+  const { addLog, getYesterdayLog, logs } = useLogsStore();
+  const { templates, loadTemplates } = useTemplatesStore();
   
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
   const [actualStart, setActualStart] = useState('');
@@ -61,6 +66,8 @@ export default function NewLogScreen() {
   const [concurrentEmployment, setConcurrentEmployment] = useState(false);
   const [showOtherOptions, setShowOtherOptions] = useState(false);
   const [smoCategories, setSmoCategories] = useState<Record<string, boolean>>({});
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [yesterdayLogExists, setYesterdayLogExists] = useState(false);
 
   useEffect(() => {
     // Preload rostered times when date changes
@@ -114,6 +121,113 @@ export default function NewLogScreen() {
       setConcurrentEmployment(profile.concurrentEmploymentDefault);
     }
   }, [profile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Reload templates whenever screen comes into focus
+      loadTemplates();
+    }, [loadTemplates])
+  );
+
+  useEffect(() => {
+    // Check if yesterday's log exists whenever logs change
+    const yesterdayLog = getYesterdayLog();
+    setYesterdayLogExists(!!yesterdayLog);
+  }, [logs, getYesterdayLog]);
+
+  useEffect(() => {
+    // Auto-fill based on route params
+    if (params.from === 'yesterday') {
+      const yesterdayLog = getYesterdayLog();
+      if (yesterdayLog) {
+        setActualStart(yesterdayLog.actualStart);
+        setActualFinish(yesterdayLog.actualFinish);
+        if (yesterdayLog.rosteredStart) {
+          setRosteredStart(yesterdayLog.rosteredStart);
+          const isNA = yesterdayLog.rosteredStart === 'N/A';
+          setRosteredTimesNA(isNA);
+          if (isNA) {
+            setRosteredFinish('N/A');
+          } else if (yesterdayLog.rosteredFinish) {
+            setRosteredFinish(yesterdayLog.rosteredFinish);
+          }
+        } else {
+          setRosteredStart('');
+          setRosteredFinish('');
+          setRosteredTimesNA(false);
+        }
+        setMealBreakMinutes(yesterdayLog.mealBreakMinutes || 30);
+        setCategory(yesterdayLog.category);
+        setComments(yesterdayLog.comments || '');
+        setConcurrentEmployment(yesterdayLog.concurrentEmployment || false);
+        if (yesterdayLog.smoCategories) {
+          setSmoCategories(yesterdayLog.smoCategories);
+        }
+      }
+    } else if (params.from === 'template') {
+      // If coming from template, show the template modal
+      setShowTemplateModal(true);
+    }
+  }, [params.from, getYesterdayLog]);
+
+  const handleCopyFromTemplate = (template: typeof templates[number]) => {
+    // Templates don't have actual times - leave them blank
+    // Only copy rostered times and other settings
+    if (template.rosteredStart) {
+      setRosteredStart(template.rosteredStart);
+      const isNA = template.rosteredStart === 'N/A';
+      setRosteredTimesNA(isNA);
+      if (isNA) {
+        setRosteredFinish('N/A');
+      } else if (template.rosteredFinish) {
+        setRosteredFinish(template.rosteredFinish);
+      }
+    } else {
+      setRosteredStart('');
+      setRosteredFinish('');
+      setRosteredTimesNA(false);
+    }
+    setMealBreakMinutes(template.mealBreakMinutes || 30);
+    setCategory(template.category);
+    setComments(template.comments || '');
+    setConcurrentEmployment(template.concurrentEmployment || false);
+    if (template.smoCategories) {
+      setSmoCategories(template.smoCategories);
+    }
+    setShowTemplateModal(false);
+  };
+
+  const handleSameAsYesterday = () => {
+    const yesterdayLog = getYesterdayLog();
+    if (!yesterdayLog) {
+      Alert.alert('No Log Found', 'There is no log from yesterday to copy from.');
+      return;
+    }
+
+    setActualStart(yesterdayLog.actualStart);
+    setActualFinish(yesterdayLog.actualFinish);
+    if (yesterdayLog.rosteredStart) {
+      setRosteredStart(yesterdayLog.rosteredStart);
+      const isNA = yesterdayLog.rosteredStart === 'N/A';
+      setRosteredTimesNA(isNA);
+      if (isNA) {
+        setRosteredFinish('N/A');
+      } else if (yesterdayLog.rosteredFinish) {
+        setRosteredFinish(yesterdayLog.rosteredFinish);
+      }
+    } else {
+      setRosteredStart('');
+      setRosteredFinish('');
+      setRosteredTimesNA(false);
+    }
+    setMealBreakMinutes(yesterdayLog.mealBreakMinutes || 30);
+    setCategory(yesterdayLog.category);
+    setComments(yesterdayLog.comments || '');
+    setConcurrentEmployment(yesterdayLog.concurrentEmployment || false);
+    if (yesterdayLog.smoCategories) {
+      setSmoCategories(yesterdayLog.smoCategories);
+    }
+  };
 
   const validateFinishTime = (finishTime: string) => {
     if (!finishTime || !rosteredFinish || rosteredFinish === 'N/A' || rosteredTimesNA) return true;
@@ -407,6 +521,49 @@ export default function NewLogScreen() {
     <SharedTimePickerProvider>
       <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
+        {/* Quick Fill Actions */}
+        <View style={[styles.section, isDark && styles.darkCard]}>
+          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+            Quick Fill
+          </Text>
+          <View style={styles.quickFillRow}>
+            <TouchableOpacity
+              style={[
+                styles.quickFillButton,
+                isDark && styles.darkQuickFillButton,
+                !yesterdayLogExists && styles.disabledButton
+              ]}
+              onPress={handleSameAsYesterday}
+              disabled={!yesterdayLogExists}
+            >
+              <Text style={[
+                styles.quickFillButtonText,
+                isDark && styles.darkQuickFillButtonText,
+                !yesterdayLogExists && styles.disabledButtonText
+              ]}>
+                Same as Yesterday
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.quickFillButton,
+                isDark && styles.darkQuickFillButton,
+                templates.length === 0 && styles.disabledButton
+              ]}
+              onPress={() => setShowTemplateModal(true)}
+              disabled={templates.length === 0}
+            >
+              <Text style={[
+                styles.quickFillButtonText,
+                isDark && styles.darkQuickFillButtonText,
+                templates.length === 0 && styles.disabledButtonText
+              ]}>
+                Copy from Template
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Date Selection */}
         <View style={[styles.section, isDark && styles.darkCard]}>
           <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
@@ -645,6 +802,58 @@ export default function NewLogScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Template Selection Modal */}
+      <Modal
+        visible={showTemplateModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowTemplateModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, isDark && styles.darkModalContent]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, isDark && styles.darkText]}>
+                Select Template
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowTemplateModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <Text style={[styles.modalCloseText, isDark && styles.darkText]}>
+                  ✕
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalScrollView}>
+              {templates.length === 0 ? (
+                <View style={styles.emptyTemplatesContainer}>
+                  <Text style={[styles.emptyTemplatesText, isDark && styles.darkText]}>
+                    No templates available. Create a template from an existing log.
+                  </Text>
+                </View>
+              ) : (
+                templates.map((template) => (
+                  <TouchableOpacity
+                    key={template.id}
+                    style={[styles.templateItem, isDark && styles.darkTemplateItem]}
+                    onPress={() => handleCopyFromTemplate(template)}
+                  >
+                    <Text style={[styles.templateName, isDark && styles.darkText]}>
+                      {template.name}
+                    </Text>
+                    <Text style={[styles.templateDetails, isDark && styles.darkText]}>
+                      {template.rosteredStart && template.rosteredFinish 
+                        ? `${template.rosteredStart} - ${template.rosteredFinish}` 
+                        : 'Rostered times: N/A'} • {template.category}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
     </SharedTimePickerProvider>
   );
@@ -1027,5 +1236,98 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     flex: 1,
+  },
+  quickFillRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickFillButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
+  },
+  darkQuickFillButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  quickFillButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  darkQuickFillButtonText: {
+    color: '#5ac8fa',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '60%',
+    minHeight: 300,
+  },
+  darkModalContent: {
+    backgroundColor: '#1c1c1e',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  modalCloseButton: {
+    padding: 4,
+  },
+  modalCloseText: {
+    fontSize: 24,
+    color: '#666',
+    fontWeight: '300',
+  },
+  modalScrollView: {
+    flex: 1,
+    maxHeight: 400,
+  },
+  templateItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  darkTemplateItem: {
+    borderBottomColor: '#2c2c2e',
+  },
+  templateName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  templateDetails: {
+    fontSize: 14,
+    color: '#666',
+  },
+  emptyTemplatesContainer: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  emptyTemplatesText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
 });

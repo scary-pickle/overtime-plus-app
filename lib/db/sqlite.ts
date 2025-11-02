@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { UsualShift, OvertimeLog, ExportBatch } from '../../types';
+import { UsualShift, OvertimeLog, ExportBatch, LogTemplate } from '../../types';
 
 const DB_NAME = 'overtime_plus.db';
 const DB_VERSION = 1;
@@ -74,12 +74,30 @@ class Database {
       );
     `);
 
+    // Create log_templates table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS log_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        rostered_start TEXT,
+        rostered_finish TEXT,
+        meal_break_minutes INTEGER DEFAULT 0,
+        category TEXT NOT NULL CHECK (category IN ('Overtime', 'Oncall', 'HP Emergency Clinical on Call', 'HPDO Priority on Call', 'Recall Offsite', 'Recall Onsite', 'Recall Offsite Normal Duties (QPSOOE award)', 'Recall Telephone Advice (Medical)', 'Change shift', 'Change shift - cancel leave')),
+        comments TEXT,
+        concurrent_employment INTEGER DEFAULT 0,
+        smo_categories TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
     // Create indexes for better performance
     await this.db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_overtime_logs_date ON overtime_logs(date);
       CREATE INDEX IF NOT EXISTS idx_overtime_logs_status ON overtime_logs(status);
       CREATE INDEX IF NOT EXISTS idx_usual_shifts_active ON usual_shifts(active_from, active_to);
       CREATE INDEX IF NOT EXISTS idx_usual_shifts_type ON usual_shifts(type, day_of_week);
+      CREATE INDEX IF NOT EXISTS idx_log_templates_name ON log_templates(name);
     `);
 
     // Run migrations
@@ -126,6 +144,58 @@ class Database {
       console.log('✅ Added smo_categories column');
     } catch (error) {
       // Column already exists, which is fine
+    }
+
+    // Migration: Remove actual_start and actual_finish from log_templates if they exist
+    // SQLite doesn't support DROP COLUMN directly, so we'll recreate the table
+    try {
+      const tableInfo = await this.db.getAllAsync(`
+        PRAGMA table_info(log_templates);
+      `);
+      const hasActualStart = tableInfo.some((col: any) => col.name === 'actual_start');
+      
+      if (hasActualStart) {
+        console.log('🔄 Migrating log_templates table to remove actual_start/actual_finish...');
+        // Create new table without actual_start and actual_finish
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS log_templates_new (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            rostered_start TEXT,
+            rostered_finish TEXT,
+            meal_break_minutes INTEGER DEFAULT 0,
+            category TEXT NOT NULL CHECK (category IN ('Overtime', 'Oncall', 'HP Emergency Clinical on Call', 'HPDO Priority on Call', 'Recall Offsite', 'Recall Onsite', 'Recall Offsite Normal Duties (QPSOOE award)', 'Recall Telephone Advice (Medical)', 'Change shift', 'Change shift - cancel leave')),
+            comments TEXT,
+            concurrent_employment INTEGER DEFAULT 0,
+            smo_categories TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+        `);
+        
+        // Copy data from old table to new (excluding actual_start and actual_finish)
+        await this.db.execAsync(`
+          INSERT INTO log_templates_new 
+            (id, name, rostered_start, rostered_finish, meal_break_minutes, category, comments, concurrent_employment, smo_categories, created_at, updated_at)
+          SELECT 
+            id, name, rostered_start, rostered_finish, meal_break_minutes, category, comments, concurrent_employment, smo_categories, created_at, updated_at
+          FROM log_templates;
+        `);
+        
+        // Drop old table and rename new one
+        await this.db.execAsync(`DROP TABLE log_templates;`);
+        await this.db.execAsync(`ALTER TABLE log_templates_new RENAME TO log_templates;`);
+        
+        // Recreate index
+        await this.db.execAsync(`
+          CREATE INDEX IF NOT EXISTS idx_log_templates_name ON log_templates(name);
+        `);
+        
+        console.log('✅ Migrated log_templates table successfully');
+      }
+    } catch (error) {
+      console.error('Migration error (may be fine if table doesn\'t exist yet):', error);
+      // Migration error is okay - table might not exist yet or might already be migrated
     }
   }
 
@@ -354,6 +424,108 @@ class Database {
     `, [id]);
   }
 
+  // LogTemplates CRUD
+  async createLogTemplate(template: LogTemplate): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      console.log('Creating template:', { id: template.id, name: template.name, category: template.category });
+      await this.db.runAsync(`
+        INSERT INTO log_templates (
+          id, name, rostered_start, rostered_finish,
+          meal_break_minutes, category, comments, concurrent_employment,
+          smo_categories, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        template.id, template.name,
+        template.rosteredStart || null, template.rosteredFinish || null,
+        template.mealBreakMinutes || 0, template.category, template.comments || null,
+        template.concurrentEmployment ? 1 : 0,
+        template.smoCategories ? JSON.stringify(template.smoCategories) : null,
+        template.createdAt, template.updatedAt
+      ]);
+      console.log('✅ Template created successfully:', template.id);
+    } catch (error) {
+      console.error('❌ Failed to create template:', error);
+      console.error('Template data:', {
+        id: template.id,
+        name: template.name,
+        rosteredStart: template.rosteredStart,
+        rosteredFinish: template.rosteredFinish,
+        category: template.category,
+        mealBreakMinutes: template.mealBreakMinutes,
+      });
+      throw error;
+    }
+  }
+
+  async getLogTemplates(): Promise<LogTemplate[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      // Explicitly list columns to avoid issues with old schema that might have actual_start/actual_finish
+      const result = await this.db.getAllAsync(`
+        SELECT 
+          id, name, rostered_start, rostered_finish,
+          meal_break_minutes, category, comments, concurrent_employment,
+          smo_categories, created_at, updated_at
+        FROM log_templates 
+        ORDER BY name, created_at DESC
+      `);
+
+      console.log('Fetched templates from database:', result.length);
+      
+      return result.map((row: any) => ({
+        id: row.id as string,
+        name: row.name as string,
+        rosteredStart: row.rostered_start as string | undefined,
+        rosteredFinish: row.rostered_finish as string | undefined,
+        mealBreakMinutes: row.meal_break_minutes as number,
+        category: row.category as 'Overtime' | 'Oncall' | 'HP Emergency Clinical on Call' | 'HPDO Priority on Call' | 'Recall Offsite' | 'Recall Onsite' | 'Recall Offsite Normal Duties (QPSOOE award)' | 'Recall Telephone Advice (Medical)' | 'Change shift' | 'Change shift - cancel leave',
+        comments: row.comments as string | undefined,
+        concurrentEmployment: row.concurrent_employment === 1,
+        smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
+        createdAt: row.created_at as string,
+        updatedAt: row.updated_at as string
+      }));
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+      // If table doesn't exist yet, return empty array
+      if (error instanceof Error && error.message.includes('no such table')) {
+        console.log('log_templates table does not exist yet, returning empty array');
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async updateLogTemplate(template: LogTemplate): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync(`
+      UPDATE log_templates SET
+        name = ?, rostered_start = ?,
+        rostered_finish = ?, meal_break_minutes = ?, category = ?,
+        comments = ?, concurrent_employment = ?, smo_categories = ?, updated_at = ?
+      WHERE id = ?
+    `, [
+      template.name,
+      template.rosteredStart || null, template.rosteredFinish || null,
+      template.mealBreakMinutes || 0, template.category, template.comments || null,
+      template.concurrentEmployment ? 1 : 0,
+      template.smoCategories ? JSON.stringify(template.smoCategories) : null,
+      new Date().toISOString(), template.id
+    ]);
+  }
+
+  async deleteLogTemplate(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.runAsync(`
+      DELETE FROM log_templates WHERE id = ?
+    `, [id]);
+  }
+
   async close(): Promise<void> {
     if (this.db) {
       await this.db.closeAsync();
@@ -368,6 +540,7 @@ class Database {
     await this.db.execAsync('DELETE FROM overtime_logs');
     await this.db.execAsync('DELETE FROM usual_shifts');
     await this.db.execAsync('DELETE FROM export_batches');
+    await this.db.execAsync('DELETE FROM log_templates');
   }
 
   async getDataCounts(): Promise<{ logs: number; shifts: number; batches: number }> {
