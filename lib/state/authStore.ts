@@ -10,6 +10,8 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   emailVerified: boolean;
+  pendingEmail: string | null;
+  pendingPassword: string | null;
 
   checkSession: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -25,6 +27,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: false,
   error: null,
   emailVerified: false,
+  pendingEmail: null,
+  pendingPassword: null,
 
   clearError: () => set({ error: null }),
 
@@ -80,30 +84,19 @@ export const useAuthStore = create<AuthState>((set) => ({
         console.log('[authStore.signUp] password weak', { issues: pw.errors });
         throw new Error(`Password requirements: ${pw.errors.join(', ')}`);
       }
-
-      const redirectTo = getRedirectUri();
-      console.log('[authStore.signUp] calling supabase.auth.signUp', { redirectTo });
+      // OTP-first flow: send 6-digit code to email; set pending password
+      console.log('[authStore.signUp] sending OTP via signInWithOtp');
       // @ts-ignore
-      const { data, error } = await (supabase as any).auth.signUp({
+      const { data, error } = await (supabase as any).auth.signInWithOtp({
         email,
-        password,
-        options: { emailRedirectTo: redirectTo },
+        options: { shouldCreateUser: true },
       });
       if (error) {
-        console.log('[authStore.signUp] supabase error', { code: (error as any)?.code, message: error.message });
+        console.log('[authStore.signUp] signInWithOtp error', { message: error.message });
         throw error;
       }
-      console.log('[authStore.signUp] supabase response', { hasUser: !!data?.user, hasSession: !!data?.session });
-      // If user exists but still needs confirmation, trigger resend to be safe
-      if (data?.user && !data?.session) {
-        // @ts-ignore
-        const r = await (supabase as any).auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirectTo } });
-        if ((r as any)?.error) {
-          console.log('[authStore.signUp] resend failed', { message: (r as any).error.message });
-        } else {
-          console.log('[authStore.signUp] resend triggered');
-        }
-      }
+      console.log('[authStore.signUp] OTP sent', { hasUser: !!data?.user });
+      set({ pendingEmail: email, pendingPassword: password });
       set({ isLoading: false });
       console.log('[authStore.signUp] completed OK');
       return true;

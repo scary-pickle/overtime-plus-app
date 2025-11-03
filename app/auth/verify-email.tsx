@@ -7,9 +7,9 @@ import { supabase } from '../../lib/supabase';
 
 export default function VerifyEmail() {
   const router = useRouter();
-  const { user, emailVerified, resendVerification, isLoading, clearError, error } = useAuthStore();
+  const { user, emailVerified, resendVerification, isLoading, clearError, error, pendingEmail, pendingPassword } = useAuthStore();
   const [codeUrl, setCodeUrl] = useState('');
-  const [emailInput, setEmailInput] = useState<string>(user?.email ?? '');
+  const [emailInput, setEmailInput] = useState<string>(pendingEmail || user?.email || '');
   const [cooldown, setCooldown] = useState(0);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
@@ -181,6 +181,15 @@ export default function VerifyEmail() {
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  // Auto-send OTP when arriving from signup (pendingEmail present)
+  useEffect(() => {
+    if (pendingEmail) {
+      console.log('[verify-email] auto-send OTP for', pendingEmail);
+      onSendOtp();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (emailVerified) {
     router.replace('/(tabs)/home');
     return null;
@@ -200,15 +209,8 @@ export default function VerifyEmail() {
             <Text style={{ color: '#fff', fontWeight: '600' }}>{isLoading ? 'Resending…' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend verification email'}</Text>
           </TouchableOpacity>
           <View style={{ height: 12 }} />
-          <Text style={{ color: '#4b5563' }}>Can't open the link on this device? Paste the full URL here:</Text>
-          <TextInput
-            value={codeUrl}
-            onChangeText={setCodeUrl}
-            placeholder="Paste verification URL"
-            autoCapitalize="none"
-            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
-          />
-          <Text style={{ color: '#4b5563', marginTop: 8 }}>Email (needed for manual verification)</Text>
+          {/* Link-based verification removed in favor of OTP */}
+          <Text style={{ color: '#4b5563', marginTop: 8 }}>Email</Text>
           <TextInput
             value={emailInput}
             onChangeText={setEmailInput}
@@ -217,12 +219,9 @@ export default function VerifyEmail() {
             keyboardType="email-address"
             style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
           />
-          <TouchableOpacity onPress={onPasteCode} style={{ backgroundColor: '#10B981', borderRadius: 12, padding: 14, alignItems: 'center' }}>
-            <Text style={{ color: '#fff', fontWeight: '600' }}>Confirm</Text>
-          </TouchableOpacity>
 
           <View style={{ height: 16 }} />
-          <Text style={{ color: '#4b5563' }}>Prefer a one‑time code?</Text>
+          <Text style={{ color: '#4b5563' }}>Enter the 6‑digit code:</Text>
           <TouchableOpacity onPress={onSendOtp} style={{ backgroundColor: '#111827', borderRadius: 12, padding: 14, alignItems: 'center' }}>
             <Text style={{ color: '#fff', fontWeight: '600' }}>Send 6‑digit code to email</Text>
           </TouchableOpacity>
