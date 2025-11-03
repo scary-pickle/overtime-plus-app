@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '../supabase';
 import { getRedirectUri } from '../auth/deeplinks';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../auth/validation';
+import { toFriendlyAuthMessage } from '../auth/errors';
 
 interface AuthState {
   user: any | null;
@@ -42,7 +43,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         isLoading: false,
       });
     } catch (e) {
-      set({ isLoading: false, error: e instanceof Error ? e.message : 'Failed to get session' });
+      const msg = e instanceof Error ? e.message : 'Failed to get session';
+      set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
     }
   },
 
@@ -56,7 +58,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       const user = session?.user ?? null;
       set({ session, user, emailVerified: !!user?.email_confirmed_at, isLoading: false });
     } catch (e) {
-      set({ isLoading: false, error: e instanceof Error ? e.message : 'Sign in failed' });
+      const msg = e instanceof Error ? e.message : 'Sign in failed';
+      set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
     }
   },
 
@@ -78,7 +81,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (error) throw error;
       set({ isLoading: false });
     } catch (e) {
-      set({ isLoading: false, error: e instanceof Error ? e.message : 'Sign up failed' });
+      const msg = e instanceof Error ? e.message : 'Sign up failed';
+      set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
     }
   },
 
@@ -95,7 +99,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (error) throw error;
       set({ isLoading: false });
     } catch (e) {
-      set({ isLoading: false, error: e instanceof Error ? e.message : 'Failed to resend verification' });
+      const msg = e instanceof Error ? e.message : 'Failed to resend verification';
+      set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
     }
   },
 
@@ -107,7 +112,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (error) throw error;
       set({ user: null, session: null, emailVerified: false, isLoading: false });
     } catch (e) {
-      set({ isLoading: false, error: e instanceof Error ? e.message : 'Sign out failed' });
+      const msg = e instanceof Error ? e.message : 'Sign out failed';
+      set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
     }
   },
 }));

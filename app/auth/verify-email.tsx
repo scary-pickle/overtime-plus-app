@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, Button } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
@@ -8,6 +8,7 @@ export default function VerifyEmail() {
   const router = useRouter();
   const { user, emailVerified, resendVerification, isLoading, clearError, error } = useAuthStore();
   const [codeUrl, setCodeUrl] = useState('');
+  const [cooldown, setCooldown] = useState(0);
 
   const onPasteCode = async () => {
     clearError();
@@ -20,7 +21,14 @@ export default function VerifyEmail() {
     if (!user?.email) return;
     clearError();
     await resendVerification(user.email);
+    setCooldown(30);
   };
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   if (emailVerified) {
     router.replace('/(tabs)/home');
@@ -32,7 +40,11 @@ export default function VerifyEmail() {
       <Text style={{ fontSize: 22, fontWeight: '600' }}>Verify your email</Text>
       <Text>We sent a link to: {user?.email ?? 'your email'}</Text>
       {error ? <Text style={{ color: 'red' }}>{error}</Text> : null}
-      <Button title={isLoading ? 'Resending…' : 'Resend verification email'} onPress={onResend} disabled={isLoading} />
+      <Button
+        title={isLoading ? 'Resending…' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend verification email'}
+        onPress={onResend}
+        disabled={isLoading || cooldown > 0}
+      />
       <View style={{ height: 16 }} />
       <Text>Can't open the link on this device? Paste the full URL here:</Text>
       <TextInput
