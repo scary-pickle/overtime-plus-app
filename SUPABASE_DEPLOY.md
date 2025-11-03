@@ -20,6 +20,10 @@ Find your project ref in the Supabase dashboard URL: `https://app.supabase.com/p
   - SMTP: configure a verified sender (SES/Postmark/Resend)
 - In Settings → API:
   - Use the new Publishable key in `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+ - In Authentication → URL Configuration:
+   - Site URL: any valid https URL (can be your future web URL)
+   - Additional Redirect URLs: add `overtime-plus://` (your app scheme)
+   - Save changes
 
 ## Environment
 Set these in your app `.env` (or variables):

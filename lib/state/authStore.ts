@@ -13,7 +13,7 @@ interface AuthState {
 
   checkSession: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
   clearError: () => void;
@@ -80,9 +80,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       if (error) throw error;
       set({ isLoading: false });
+      return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sign up failed';
       set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
+      return false;
     }
   },
 

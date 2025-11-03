@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, SafeAreaView } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../../lib/auth/validation';
 
 export default function SignUp() {
+  const router = useRouter();
   const { signUp, isLoading, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,7 +21,8 @@ export default function SignUp() {
     if (password !== confirm) return setLocalError('Passwords do not match');
     const pw = validatePasswordStrength(password);
     if (!pw.valid) return setLocalError(`Password: ${pw.errors.join(', ')}`);
-    await signUp(e, password);
+    const ok = await signUp(e, password);
+    if (ok) router.replace('/auth/verify-email');
   };
 
   return (
