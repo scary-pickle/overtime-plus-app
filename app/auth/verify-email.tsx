@@ -3,18 +3,44 @@ import { View, Text, TextInput, TouchableOpacity, SafeAreaView } from 'react-nat
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { exchangeSessionFromUrl } from '../../lib/auth/deeplinks';
+import { supabase } from '../../lib/supabase';
 
 export default function VerifyEmail() {
   const router = useRouter();
   const { user, emailVerified, resendVerification, isLoading, clearError, error } = useAuthStore();
   const [codeUrl, setCodeUrl] = useState('');
+  const [emailInput, setEmailInput] = useState<string>(user?.email ?? '');
   const [cooldown, setCooldown] = useState(0);
 
   const onPasteCode = async () => {
     clearError();
     if (!codeUrl) return;
-    const ok = await exchangeSessionFromUrl(codeUrl.trim());
-    if (ok) router.replace('/(tabs)/home');
+    const pasted = codeUrl.trim();
+    // First try PKCE exchange (code + code_verifier)
+    const ok = await exchangeSessionFromUrl(pasted);
+    if (ok) return router.replace('/(tabs)/home');
+
+    // Fallback: handle token links (verifyOtp)
+    try {
+      const u = new URL(pasted);
+      const token = u.searchParams.get('token') || u.searchParams.get('token_hash');
+      if (!token) return; // nothing we can do
+      if (!emailInput) return; // need email for verifyOtp
+      // @ts-ignore
+      const { data, error } = await (supabase as any).auth.verifyOtp({
+        type: 'signup',
+        token_hash: token,
+        email: emailInput,
+      });
+      if (error) throw error;
+      if (data?.session) return router.replace('/(tabs)/home');
+      // As a last resort, refresh session
+      // @ts-ignore
+      const { data: s } = await (supabase as any).auth.getSession();
+      if (s?.session) router.replace('/(tabs)/home');
+    } catch (e) {
+      // ignore - UI will show error if needed
+    }
   };
 
   const onResend = async () => {
@@ -54,6 +80,15 @@ export default function VerifyEmail() {
             onChangeText={setCodeUrl}
             placeholder="Paste verification URL"
             autoCapitalize="none"
+            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
+          />
+          <Text style={{ color: '#4b5563', marginTop: 8 }}>Email (needed for manual verification)</Text>
+          <TextInput
+            value={emailInput}
+            onChangeText={setEmailInput}
+            placeholder="you@health.qld.gov.au"
+            autoCapitalize="none"
+            keyboardType="email-address"
             style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
           />
           <TouchableOpacity onPress={onPasteCode} style={{ backgroundColor: '#10B981', borderRadius: 12, padding: 14, alignItems: 'center' }}>
