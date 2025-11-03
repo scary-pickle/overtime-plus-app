@@ -30,17 +30,36 @@ export default function VerifyEmail() {
     // Fallback: handle token links (verifyOtp)
     try {
       const u = new URL(pasted);
-      const token = u.searchParams.get('token') || u.searchParams.get('token_hash');
-      const type = u.searchParams.get('type') || 'signup';
-      console.log('[verify-email] parsed', { hasToken: !!token, type });
-      if (!token) return setStatusMsg('The link did not contain a token.');
-      // For token_hash links, do NOT send email – API expects only token_hash + type
+      const tokenHash = u.searchParams.get('token_hash');
+      const token = u.searchParams.get('token');
+      const type = (u.searchParams.get('type') || 'signup') as any;
+      console.log('[verify-email] parsed', { hasToken: !!token, hasTokenHash: !!tokenHash, type });
+      if (!token && !tokenHash) return setStatusMsg('The link did not contain a token.');
       setStatusMsg(`Verifying (${type})…`);
-      // @ts-ignore
-      let { data, error } = await (supabase as any).auth.verifyOtp({
-        type,
-        token_hash: token,
-      });
+      let data: any = null;
+      let error: any = null;
+      // Prefer token_hash flow
+      if (tokenHash) {
+        // @ts-ignore
+        const r = await (supabase as any).auth.verifyOtp({ type, token_hash: tokenHash });
+        data = r.data; error = r.error;
+        if (error) console.log('[verify-email] verifyOtp error token_hash', { message: error.message });
+      }
+      // Fallback: token (some email links supply token instead of token_hash)
+      if (error || (!data?.session && token)) {
+        // First try with email
+        // @ts-ignore
+        const r1 = await (supabase as any).auth.verifyOtp({ type, token, email: emailInput || undefined });
+        data = r1.data; error = r1.error;
+        if (error) console.log('[verify-email] verifyOtp error token+email', { message: error.message });
+        if (error) {
+          // Try without email
+          // @ts-ignore
+          const r2 = await (supabase as any).auth.verifyOtp({ type, token });
+          data = r2.data; error = r2.error;
+          if (error) console.log('[verify-email] verifyOtp error token only', { message: error.message });
+        }
+      }
       if (error) {
         console.log('[verify-email] verifyOtp error with provided type', { message: error.message });
         // Try fallback types commonly used by email links
@@ -48,7 +67,19 @@ export default function VerifyEmail() {
         for (const ft of fallbackTypes) {
           setStatusMsg(`Verifying (${ft})…`);
           // @ts-ignore
-          const r = await (supabase as any).auth.verifyOtp({ type: ft as any, token_hash: token });
+          let r: any;
+          if (tokenHash) {
+            // @ts-ignore
+            r = await (supabase as any).auth.verifyOtp({ type: ft as any, token_hash: tokenHash });
+          } else if (token) {
+            // @ts-ignore
+            r = await (supabase as any).auth.verifyOtp({ type: ft as any, token, email: emailInput || undefined });
+            if (r.error) {
+              // Try without email
+              // @ts-ignore
+              r = await (supabase as any).auth.verifyOtp({ type: ft as any, token });
+            }
+          }
           if (!r.error) {
             data = r.data;
             error = null as any;
