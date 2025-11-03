@@ -5,6 +5,8 @@
  */
 
 import { Profile, OvertimeLog, ExportBatch } from '../types';
+import { createClient } from '@supabase/supabase-js';
+import { SecureStoreAdapter } from './auth/storageAdapter';
 
 // Check for Supabase configuration
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -62,11 +64,18 @@ const createStubClient = (): SupabaseClient => ({
 let supabaseClient: SupabaseClient | null = null;
 
 if (supabaseEnabled) {
-  // TODO: Import and initialize real Supabase client
-  // import { createClient } from '@supabase/supabase-js';
-  // supabaseClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!);
-  console.log('TODO: Initialize real Supabase client');
-  supabaseClient = createStubClient();
+  // Initialize real Supabase client for React Native/Expo with secure storage
+  // Detect session in URL is disabled (handled via Linking), PKCE is default in RN
+  // @ts-ignore - allow passing storage adapter even if our local type is minimal
+  supabaseClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    auth: {
+      storage: SecureStoreAdapter,
+      persistSession: true,
+      autoRefreshToken: true,
+      flowType: 'pkce',
+      detectSessionInUrl: false,
+    },
+  }) as unknown as SupabaseClient;
 } else {
   supabaseClient = createStubClient();
 }
@@ -81,14 +90,16 @@ export const auth = {
     if (!supabaseEnabled) {
       throw new Error('Supabase not configured');
     }
-    return await supabase.auth.signIn({ email, password });
+    // @ts-ignore
+    return await (supabase as any).auth.signInWithPassword({ email, password });
   },
 
   async signUp(email: string, password: string) {
     if (!supabaseEnabled) {
       throw new Error('Supabase not configured');
     }
-    return await supabase.auth.signUp({ email, password });
+    // @ts-ignore
+    return await (supabase as any).auth.signUp({ email, password });
   },
 
   async signOut() {
@@ -102,7 +113,8 @@ export const auth = {
     if (!supabaseEnabled) {
       return null;
     }
-    const { data } = await supabase.auth.getSession();
+    // @ts-ignore
+    const { data } = await (supabase as any).auth.getSession();
     return data.session?.user || null;
   },
 };
