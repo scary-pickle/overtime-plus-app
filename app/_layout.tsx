@@ -10,15 +10,20 @@ import { useShiftsStore } from '../lib/state/shiftsStore';
 import { useLogsStore } from '../lib/state/logsStore';
 import { notificationManager } from '../lib/notifications';
 import { subscribeToAuthDeepLinks } from '../lib/auth/deeplinks';
+import { useAuthStore } from '../lib/state/authStore';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const { user, checkSession, emailVerified } = useAuthStore();
   const { loadProfile } = useProfileStore();
   const { loadShifts } = useShiftsStore();
   const { loadLogs, loadExportBatches } = useLogsStore();
 
   useEffect(() => {
-    initializeApp();
+    (async () => {
+      await checkSession();
+      await initializeApp();
+    })();
     const unsubscribeLinking = subscribeToAuthDeepLinks();
     return () => {
       unsubscribeLinking();
@@ -34,13 +39,16 @@ export default function RootLayout() {
       // Request notification permissions
       await notificationManager.requestPermissions();
 
-      // Load data from stores
-      await Promise.all([
-        loadProfile(),
-        loadShifts(),
-        loadLogs(),
-        loadExportBatches(),
-      ]);
+      // Load data from stores (only if authenticated and email verified)
+      // Profile, shifts, logs are user-specific and should only load after auth
+      if (user && emailVerified) {
+        await Promise.all([
+          loadProfile(),
+          loadShifts(),
+          loadLogs(),
+          loadExportBatches(),
+        ]);
+      }
 
       console.log('App initialized successfully');
     } catch (error) {
@@ -52,6 +60,11 @@ export default function RootLayout() {
     <>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       <Stack>
+        <Stack.Screen name="auth/welcome" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/sign-in" options={{ title: 'Sign In', headerShown: true }} />
+        <Stack.Screen name="auth/sign-up" options={{ title: 'Create Account', headerShown: true }} />
+        <Stack.Screen name="auth/verify-email" options={{ title: 'Verify Email', headerShown: true }} />
+        <Stack.Screen name="auth/forgot-password" options={{ title: 'Reset Password', headerShown: true }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen 
           name="log/[id]" 
