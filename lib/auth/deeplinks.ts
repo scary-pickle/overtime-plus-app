@@ -1,6 +1,23 @@
 import * as Linking from 'expo-linking';
 import { supabase } from '../supabase';
 
+function hasAuthParams(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const qp = u.searchParams;
+    const hasCode = !!qp.get('code');
+    const hasVerifier = !!qp.get('code_verifier');
+    // Some providers return in fragment, try that as well
+    if (!hasCode || !hasVerifier) {
+      const frag = new URLSearchParams(u.hash.replace(/^#/, ''));
+      return !!frag.get('code') && !!frag.get('code_verifier');
+    }
+    return hasCode && hasVerifier;
+  } catch {
+    return false;
+  }
+}
+
 export function getRedirectUri(): string {
   // Uses app scheme from app.config.ts (scheme: 'overtime-plus')
   return Linking.createURL('/', { scheme: 'overtime-plus' });
@@ -8,6 +25,7 @@ export function getRedirectUri(): string {
 
 export async function exchangeSessionFromUrl(url: string): Promise<boolean> {
   try {
+    if (!hasAuthParams(url)) return false;
     // @ts-ignore - supabase client has full auth API
     const { data, error } = await (supabase as any).auth.exchangeCodeForSession(url);
     if (error) {

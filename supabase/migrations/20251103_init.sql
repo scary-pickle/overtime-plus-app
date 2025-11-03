@@ -71,11 +71,11 @@ create table if not exists public.attachments (
 
 -- Triggers
 create or replace function public.set_updated_at()
-returns trigger language plpgsql as 94714
+returns trigger language plpgsql as $$
 begin
   new.updated_at = now();
   return new;
-end; 94714;
+end; $$;
 
 create trigger set_profiles_updated_at before update on public.profiles
 for each row execute function public.set_updated_at();
@@ -128,9 +128,9 @@ create or replace view public.v_overtime_logs as select * from public.overtime_l
 
 -- Upsert profile on first login can be done from client or via RPC; placeholder RPC:
 create or replace function public.ensure_profile()
-returns void language plpgsql security definer as 94714
+returns void language plpgsql security definer as $$
 begin
   insert into public.profiles(user_id, email)
   values (auth.uid(), coalesce(auth.jwt() ->> 'email', ''))
   on conflict (user_id) do nothing;
-end; 94714;
+end; $$;
