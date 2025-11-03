@@ -22,6 +22,7 @@ import { HospitalDropdown } from '../../components/HospitalDropdown';
 import { getDepartmentsForHospital, getHospitalById, QUEENSLAND_HOSPITALS, getDelegateForDepartment } from '../../lib/data/hospitalDepartments';
 import { Profile } from '../../types';
 import { profileStorage } from '../../lib/storage/profile';
+import { useAuthStore } from '../../lib/state/authStore';
 
 // Separate component file would be better, but defining here for now
 // This component uses local state to prevent keyboard dismissal
@@ -947,6 +948,21 @@ export default function ProfileScreen() {
           animationValue={settingsAnimation}
           onToggle={toggleSection}
         >
+          {/* Sign Out action */}
+          <TouchableOpacity
+            style={[styles.settingRow, isDark && styles.darkSettingRow]}
+            onPress={async () => {
+              try {
+                await useAuthStore.getState().signOut();
+                router.replace('/auth/welcome');
+              } catch (e) {
+                // no-op, auth store handles errors
+              }
+            }}
+          >
+            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>Sign Out</Text>
+            <Ionicons name="log-out-outline" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.settingRow, isDark && styles.darkSettingRow]}
             onPress={() => router.push('/email-settings')}
