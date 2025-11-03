@@ -19,14 +19,8 @@ function hasAuthParams(url: string): boolean {
 }
 
 export function getRedirectUri(): string {
-  // Prefer explicit custom scheme to avoid exp:// URLs in Expo Go
-  const envScheme = process.env.EXPO_PUBLIC_REDIRECT_SCHEME || 'overtime-plus';
-  const valid = /^[A-Za-z][A-Za-z0-9+.-]*$/.test(envScheme);
-  const scheme = valid ? envScheme : 'overtime-plus';
-  if (!valid) {
-    console.warn('Invalid EXPO_PUBLIC_REDIRECT_SCHEME, falling back to overtime-plus');
-  }
-  return `${scheme}://auth-callback`;
+  // Use the app scheme from app.config.ts. Hardcode to avoid misconfigured env.
+  return 'overtime-plus://auth-callback';
 }
 
 export async function exchangeSessionFromUrl(url: string): Promise<boolean> {
