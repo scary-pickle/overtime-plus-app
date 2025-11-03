@@ -9,6 +9,7 @@ import { useProfileStore } from '../lib/state/profileStore';
 import { useShiftsStore } from '../lib/state/shiftsStore';
 import { useLogsStore } from '../lib/state/logsStore';
 import { notificationManager } from '../lib/notifications';
+import { subscribeToAuthDeepLinks } from '../lib/auth/deeplinks';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -18,6 +19,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     initializeApp();
+    const unsubscribeLinking = subscribeToAuthDeepLinks();
+    return () => {
+      unsubscribeLinking();
+    };
   }, []);
 
   const initializeApp = async () => {
