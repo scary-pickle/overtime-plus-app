@@ -58,6 +58,13 @@ export default function VerifyEmail() {
           const r2 = await (supabase as any).auth.verifyOtp({ type, token });
           data = r2.data; error = r2.error;
           if (error) console.log('[verify-email] verifyOtp error token only', { message: error.message });
+          if (error) {
+            // Some backends expect token passed as token_hash
+            // @ts-ignore
+            const r3 = await (supabase as any).auth.verifyOtp({ type, token_hash: token });
+            data = r3.data; error = r3.error;
+            if (error) console.log('[verify-email] verifyOtp error token as token_hash', { message: error.message });
+          }
         }
       }
       if (error) {
