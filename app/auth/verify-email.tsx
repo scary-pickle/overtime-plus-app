@@ -12,6 +12,7 @@ export default function VerifyEmail() {
   const [emailInput, setEmailInput] = useState<string>(user?.email ?? '');
   const [cooldown, setCooldown] = useState(0);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState('');
 
   const onPasteCode = async () => {
     clearError();
@@ -123,6 +124,57 @@ export default function VerifyEmail() {
     setCooldown(30);
   };
 
+  const onSendOtp = async () => {
+    try {
+      const targetEmail = emailInput || user?.email;
+      if (!targetEmail) {
+        setStatusMsg('Enter your email first.');
+        return;
+      }
+      setStatusMsg('Sending code…');
+      // Use passwordless email OTP; shouldCreateUser ensures unconfirmed users can get a code
+      // @ts-ignore
+      const { error } = await (supabase as any).auth.signInWithOtp({
+        email: targetEmail,
+        options: { shouldCreateUser: true },
+      });
+      if (error) throw error;
+      setStatusMsg('Code sent. Check your email.');
+    } catch (e) {
+      setStatusMsg(e instanceof Error ? e.message : 'Failed to send code');
+    }
+  };
+
+  const onVerifyOtp = async () => {
+    try {
+      const targetEmail = emailInput || user?.email;
+      if (!targetEmail) {
+        setStatusMsg('Enter your email first.');
+        return;
+      }
+      if (!otpCode || otpCode.length < 6) {
+        setStatusMsg('Enter the 6-digit code.');
+        return;
+      }
+      setStatusMsg('Verifying code…');
+      // @ts-ignore
+      const { data, error } = await (supabase as any).auth.verifyOtp({
+        email: targetEmail,
+        token: otpCode,
+        type: 'email',
+      });
+      if (error) throw error;
+      if (data?.session) {
+        setStatusMsg('Verified. Redirecting…');
+        router.replace('/(tabs)/home');
+      } else {
+        setStatusMsg('Verification failed. Try again.');
+      }
+    } catch (e) {
+      setStatusMsg(e instanceof Error ? e.message : 'Failed to verify code');
+    }
+  };
+
   useEffect(() => {
     if (cooldown <= 0) return;
     const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
@@ -167,6 +219,23 @@ export default function VerifyEmail() {
           />
           <TouchableOpacity onPress={onPasteCode} style={{ backgroundColor: '#10B981', borderRadius: 12, padding: 14, alignItems: 'center' }}>
             <Text style={{ color: '#fff', fontWeight: '600' }}>Confirm</Text>
+          </TouchableOpacity>
+
+          <View style={{ height: 16 }} />
+          <Text style={{ color: '#4b5563' }}>Prefer a one‑time code?</Text>
+          <TouchableOpacity onPress={onSendOtp} style={{ backgroundColor: '#111827', borderRadius: 12, padding: 14, alignItems: 'center' }}>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>Send 6‑digit code to email</Text>
+          </TouchableOpacity>
+          <TextInput
+            value={otpCode}
+            onChangeText={setOtpCode}
+            placeholder="Enter 6‑digit code"
+            keyboardType="number-pad"
+            maxLength={6}
+            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12, marginTop: 8 }}
+          />
+          <TouchableOpacity onPress={onVerifyOtp} style={{ backgroundColor: '#2563EB', borderRadius: 12, padding: 14, alignItems: 'center' }}>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>Verify code</Text>
           </TouchableOpacity>
         </View>
       </View>
