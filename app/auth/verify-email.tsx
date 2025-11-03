@@ -19,6 +19,7 @@ export default function VerifyEmail() {
     if (!codeUrl) return setStatusMsg('Paste the full URL from your email.');
     const pasted = codeUrl.trim();
     // First try PKCE exchange (code + code_verifier)
+    console.log('[verify-email] pasted URL', pasted);
     setStatusMsg('Checking link…');
     const ok = await exchangeSessionFromUrl(pasted);
     if (ok) {
@@ -30,15 +31,34 @@ export default function VerifyEmail() {
     try {
       const u = new URL(pasted);
       const token = u.searchParams.get('token') || u.searchParams.get('token_hash');
+      const type = u.searchParams.get('type') || 'signup';
+      console.log('[verify-email] parsed', { hasToken: !!token, type });
       if (!token) return setStatusMsg('The link did not contain a token.');
-      if (!emailInput) return setStatusMsg('Enter the email you used to sign up.');
+      // For token_hash links, do NOT send email – API expects only token_hash + type
+      setStatusMsg(`Verifying (${type})…`);
       // @ts-ignore
-      setStatusMsg('Verifying code…');
-      const { data, error } = await (supabase as any).auth.verifyOtp({
-        type: 'signup',
+      let { data, error } = await (supabase as any).auth.verifyOtp({
+        type,
         token_hash: token,
-        email: emailInput,
       });
+      if (error) {
+        console.log('[verify-email] verifyOtp error with provided type', { message: error.message });
+        // Try fallback types commonly used by email links
+        const fallbackTypes = type === 'signup' ? ['email', 'magiclink'] : ['signup', 'email', 'magiclink'];
+        for (const ft of fallbackTypes) {
+          setStatusMsg(`Verifying (${ft})…`);
+          // @ts-ignore
+          const r = await (supabase as any).auth.verifyOtp({ type: ft as any, token_hash: token });
+          if (!r.error) {
+            data = r.data;
+            error = null as any;
+            console.log('[verify-email] verifyOtp succeeded with fallback type', ft);
+            break;
+          } else {
+            console.log('[verify-email] verifyOtp still failing', { type: ft, message: r.error.message });
+          }
+        }
+      }
       if (error) throw error;
       if (data?.session) {
         setStatusMsg('Verified. Redirecting…');
