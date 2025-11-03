@@ -21,8 +21,8 @@ Find your project ref in the Supabase dashboard URL: `https://app.supabase.com/p
 - In Settings → API:
   - Use the new Publishable key in `EXPO_PUBLIC_SUPABASE_ANON_KEY`
  - In Authentication → URL Configuration:
-   - Site URL: any valid https URL (can be your future web URL)
-   - Additional Redirect URLs: add `overtime-plus://` (your app scheme)
+  - Site URL: any valid https URL (can be your future web URL)
+  - Additional Redirect URLs: add both `overtime-plus://` and `overtime-plus://auth-callback`
    - Save changes
 
 ## Environment

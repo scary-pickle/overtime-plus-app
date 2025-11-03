@@ -94,6 +94,16 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw error;
       }
       console.log('[authStore.signUp] supabase response', { hasUser: !!data?.user, hasSession: !!data?.session });
+      // If user exists but still needs confirmation, trigger resend to be safe
+      if (data?.user && !data?.session) {
+        // @ts-ignore
+        const r = await (supabase as any).auth.resend({ type: 'signup', email, options: { emailRedirectTo: redirectTo } });
+        if ((r as any)?.error) {
+          console.log('[authStore.signUp] resend failed', { message: (r as any).error.message });
+        } else {
+          console.log('[authStore.signUp] resend triggered');
+        }
+      }
       set({ isLoading: false });
       console.log('[authStore.signUp] completed OK');
       return true;

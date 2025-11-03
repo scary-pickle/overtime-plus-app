@@ -19,8 +19,9 @@ function hasAuthParams(url: string): boolean {
 }
 
 export function getRedirectUri(): string {
-  // Uses app scheme from app.config.ts (scheme: 'overtime-plus')
-  return Linking.createURL('/', { scheme: 'overtime-plus' });
+  // Prefer explicit custom scheme to avoid exp:// URLs in Expo Go
+  const scheme = process.env.EXPO_PUBLIC_REDIRECT_SCHEME || 'overtime-plus';
+  return `${scheme}://auth-callback`;
 }
 
 export async function exchangeSessionFromUrl(url: string): Promise<boolean> {
