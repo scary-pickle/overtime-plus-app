@@ -13,15 +13,30 @@ export default function SignUp() {
   const [localError, setLocalError] = useState<string | null>(null);
 
   const onSubmit = async () => {
+    console.log('[sign-up] submit tapped');
     clearError();
     setLocalError(null);
     const e = email.trim();
-    if (!isValidEmail(e)) return setLocalError('Enter a valid email');
-    if (!isAllowedDomain(e)) return setLocalError('Only @health.qld.gov.au emails are allowed');
-    if (password !== confirm) return setLocalError('Passwords do not match');
+    if (!isValidEmail(e)) {
+      console.log('[sign-up] invalid email');
+      return setLocalError('Enter a valid email');
+    }
+    if (!isAllowedDomain(e)) {
+      console.log('[sign-up] domain not allowed');
+      return setLocalError('Only @health.qld.gov.au emails are allowed');
+    }
+    if (password !== confirm) {
+      console.log('[sign-up] password mismatch');
+      return setLocalError('Passwords do not match');
+    }
     const pw = validatePasswordStrength(password);
-    if (!pw.valid) return setLocalError(`Password: ${pw.errors.join(', ')}`);
+    if (!pw.valid) {
+      console.log('[sign-up] weak password', { issues: pw.errors });
+      return setLocalError(`Password: ${pw.errors.join(', ')}`);
+    }
+    console.log('[sign-up] calling store.signUp');
     const ok = await signUp(e, password);
+    console.log('[sign-up] store.signUp returned', { ok });
     if (ok) router.replace('/auth/verify-email');
   };
 

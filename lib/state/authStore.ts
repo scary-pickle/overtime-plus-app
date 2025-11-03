@@ -64,25 +64,42 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   signUp: async (email: string, password: string) => {
+    console.log('[authStore.signUp] invoked', { emailMasked: email.replace(/(^.).+(@.*$)/, '$1***$2') });
     set({ isLoading: true, error: null });
     try {
-      if (!isValidEmail(email)) throw new Error('Invalid email format');
-      if (!isAllowedDomain(email)) throw new Error('Email domain not allowed');
+      if (!isValidEmail(email)) {
+        console.log('[authStore.signUp] invalid email format');
+        throw new Error('Invalid email format');
+      }
+      if (!isAllowedDomain(email)) {
+        console.log('[authStore.signUp] domain not allowed');
+        throw new Error('Email domain not allowed');
+      }
       const pw = validatePasswordStrength(password);
-      if (!pw.valid) throw new Error(`Password requirements: ${pw.errors.join(', ')}`);
+      if (!pw.valid) {
+        console.log('[authStore.signUp] password weak', { issues: pw.errors });
+        throw new Error(`Password requirements: ${pw.errors.join(', ')}`);
+      }
 
       const redirectTo = getRedirectUri();
+      console.log('[authStore.signUp] calling supabase.auth.signUp', { redirectTo });
       // @ts-ignore
-      const { error } = await (supabase as any).auth.signUp({
+      const { data, error } = await (supabase as any).auth.signUp({
         email,
         password,
         options: { emailRedirectTo: redirectTo },
       });
-      if (error) throw error;
+      if (error) {
+        console.log('[authStore.signUp] supabase error', { code: (error as any)?.code, message: error.message });
+        throw error;
+      }
+      console.log('[authStore.signUp] supabase response', { hasUser: !!data?.user, hasSession: !!data?.session });
       set({ isLoading: false });
+      console.log('[authStore.signUp] completed OK');
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sign up failed';
+      console.log('[authStore.signUp] failed', { message: msg });
       set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
       return false;
     }
