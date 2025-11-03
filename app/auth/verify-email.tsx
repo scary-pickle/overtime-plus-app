@@ -11,35 +11,50 @@ export default function VerifyEmail() {
   const [codeUrl, setCodeUrl] = useState('');
   const [emailInput, setEmailInput] = useState<string>(user?.email ?? '');
   const [cooldown, setCooldown] = useState(0);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   const onPasteCode = async () => {
     clearError();
-    if (!codeUrl) return;
+    setStatusMsg(null);
+    if (!codeUrl) return setStatusMsg('Paste the full URL from your email.');
     const pasted = codeUrl.trim();
     // First try PKCE exchange (code + code_verifier)
+    setStatusMsg('Checking link…');
     const ok = await exchangeSessionFromUrl(pasted);
-    if (ok) return router.replace('/(tabs)/home');
+    if (ok) {
+      setStatusMsg('Verified. Redirecting…');
+      return router.replace('/(tabs)/home');
+    }
 
     // Fallback: handle token links (verifyOtp)
     try {
       const u = new URL(pasted);
       const token = u.searchParams.get('token') || u.searchParams.get('token_hash');
-      if (!token) return; // nothing we can do
-      if (!emailInput) return; // need email for verifyOtp
+      if (!token) return setStatusMsg('The link did not contain a token.');
+      if (!emailInput) return setStatusMsg('Enter the email you used to sign up.');
       // @ts-ignore
+      setStatusMsg('Verifying code…');
       const { data, error } = await (supabase as any).auth.verifyOtp({
         type: 'signup',
         token_hash: token,
         email: emailInput,
       });
       if (error) throw error;
-      if (data?.session) return router.replace('/(tabs)/home');
+      if (data?.session) {
+        setStatusMsg('Verified. Redirecting…');
+        return router.replace('/(tabs)/home');
+      }
       // As a last resort, refresh session
       // @ts-ignore
       const { data: s } = await (supabase as any).auth.getSession();
-      if (s?.session) router.replace('/(tabs)/home');
+      if (s?.session) {
+        setStatusMsg('Verified. Redirecting…');
+        router.replace('/(tabs)/home');
+      } else {
+        setStatusMsg('Verification failed. Please try again or resend the email.');
+      }
     } catch (e) {
-      // ignore - UI will show error if needed
+      setStatusMsg(e instanceof Error ? e.message : 'Verification failed');
     }
   };
 
@@ -70,6 +85,7 @@ export default function VerifyEmail() {
         </View>
         <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12 }}>
           {error ? <Text style={{ color: '#b91c1c' }}>{error}</Text> : null}
+          {statusMsg ? <Text style={{ color: '#111827' }}>{statusMsg}</Text> : null}
           <TouchableOpacity onPress={onResend} disabled={isLoading || cooldown > 0} style={{ backgroundColor: '#2563EB', borderRadius: 12, padding: 14, alignItems: 'center', opacity: isLoading || cooldown > 0 ? 0.7 : 1 }}>
             <Text style={{ color: '#fff', fontWeight: '600' }}>{isLoading ? 'Resending…' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend verification email'}</Text>
           </TouchableOpacity>
