@@ -105,28 +105,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         console.log('[authStore.signUp] password weak', { issues: pw.errors });
         throw new Error(`Password requirements: ${pw.errors.join(', ')}`);
       }
-      // OTP-first flow: send 6-digit code to email; set pending password
-      console.log('[authStore.signUp] sending OTP via signInWithOtp');
+      // Use normal signUp flow - it will send "Confirm sign up" email template (configured to show OTP code)
+      console.log('[authStore.signUp] calling supabase.auth.signUp');
       // @ts-ignore
-      const { data, error } = await (supabase as any).auth.signInWithOtp({
+      const { data, error } = await (supabase as any).auth.signUp({
         email,
-        options: { 
-          shouldCreateUser: true,
-          emailRedirectTo: undefined, // Don't send redirect links
-          // Force OTP format (not magic link)
+        password,
+        options: {
+          emailRedirectTo: undefined, // Don't send redirect links, just OTP code in email
         },
       });
       if (error) {
-        console.log('[authStore.signUp] signInWithOtp error', { message: error.message });
+        console.log('[authStore.signUp] supabase error', { code: (error as any)?.code, message: error.message });
         throw error;
       }
-      console.log('[authStore.signUp] OTP sent', { hasUser: !!data?.user });
+      console.log('[authStore.signUp] signup response', { hasUser: !!data?.user, hasSession: !!data?.session });
+      // User created, confirmation email sent (configured to show OTP code in template)
       set({
         pendingEmail: email,
         pendingPassword: password,
         emailVerified: false,
         isLoading: false,
-        user: null,
+        user: data?.user ?? null,
         session: null,
       });
       console.log('[authStore.signUp] completed OK');

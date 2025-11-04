@@ -16,15 +16,15 @@ Find your project ref in the Supabase dashboard URL: `https://app.supabase.com/p
 
 ## Configure Auth
 - In Supabase Dashboard → Authentication → Providers:
-  - Email: **Disable "Confirm Email" requirement** (we use OTP codes instead)
+  - Email: **Enable "Confirm Email" requirement** (required)
   - SMTP: configure a verified sender (SES/Postmark/Resend)
 - In Settings → API:
   - Use the new Publishable key in `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-- **Critical: Configure Magic Link Template for OTP Codes**
-  - Dashboard → Authentication → Email Templates → **Magic Link** tab
-  - Edit the "Magic Link" template to show the OTP code instead of a link
+- **Critical: Configure "Confirm sign up" Template for OTP Codes**
+  - Dashboard → Authentication → Email Templates → **Confirm sign up** tab
+  - Edit the "Confirm sign up" template to show the OTP code instead of a link
   - **Subject heading:** `Your OTP Code`
-  - **Message body (Source):**
+  - **Message body (Source):** Replace the link with the OTP code:
     ```html
     <h2>Your Verification Code</h2>
     <p>Your one-time verification code is:</p>
@@ -32,12 +32,8 @@ Find your project ref in the Supabase dashboard URL: `https://app.supabase.com/p
     <p>Enter this 6-digit code in the app to verify your email.</p>
     <p>This code will expire in 1 hour.</p>
     ```
-  - **Note:** If `{{ .Token }}` doesn't work, try `{{ .OTP }}` or `{{ .Code }}` - check Supabase docs for your template engine
+  - **Note:** If `{{ .Token }}` doesn't work, try `{{ .OTP }}`, `{{ .Code }}`, or `{{ .TokenHash }}` - check Supabase docs for your template engine
   - Save the template
-- **Disable "Confirm signup" email auto-send** (optional, to avoid duplicate emails):
-  - Dashboard → Authentication → Settings
-  - Look for "Send confirmation email on signup" or similar and disable it
-  - We handle verification via Magic Link OTP instead
  - In Authentication → URL Configuration:
   - Site URL: any valid https URL (can be your future web URL)
   - Additional Redirect URLs: add both `overtime-plus://` and `overtime-plus://auth-callback`
