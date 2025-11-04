@@ -23,6 +23,11 @@ interface SupabaseClient {
     signUp: (credentials: any) => Promise<any>;
     signOut: () => Promise<any>;
     getSession: () => Promise<any>;
+    signInWithPassword?: (credentials: any) => Promise<any>;
+    signInWithOtp?: (credentials: any) => Promise<any>;
+    verifyOtp?: (params: any) => Promise<any>;
+    updateUser?: (params: any) => Promise<any>;
+    resend?: (params: any) => Promise<any>;
   };
   from: (table: string) => any;
 }
@@ -38,6 +43,14 @@ const createStubClient = (): SupabaseClient => ({
       console.log('Stub: signUp called');
       return { data: null, error: new Error('Supabase not configured') };
     },
+    signInWithPassword: async () => {
+      console.log('Stub: signInWithPassword called');
+      return { data: null, error: new Error('Supabase not configured') };
+    },
+    signInWithOtp: async () => {
+      console.log('Stub: signInWithOtp called');
+      return { data: null, error: new Error('Supabase not configured') };
+    },
     signOut: async () => {
       console.log('Stub: signOut called');
       return { error: null };
@@ -45,6 +58,18 @@ const createStubClient = (): SupabaseClient => ({
     getSession: async () => {
       console.log('Stub: getSession called');
       return { data: { session: null }, error: null };
+    },
+    verifyOtp: async () => {
+      console.log('Stub: verifyOtp called');
+      return { data: null, error: new Error('Supabase not configured') };
+    },
+    updateUser: async () => {
+      console.log('Stub: updateUser called');
+      return { data: null, error: new Error('Supabase not configured') };
+    },
+    resend: async () => {
+      console.log('Stub: resend called');
+      return { data: null, error: new Error('Supabase not configured') };
     },
   },
   from: (table: string) => ({

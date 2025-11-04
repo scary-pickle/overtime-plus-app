@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { supabase } from '../supabase';
-import { getRedirectUri } from '../auth/deeplinks';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../auth/validation';
 import { toFriendlyAuthMessage } from '../auth/errors';
 
@@ -14,14 +13,15 @@ interface AuthState {
   pendingPassword: string | null;
 
   checkSession: () => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<'success' | 'verify' | 'error'>;
   signUp: (email: string, password: string) => Promise<boolean>;
   signOut: () => Promise<void>;
-  resendVerification: (email: string) => Promise<void>;
+  requestEmailOtp: (email: string, shouldCreateUser?: boolean) => Promise<boolean>;
+  verifyEmailOtp: (email: string, token: string) => Promise<'success' | 'error'>;
   clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
   isLoading: false,
@@ -57,13 +57,34 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       // @ts-ignore
       const { data, error } = await (supabase as any).auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      if (error) {
+        const msg = (error.message || '').toLowerCase();
+        if (msg.includes('email not confirmed') || msg.includes('confirm your email') || msg.includes('email not verified')) {
+          set({
+            isLoading: false,
+            error: toFriendlyAuthMessage(error.message),
+            pendingEmail: email,
+            emailVerified: false,
+          });
+          return 'verify';
+        }
+        throw error;
+      }
       const session = data?.session ?? null;
       const user = session?.user ?? null;
-      set({ session, user, emailVerified: !!user?.email_confirmed_at, isLoading: false });
+      set({
+        session,
+        user,
+        emailVerified: !!user?.email_confirmed_at,
+        pendingEmail: null,
+        pendingPassword: null,
+        isLoading: false,
+      });
+      return 'success';
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sign in failed';
       set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
+      return 'error';
     }
   },
 
@@ -96,8 +117,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         throw error;
       }
       console.log('[authStore.signUp] OTP sent', { hasUser: !!data?.user });
-      set({ pendingEmail: email, pendingPassword: password });
-      set({ isLoading: false });
+      set({
+        pendingEmail: email,
+        pendingPassword: password,
+        emailVerified: false,
+        isLoading: false,
+        user: null,
+        session: null,
+      });
       console.log('[authStore.signUp] completed OK');
       return true;
     } catch (e) {
@@ -108,21 +135,88 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  resendVerification: async (email: string) => {
+  requestEmailOtp: async (email: string, shouldCreateUser = false) => {
+    const emailMasked = email.replace(/(^.).+(@.*$)/, '$1***$2');
+    console.log('[authStore.requestEmailOtp] sending OTP', { emailMasked, shouldCreateUser });
     set({ isLoading: true, error: null });
     try {
-      const redirectTo = getRedirectUri();
       // @ts-ignore
-      const { error } = await (supabase as any).auth.resend({
-        type: 'signup',
+      const { error } = await (supabase as any).auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: redirectTo },
+        options: { shouldCreateUser },
       });
       if (error) throw error;
-      set({ isLoading: false });
+      set({ pendingEmail: email, isLoading: false });
+      return true;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to resend verification';
+      const msg = e instanceof Error ? e.message : 'Failed to send code';
+      console.log('[authStore.requestEmailOtp] failed', { message: msg });
       set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
+      return false;
+    }
+  },
+
+  verifyEmailOtp: async (email: string, token: string) => {
+    const emailMasked = email.replace(/(^.).+(@.*$)/, '$1***$2');
+    console.log('[authStore.verifyEmailOtp] verifying', { emailMasked });
+    set({ isLoading: true, error: null });
+    try {
+      const attemptTypes: Array<'email' | 'signup'> = ['email', 'signup'];
+      let session: any = null;
+      let lastError: Error | null = null;
+      for (const type of attemptTypes) {
+        // @ts-ignore
+        const { data, error } = await (supabase as any).auth.verifyOtp({ email, token, type });
+        if (!error && (data?.session || data?.user)) {
+          session = data?.session ?? null;
+          lastError = null;
+          break;
+        }
+        if (error) {
+          lastError = error;
+        }
+      }
+      if (!session) {
+        // Ensure we have an active session in case verifyOtp returned only a user object
+        // @ts-ignore
+        const { data: fallbackSession, error: fallbackError } = await (supabase as any).auth.getSession();
+        if (fallbackSession?.session) {
+          session = fallbackSession.session;
+        } else if (fallbackError) {
+          lastError = fallbackError;
+        }
+      }
+      if (!session) {
+        if (lastError) throw lastError;
+        throw new Error('Verification failed. Try again.');
+      }
+      const pendingPassword = get().pendingPassword;
+      if (pendingPassword) {
+        console.log('[authStore.verifyEmailOtp] applying pending password');
+        // @ts-ignore
+        const { error } = await (supabase as any).auth.updateUser({ password: pendingPassword });
+        if (error) throw error;
+      }
+      // Fetch fresh session/user to ensure flags are updated
+      // @ts-ignore
+      const { data: latest } = await (supabase as any).auth.getSession();
+      const finalSession = latest?.session ?? session;
+      const finalUser = finalSession?.user ?? null;
+      set({
+        session: finalSession,
+        user: finalUser,
+        emailVerified: true,
+        pendingEmail: null,
+        pendingPassword: null,
+        isLoading: false,
+      });
+      console.log('[authStore.verifyEmailOtp] verification complete', { hasUser: !!finalUser });
+      return 'success';
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to verify code';
+      console.log('[authStore.verifyEmailOtp] failed', { message: msg });
+      set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
+      return 'error';
     }
   },
 
@@ -132,12 +226,17 @@ export const useAuthStore = create<AuthState>((set) => ({
       // @ts-ignore
       const { error } = await (supabase as any).auth.signOut();
       if (error) throw error;
-      set({ user: null, session: null, emailVerified: false, isLoading: false });
+      set({
+        user: null,
+        session: null,
+        emailVerified: false,
+        pendingEmail: null,
+        pendingPassword: null,
+        isLoading: false,
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sign out failed';
       set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
     }
   },
 }));
-
-

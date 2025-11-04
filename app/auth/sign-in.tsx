@@ -5,15 +5,17 @@ import { useAuthStore } from '../../lib/state/authStore';
 
 export default function SignIn() {
   const router = useRouter();
-  const { signIn, isLoading, error, clearError, emailVerified } = useAuthStore();
+  const { signIn, isLoading, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const onSubmit = async () => {
     clearError();
-    await signIn(email.trim(), password);
-    if (emailVerified) {
+    const result = await signIn(email.trim(), password);
+    if (result === 'success') {
       router.replace('/(tabs)/home');
+    } else if (result === 'verify') {
+      router.replace('/auth/verify-email');
     }
   };
 
@@ -44,7 +46,7 @@ export default function SignIn() {
           />
           {error ? <Text style={{ color: '#b91c1c' }}>{error}</Text> : null}
           <TouchableOpacity onPress={onSubmit} disabled={isLoading} style={{ backgroundColor: '#2563EB', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, opacity: isLoading ? 0.7 : 1 }}>
-            <Text style={{ color: '#fff', fontWeight: '600' }}>{isLoading ? 'Signing in…' : 'Sign In'}</Text>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>{isLoading ? 'Signing in...' : 'Sign In'}</Text>
           </TouchableOpacity>
         </View>
         <Link href="/auth/forgot-password">
@@ -57,5 +59,3 @@ export default function SignIn() {
     </SafeAreaView>
   );
 }
-
-

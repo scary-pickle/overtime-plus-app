@@ -76,10 +76,10 @@ export default function SignUp() {
             style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
           />
           <TouchableOpacity onPress={onSubmit} disabled={isLoading} style={{ backgroundColor: '#10B981', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, opacity: isLoading ? 0.7 : 1 }}>
-            <Text style={{ color: '#fff', fontWeight: '600' }}>{isLoading ? 'Creating…' : 'Create Account'}</Text>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>{isLoading ? 'Creating...' : 'Create Account'}</Text>
           </TouchableOpacity>
           <Text style={{ textAlign: 'center', marginTop: 8, color: '#6b7280' }}>
-            You'll receive a verification email. Open it on this device.
+            We'll email you a 6-digit code to confirm your account inside the app.
           </Text>
         </View>
         <Link href="/auth/sign-in">
@@ -89,5 +89,3 @@ export default function SignUp() {
     </SafeAreaView>
   );
 }
-
-
