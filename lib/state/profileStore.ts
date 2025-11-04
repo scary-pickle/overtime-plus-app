@@ -8,9 +8,10 @@ interface ProfileState {
   error: string | null;
   
   // Actions
-  loadProfile: () => Promise<void>;
-  saveProfile: (profile: Profile) => Promise<void>;
-  deleteProfile: () => Promise<void>;
+  loadProfile: (userId?: string | null) => Promise<void>;
+  saveProfile: (profile: Profile, userId?: string | null) => Promise<void>;
+  deleteProfile: (userId?: string | null) => Promise<void>;
+  clearLegacyProfile: () => Promise<void>;
   clearError: () => void;
   
   // Computed getters
@@ -24,11 +25,18 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  loadProfile: async () => {
+  loadProfile: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const profile = await profileStorage.loadProfile();
-      console.log('Profile loaded from storage:', profile ? 'Profile exists' : 'No profile');
+      // Clear legacy profile if we have a userId (new authenticated user)
+      if (userId) {
+        await profileStorage.clearLegacyProfile();
+      }
+      const profile = await profileStorage.loadProfile(userId);
+      console.log('Profile loaded from storage:', { 
+        userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
+        hasProfile: profile !== null 
+      });
       if (profile) {
         console.log('Profile completeness check:', profileStorage.isProfileComplete(profile));
         console.log('Profile fields:', Object.keys(profile));
@@ -51,10 +59,10 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
-  saveProfile: async (profile: Profile) => {
+  saveProfile: async (profile: Profile, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      await profileStorage.saveProfile(profile);
+      await profileStorage.saveProfile(profile, userId);
       console.log('Profile saved to storage, updating store state');
       set({ 
         profile, 
@@ -74,10 +82,10 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
-  deleteProfile: async () => {
+  deleteProfile: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      await profileStorage.deleteProfile();
+      await profileStorage.deleteProfile(userId);
       set({ 
         profile: null, 
         isLoading: false,
@@ -88,6 +96,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to delete profile' 
       });
+    }
+  },
+
+  clearLegacyProfile: async () => {
+    try {
+      await profileStorage.clearLegacyProfile();
+    } catch (error) {
+      console.error('Error clearing legacy profile:', error);
     }
   },
 

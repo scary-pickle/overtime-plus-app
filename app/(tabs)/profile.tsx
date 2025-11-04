@@ -261,6 +261,7 @@ export default function ProfileScreen() {
   const profile = useProfileStore((state) => state.profile);
   const saveProfile = useProfileStore((state) => state.saveProfile);
   const loadProfile = useProfileStore((state) => state.loadProfile);
+  const { user } = useAuthStore(); // Get user for userId
   // Compute isComplete locally instead of from store to avoid re-renders
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const [formData, setFormData] = useState<Partial<Profile>>({});
@@ -288,6 +289,7 @@ export default function ProfileScreen() {
     employeeDetails: false,
     organisation: false,
     delegateDetails: false,
+    account: false,
     settings: false,
     widgetSetup: false,
   });
@@ -296,6 +298,7 @@ export default function ProfileScreen() {
   const employeeDetailsAnimation = useRef(new Animated.Value(0)).current;
   const organisationAnimation = useRef(new Animated.Value(0)).current;
   const delegateDetailsAnimation = useRef(new Animated.Value(0)).current;
+  const accountAnimation = useRef(new Animated.Value(0)).current;
   const settingsAnimation = useRef(new Animated.Value(0)).current;
   const widgetSetupAnimation = useRef(new Animated.Value(0)).current;
 
@@ -393,7 +396,7 @@ export default function ProfileScreen() {
     });
 
     try {
-      await saveProfile(profileData);
+      await saveProfile(profileData, user?.id);
       setIsEditing(false);
       console.log('Profile saved successfully, profileData:', profileData);
       Alert.alert('Success', 'Profile saved successfully!');
@@ -936,6 +939,64 @@ export default function ProfileScreen() {
           />
         </CollapsibleSection>
 
+        {/* Account Management */}
+        <CollapsibleSection
+          sectionKey="account"
+          title="Account"
+          subtitle="Sign in and account management"
+          showEdit={false}
+          isDark={isDark}
+          isExpanded={expandedSections.account}
+          isEditing={isEditing}
+          animationValue={accountAnimation}
+          onToggle={toggleSection}
+        >
+          {/* Email Address */}
+          {user?.email && (
+            <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
+              <View>
+                <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                  Email Address
+                </Text>
+                <Text style={[styles.settingValue, isDark && styles.darkSettingValue, { marginTop: 4 }]}>
+                  {user.email}
+                </Text>
+              </View>
+            </View>
+          )}
+          
+          {/* Sign Out action */}
+          <TouchableOpacity
+            style={[styles.settingRow, isDark && styles.darkSettingRow]}
+            onPress={async () => {
+              Alert.alert(
+                'Sign Out',
+                'Are you sure you want to sign out?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Sign Out',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        await useAuthStore.getState().signOut();
+                        router.replace('/auth/welcome');
+                      } catch (e) {
+                        Alert.alert('Error', 'Failed to sign out. Please try again.');
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel, { color: '#dc2626' }]}>
+              Sign Out
+            </Text>
+            <Ionicons name="log-out-outline" size={20} color="#dc2626" />
+          </TouchableOpacity>
+        </CollapsibleSection>
+
         {/* Settings */}
         <CollapsibleSection
           sectionKey="settings"
@@ -948,21 +1009,6 @@ export default function ProfileScreen() {
           animationValue={settingsAnimation}
           onToggle={toggleSection}
         >
-          {/* Sign Out action */}
-          <TouchableOpacity
-            style={[styles.settingRow, isDark && styles.darkSettingRow]}
-            onPress={async () => {
-              try {
-                await useAuthStore.getState().signOut();
-                router.replace('/auth/welcome');
-              } catch (e) {
-                // no-op, auth store handles errors
-              }
-            }}
-          >
-            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>Sign Out</Text>
-            <Ionicons name="log-out-outline" size={20} color={isDark ? '#999' : '#666'} />
-          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.settingRow, isDark && styles.darkSettingRow]}
             onPress={() => router.push('/email-settings')}

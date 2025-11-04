@@ -1,18 +1,30 @@
 import * as SecureStore from 'expo-secure-store';
 import { Profile } from '../../types';
 
-const PROFILE_KEY = 'overtime_plus_profile';
+const PROFILE_KEY_PREFIX = 'overtime_plus_profile';
+const LEGACY_PROFILE_KEY = 'overtime_plus_profile'; // Old key for migration
+
+function getProfileKey(userId?: string | null): string {
+  if (!userId) {
+    // For unauthenticated users, use legacy key
+    return LEGACY_PROFILE_KEY;
+  }
+  return `${PROFILE_KEY_PREFIX}_${userId}`;
+}
 
 export class ProfileStorage {
-  async saveProfile(profile: Profile): Promise<void> {
+  async saveProfile(profile: Profile, userId?: string | null): Promise<void> {
     try {
+      const profileKey = getProfileKey(userId);
       console.log('Saving profile to storage:', {
+        userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
+        profileKey,
         hasEmployeeInitial: !!profile.employeeInitial,
         employeeInitial: profile.employeeInitial,
         allFields: Object.keys(profile)
       });
       const profileJson = JSON.stringify(profile);
-      await SecureStore.setItemAsync(PROFILE_KEY, profileJson);
+      await SecureStore.setItemAsync(profileKey, profileJson);
       console.log('Profile saved successfully to storage');
     } catch (error) {
       console.error('Failed to save profile:', error);
@@ -20,9 +32,14 @@ export class ProfileStorage {
     }
   }
 
-  async loadProfile(): Promise<Profile | null> {
+  async loadProfile(userId?: string | null): Promise<Profile | null> {
     try {
-      const profileJson = await SecureStore.getItemAsync(PROFILE_KEY);
+      const profileKey = getProfileKey(userId);
+      console.log('Loading profile from storage:', { 
+        userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
+        profileKey 
+      });
+      const profileJson = await SecureStore.getItemAsync(profileKey);
       if (!profileJson) {
         return null;
       }
@@ -40,7 +57,7 @@ export class ProfileStorage {
         delete profile.delegateSignatureUri;
         
         // Save the migrated profile
-        await this.saveProfile(profile as Profile);
+        await this.saveProfile(profile as Profile, userId);
         console.log('Profile migrated successfully');
       }
       
@@ -49,7 +66,7 @@ export class ProfileStorage {
         console.log('Setting missing employee initial from full name:', profile.fullName);
         profile.employeeInitial = this.generateInitials(profile.fullName);
         // Save the updated profile
-        await this.saveProfile(profile as Profile);
+        await this.saveProfile(profile as Profile, userId);
       }
       
       // Migration: Add concurrent employment default if missing
@@ -57,7 +74,7 @@ export class ProfileStorage {
         console.log('Adding missing concurrentEmploymentDefault field...');
         profile.concurrentEmploymentDefault = false;
         // Save the updated profile
-        await this.saveProfile(profile as Profile);
+        await this.saveProfile(profile as Profile, userId);
       }
       
       // Migration: Add email field if missing
@@ -65,7 +82,7 @@ export class ProfileStorage {
         console.log('Adding missing email field...');
         profile.email = '';
         // Save the updated profile
-        await this.saveProfile(profile as Profile);
+        await this.saveProfile(profile as Profile, userId);
       }
       
       // Migration: Add isSMO field if missing
@@ -73,7 +90,7 @@ export class ProfileStorage {
         console.log('Adding missing isSMO field...');
         profile.isSMO = false; // Default to non-SMO
         // Save the updated profile
-        await this.saveProfile(profile as Profile);
+        await this.saveProfile(profile as Profile, userId);
       }
       
       console.log('Profile loaded from storage:', {
@@ -89,23 +106,36 @@ export class ProfileStorage {
     }
   }
 
-  async deleteProfile(): Promise<void> {
+  async deleteProfile(userId?: string | null): Promise<void> {
     try {
-      await SecureStore.deleteItemAsync(PROFILE_KEY);
-      console.log('Profile deleted successfully');
+      const profileKey = getProfileKey(userId);
+      await SecureStore.deleteItemAsync(profileKey);
+      console.log('Profile deleted successfully', { profileKey });
     } catch (error) {
       console.error('Failed to delete profile:', error);
       throw new Error('Failed to delete profile from secure storage');
     }
   }
 
-  async hasProfile(): Promise<boolean> {
+  async hasProfile(userId?: string | null): Promise<boolean> {
     try {
-      const profileJson = await SecureStore.getItemAsync(PROFILE_KEY);
+      const profileKey = getProfileKey(userId);
+      const profileJson = await SecureStore.getItemAsync(profileKey);
       return profileJson !== null;
     } catch (error) {
       console.error('Failed to check profile existence:', error);
       return false;
+    }
+  }
+
+  // Clear old legacy profile (from before auth was implemented)
+  async clearLegacyProfile(): Promise<void> {
+    try {
+      await SecureStore.deleteItemAsync(LEGACY_PROFILE_KEY);
+      console.log('Legacy profile cleared successfully');
+    } catch (error) {
+      console.error('Failed to clear legacy profile:', error);
+      // Don't throw - this is a cleanup operation
     }
   }
 

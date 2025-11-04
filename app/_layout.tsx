@@ -43,7 +43,7 @@ export default function RootLayout() {
       // Profile, shifts, logs are user-specific and should only load after auth
       if (user && emailVerified) {
         await Promise.all([
-          loadProfile(),
+          loadProfile(user.id), // Pass userId to load user-specific profile
           loadShifts(),
           loadLogs(),
           loadExportBatches(),
