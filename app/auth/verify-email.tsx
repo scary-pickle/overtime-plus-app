@@ -66,12 +66,19 @@ export default function VerifyEmail() {
     [requestEmailOtp, clearError]
   );
 
+  // Auto-send OTP when arriving from signup (pendingEmail + pendingPassword means we just signed up)
   useEffect(() => {
     if (!pendingEmail) return;
     if (autoSentRef.current === pendingEmail) return;
-    autoSentRef.current = pendingEmail;
-    sendOtp(pendingEmail, Boolean(pendingPassword), false);
-  }, [pendingEmail, pendingPassword, sendOtp]);
+    // Only auto-send if we have pendingPassword (came from signup flow)
+    // This means signUp already sent the Magic Link email, so we don't need to resend
+    // But if user is here without pendingPassword, they might need to request code manually
+    if (pendingPassword) {
+      console.log('[verify-email] auto-send skipped - code already sent during signup');
+      setStatusMsg('Check your email for the 6-digit code.');
+      autoSentRef.current = pendingEmail; // Mark as sent so we don't try again
+    }
+  }, [pendingEmail, pendingPassword]);
 
   useEffect(() => {
     if (cooldown <= 0) return;

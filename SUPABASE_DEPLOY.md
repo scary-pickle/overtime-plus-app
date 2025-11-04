@@ -16,22 +16,28 @@ Find your project ref in the Supabase dashboard URL: `https://app.supabase.com/p
 
 ## Configure Auth
 - In Supabase Dashboard → Authentication → Providers:
-  - Email: enable Confirm Email (required)
+  - Email: **Disable "Confirm Email" requirement** (we use OTP codes instead)
   - SMTP: configure a verified sender (SES/Postmark/Resend)
 - In Settings → API:
   - Use the new Publishable key in `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-- **Critical: Configure Email Templates for OTP Codes**
-  - Dashboard → Authentication → Email Templates
-  - Edit "Magic Link" template (or create a custom one)
-  - Change the template to show the OTP code instead of a link
-  - The code is available in the template as `{{ .Token }}` or `{{ .TokenHash }}`
-  - Example template body:
+- **Critical: Configure Magic Link Template for OTP Codes**
+  - Dashboard → Authentication → Email Templates → **Magic Link** tab
+  - Edit the "Magic Link" template to show the OTP code instead of a link
+  - **Subject heading:** `Your OTP Code`
+  - **Message body (Source):**
+    ```html
+    <h2>Your Verification Code</h2>
+    <p>Your one-time verification code is:</p>
+    <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #2563EB;">{{ .Token }}</p>
+    <p>Enter this 6-digit code in the app to verify your email.</p>
+    <p>This code will expire in 1 hour.</p>
     ```
-    Your OTP code is: {{ .Token }}
-    Enter this code in the app to verify your email.
-    This code expires in 1 hour.
-    ```
-  - Or use the default "OTP" template if available
+  - **Note:** If `{{ .Token }}` doesn't work, try `{{ .OTP }}` or `{{ .Code }}` - check Supabase docs for your template engine
+  - Save the template
+- **Disable "Confirm signup" email auto-send** (optional, to avoid duplicate emails):
+  - Dashboard → Authentication → Settings
+  - Look for "Send confirmation email on signup" or similar and disable it
+  - We handle verification via Magic Link OTP instead
  - In Authentication → URL Configuration:
   - Site URL: any valid https URL (can be your future web URL)
   - Additional Redirect URLs: add both `overtime-plus://` and `overtime-plus://auth-callback`
