@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
+import { useAuthStore } from '../../lib/state/authStore';
 import { ShiftCard } from '../../components/ShiftCard';
 import { EmptyState } from '../../components/EmptyState';
 import { ShiftsCalendarView } from '../../components/ShiftsCalendarView';
@@ -23,18 +24,19 @@ export default function ShiftsScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
+  const { user } = useAuthStore();
   const { shifts, deleteShift, loadShifts } = useShiftsStore();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('🔄 ShiftsScreen: Loading shifts...');
-    loadShifts();
-  }, []);
+    loadShifts(user?.id);
+  }, [user?.id]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadShifts();
+    await loadShifts(user?.id);
     setRefreshing(false);
   };
 

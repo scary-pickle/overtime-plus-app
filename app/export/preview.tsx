@@ -46,6 +46,25 @@ export default function ExportPreviewScreen() {
       return;
     }
 
+    // Check if delegate information is complete
+    if (!profile.delegateName || !profile.delegatePosition || !profile.delegatePhone || !profile.delegateAreaCode) {
+      Alert.alert(
+        'Delegate Information Required',
+        'Delegate information is required to generate AVAC forms. Please complete your delegate details in your profile.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Go to Profile', 
+            onPress: () => {
+              router.replace('/(tabs)/profile');
+            }
+          }
+        ]
+      );
+      setError('Delegate information is required to generate PDFs');
+      return;
+    }
+
     const readyLogs = getReadyLogs();
     if (readyLogs.length === 0) {
       setError('No ready logs to export');

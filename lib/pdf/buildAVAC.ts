@@ -199,10 +199,36 @@ async function copyTemplateToCache(): Promise<void> {
         console.log('Template asset downloaded, localUri:', templateAsset.localUri);
         
         if (templateAsset.localUri) {
-          // Copy the template to cache using the proper copyAsync syntax
-          console.log('Copying template to cache...');
-          await copyAsync({ from: templateAsset.localUri, to: templatePath });
-          console.log('Template copied to cache successfully');
+          // Validate the downloaded file before copying
+          try {
+            const downloadedFileInfo = await getInfoAsync(templateAsset.localUri);
+            console.log('Downloaded template file info:', downloadedFileInfo);
+            
+            if (downloadedFileInfo.exists && downloadedFileInfo.size) {
+              const MIN_FILE_SIZE = 10000; // 10KB minimum
+              if (downloadedFileInfo.size < MIN_FILE_SIZE) {
+                console.warn(`Downloaded template file too small (${downloadedFileInfo.size} bytes), likely corrupted. Skipping copy.`);
+                throw new Error(`Downloaded file too small: ${downloadedFileInfo.size} bytes`);
+              }
+              
+              // Copy the template to cache using the proper copyAsync syntax
+              console.log('Copying template to cache...');
+              await copyAsync({ from: templateAsset.localUri, to: templatePath });
+              
+              // Verify the copied file
+              const copiedFileInfo = await getInfoAsync(templatePath);
+              if (copiedFileInfo.exists && copiedFileInfo.size && copiedFileInfo.size >= MIN_FILE_SIZE) {
+                console.log('Template copied to cache successfully, size:', copiedFileInfo.size);
+              } else {
+                throw new Error('Copied file validation failed');
+              }
+            } else {
+              throw new Error('Downloaded file does not exist or has no size');
+            }
+          } catch (validationError) {
+            console.warn('Template validation failed, skipping copy:', validationError);
+            throw validationError;
+          }
         } else {
           console.log('Template asset localUri not available');
           console.log('Asset details:', {
@@ -232,6 +258,52 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
   try {
     console.log('Attempting to load AVAC template...');
     
+    // First, check if template exists in cache (fastest path)
+    const templatePath = `${Paths.cache.uri}/AVAC_Template_Horizontal.pdf`;
+    const cacheFileInfo = await getInfoAsync(templatePath);
+    
+    if (cacheFileInfo.exists && cacheFileInfo.size && cacheFileInfo.size >= 10000) {
+      console.log('Template found in cache, loading from cache...');
+      const base64Data = await readAsStringAsync(templatePath, { encoding: 'base64' });
+      const MIN_BASE64_SIZE = 13000;
+      
+      if (base64Data.length > MIN_BASE64_SIZE) {
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        console.log('AVAC template loaded successfully from cache, size:', bytes.length);
+        return bytes.buffer;
+      }
+    }
+    
+    // Try to copy template to cache if it doesn't exist or is corrupted
+    // This ensures we have a working copy in cache
+    try {
+      await copyTemplateToCache();
+      // After copying, try loading from cache again
+      const newCacheFileInfo = await getInfoAsync(templatePath);
+      if (newCacheFileInfo.exists && newCacheFileInfo.size && newCacheFileInfo.size >= 10000) {
+        console.log('Template copied to cache, loading from cache...');
+        const base64Data = await readAsStringAsync(templatePath, { encoding: 'base64' });
+        const MIN_BASE64_SIZE = 13000;
+        
+        if (base64Data.length > MIN_BASE64_SIZE) {
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          console.log('AVAC template loaded successfully from cache after copy, size:', bytes.length);
+          return bytes.buffer;
+        }
+      }
+    } catch (copyError) {
+      console.warn('Failed to copy template to cache (non-fatal):', copyError);
+      // Continue anyway - we'll try other methods
+    }
+    
     // Try the new AVAC template first using Asset system
     try {
       console.log('Loading AVAC template using Asset system...');
@@ -245,10 +317,33 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
       console.log('Template asset downloaded, localUri:', templateAsset.localUri);
       
       if (templateAsset.localUri) {
-        const base64Data = await readAsStringAsync(templateAsset.localUri, { encoding: 'base64' });
-        console.log('Template data read, length:', base64Data.length);
+        // Check file size before reading
+        try {
+          const fileInfo = await getInfoAsync(templateAsset.localUri);
+          console.log('AVAC template file info:', fileInfo);
+          
+          if (fileInfo.exists && fileInfo.size) {
+            // Validate file size (PDFs should be at least several KB)
+            const MIN_FILE_SIZE = 10000; // 10KB minimum
+            if (fileInfo.size < MIN_FILE_SIZE) {
+              console.warn(`AVAC template file too small (${fileInfo.size} bytes), likely corrupted. Trying fallbacks...`);
+              throw new Error(`File too small: ${fileInfo.size} bytes`);
+            }
+            console.log(`AVAC template file size OK: ${fileInfo.size} bytes`);
+          }
+        } catch (fileInfoError) {
+          console.warn('Could not check file info, proceeding anyway:', fileInfoError);
+        }
         
-        if (base64Data.length > 0) {
+        const base64Data = await readAsStringAsync(templateAsset.localUri, { encoding: 'base64' });
+        console.log('Template data read, base64 length:', base64Data.length);
+        
+        // Validate that the file is reasonable size (PDFs should be at least several KB)
+        // Base64 is ~4/3 the size of binary, so 1000 bytes binary = ~1333 base64 chars
+        // Minimum reasonable PDF size: ~10KB binary = ~13KB base64
+        const MIN_BASE64_SIZE = 13000;
+        
+        if (base64Data.length > MIN_BASE64_SIZE) {
           // Convert base64 to ArrayBuffer
           const binaryString = atob(base64Data);
           const bytes = new Uint8Array(binaryString.length);
@@ -258,6 +353,8 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
           
           console.log('AVAC template loaded successfully from Asset system, size:', bytes.length);
           return bytes.buffer;
+        } else {
+          console.warn(`AVAC template file too small (${base64Data.length} base64 chars), likely corrupted. Trying fallbacks...`);
         }
       }
     } catch (assetError) {
@@ -272,7 +369,8 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
       const base64Data = await readAsStringAsync(newTemplatePath, { encoding: 'base64' });
       console.log('Direct template data read, length:', base64Data.length);
       
-      if (base64Data.length > 0) {
+      const MIN_BASE64_SIZE = 13000;
+      if (base64Data.length > MIN_BASE64_SIZE) {
         // Convert base64 to ArrayBuffer
         const binaryString = atob(base64Data);
         const bytes = new Uint8Array(binaryString.length);
@@ -282,6 +380,8 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
         
         console.log('AVAC template loaded successfully from direct path, size:', bytes.length);
         return bytes.buffer;
+      } else {
+        console.warn(`Direct AVAC template file too small (${base64Data.length} base64 chars)`);
       }
     } catch (directError) {
       console.log('Direct template loading failed:', directError);
@@ -295,7 +395,8 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
       const base64Data = await readAsStringAsync(manualTemplatePath, { encoding: 'base64' });
       console.log('Manual template data read, length:', base64Data.length);
       
-      if (base64Data.length > 0) {
+      const MIN_BASE64_SIZE = 13000;
+      if (base64Data.length > MIN_BASE64_SIZE) {
         // Convert base64 to ArrayBuffer
         const binaryString = atob(base64Data);
         const bytes = new Uint8Array(binaryString.length);
@@ -305,13 +406,14 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
         
         console.log('AVAC template loaded successfully from manual path, size:', bytes.length);
         return bytes.buffer;
+      } else {
+        console.warn(`Manual AVAC template file too small (${base64Data.length} base64 chars)`);
       }
     } catch (manualError) {
       console.log('Manual template loading failed:', manualError);
     }
     
-    // Fallback to cache directory
-    const templatePath = `${Paths.cache.uri}/AVAC_Template_Horizontal.pdf`;
+    // Fallback to cache directory (reuse templatePath from earlier)
     console.log('Trying cache template path:', templatePath);
     
     // Check if template exists in cache
@@ -323,7 +425,8 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
       const base64Data = await readAsStringAsync(templatePath, { encoding: 'base64' });
       console.log('Template data read, length:', base64Data.length);
       
-      if (base64Data.length > 0) {
+      const MIN_BASE64_SIZE = 13000;
+      if (base64Data.length > MIN_BASE64_SIZE) {
         // Convert base64 to ArrayBuffer
         const binaryString = atob(base64Data);
         const bytes = new Uint8Array(binaryString.length);
@@ -331,10 +434,11 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
           bytes[i] = binaryString.charCodeAt(i);
         }
         
-        console.log('AVAC template loaded successfully, size:', bytes.length);
+        console.log('AVAC template loaded successfully from cache, size:', bytes.length);
         return bytes.buffer;
       } else {
-        console.log('Template file is empty, using fallback');
+        console.warn(`Cache AVAC template file too small (${base64Data.length} base64 chars)`);
+        console.log('Template file is too small, using fallback');
         return new ArrayBuffer(0);
       }
     } else {

@@ -5,7 +5,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { useAuthStore } from '../lib/state/authStore';
 
 export default function Index() {
-  const { checkSession, user, emailVerified, isLoading } = useAuthStore();
+  const { checkSession, user, emailVerified, hasCompletedOnboarding, isLoading } = useAuthStore();
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
@@ -29,6 +29,10 @@ export default function Index() {
 
   if (!emailVerified) {
     return <Redirect href="/auth/verify-email" />;
+  }
+
+  if (!hasCompletedOnboarding) {
+    return <Redirect href="/onboarding/welcome" />;
   }
 
   return <Redirect href="/(tabs)/home" />;

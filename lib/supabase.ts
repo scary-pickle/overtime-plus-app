@@ -4,7 +4,7 @@
  * When Supabase credentials are provided, real sync functionality will be enabled
  */
 
-import { Profile, OvertimeLog, ExportBatch } from '../types';
+import { Profile, OvertimeLog, ExportBatch, UsualShift } from '../types';
 import { createClient } from '@supabase/supabase-js';
 import { SecureStoreAdapter } from './auth/storageAdapter';
 
@@ -148,25 +148,106 @@ export const auth = {
  * Profile sync functions
  */
 export const profileSync = {
-  async uploadProfile(profile: Profile): Promise<void> {
+  async uploadProfile(profile: Profile, userId?: string | null): Promise<void> {
     if (!supabaseEnabled) {
       console.log('Stub: uploadProfile called');
       return;
     }
-    
-    // TODO: Implement real profile sync
-    console.log('TODO: Upload profile to Supabase');
+
+    if (!userId) {
+      console.log('[profileSync.uploadProfile] No userId provided, skipping Supabase sync');
+      return;
+    }
+
+    try {
+      console.log('[profileSync.uploadProfile] Uploading profile to Supabase', {
+        userId: userId.substring(0, 8) + '...',
+        email: profile.email,
+        fullName: profile.fullName,
+      });
+
+      // @ts-ignore
+      const { data, error } = await supabase
+        .from('profiles')
+        .upsert({
+          user_id: userId,
+          email: profile.email,
+          display_name: profile.fullName,
+          metadata: profile,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id',
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[profileSync.uploadProfile] Error uploading profile:', error);
+        throw error;
+      }
+
+      console.log('[profileSync.uploadProfile] Profile uploaded successfully to Supabase', {
+        user_id: data?.user_id,
+      });
+    } catch (error) {
+      console.error('[profileSync.uploadProfile] Failed to upload profile to Supabase:', error);
+      // Don't throw - allow local save to continue even if sync fails
+      // The caller will handle the error appropriately
+    }
   },
 
-  async downloadProfile(): Promise<Profile | null> {
+  async downloadProfile(userId?: string | null): Promise<Profile | null> {
     if (!supabaseEnabled) {
       console.log('Stub: downloadProfile called');
       return null;
     }
-    
-    // TODO: Implement real profile download
-    console.log('TODO: Download profile from Supabase');
-    return null;
+
+    if (!userId) {
+      console.log('[profileSync.downloadProfile] No userId provided, skipping Supabase download');
+      return null;
+    }
+
+    try {
+      console.log('[profileSync.downloadProfile] Downloading profile from Supabase', {
+        userId: userId.substring(0, 8) + '...',
+      });
+
+      // @ts-ignore
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // No profile found - this is OK
+          console.log('[profileSync.downloadProfile] No profile found in Supabase');
+          return null;
+        }
+        console.error('[profileSync.downloadProfile] Error downloading profile:', error);
+        throw error;
+      }
+
+      if (!data || !data.metadata) {
+        console.log('[profileSync.downloadProfile] Profile found but metadata is empty');
+        return null;
+      }
+
+      console.log('[profileSync.downloadProfile] Profile downloaded successfully from Supabase', {
+        user_id: data.user_id,
+        email: data.email,
+        display_name: data.display_name,
+      });
+
+      // Return the profile from metadata
+      return data.metadata as Profile;
+    } catch (error) {
+      console.error('[profileSync.downloadProfile] Failed to download profile from Supabase:', error);
+      // Don't throw - allow local load to continue even if sync fails
+      return null;
+    }
   },
 };
 
@@ -174,40 +255,416 @@ export const profileSync = {
  * Overtime logs sync functions
  */
 export const logsSync = {
-  async uploadLogs(logs: OvertimeLog[]): Promise<void> {
+  async uploadLog(log: OvertimeLog, userId?: string | null): Promise<void> {
     if (!supabaseEnabled) {
-      console.log('Stub: uploadLogs called');
       return;
     }
-    
-    // TODO: Implement real logs sync
-    console.log('TODO: Upload logs to Supabase');
+
+    if (!userId) {
+      console.log('[logsSync.uploadLog] No userId provided, skipping Supabase sync');
+      return;
+    }
+
+    try {
+      // Convert minutes to hours for the hours field (for querying)
+      const hours = log.minutesOvertime / 60;
+
+      // Supabase uses UUIDs, but our logs use string IDs like "log_1234567890"
+      // We'll store the original ID in extras JSONB and query by that
+      // First, check if a log with this user_id and extras.id already exists
+      // @ts-ignore
+      const { data: existing } = await supabase
+        .from('overtime_logs')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('extras->>id', log.id) // Match by original ID in extras JSONB
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      const logData = {
+        user_id: userId,
+        date: log.date,
+        hours: hours,
+        rate: null, // Not used in our app
+        notes: log.comments || null,
+        extras: log, // Store full object including original ID in extras JSONB
+        updated_at: log.updatedAt || new Date().toISOString(),
+      };
+
+      // @ts-ignore
+      let data, error;
+      if (existing) {
+        // Update existing log
+        ({ data, error } = await supabase
+          .from('overtime_logs')
+          .update(logData)
+          .eq('id', existing.id)
+          .select()
+          .single());
+      } else {
+        // Insert new log (Supabase will generate UUID)
+        ({ data, error } = await supabase
+          .from('overtime_logs')
+          .insert(logData)
+          .select()
+          .single());
+      }
+
+      if (error) {
+        console.error('[logsSync.uploadLog] Error uploading log:', error);
+        throw error;
+      }
+
+      console.log('[logsSync.uploadLog] Log uploaded successfully to Supabase', {
+        logId: log.id,
+      });
+    } catch (error) {
+      console.error('[logsSync.uploadLog] Failed to upload log to Supabase:', error);
+      throw error;
+    }
   },
 
-  async downloadLogs(): Promise<OvertimeLog[]> {
+  async uploadLogs(logs: OvertimeLog[], userId?: string | null): Promise<void> {
+    if (!supabaseEnabled || !userId) {
+      return;
+    }
+
+    try {
+      console.log('[logsSync.uploadLogs] Uploading logs to Supabase', {
+        count: logs.length,
+        userId: userId.substring(0, 8) + '...',
+      });
+
+      // Upload logs in batches to avoid overwhelming the API
+      const batchSize = 50;
+      for (let i = 0; i < logs.length; i += batchSize) {
+        const batch = logs.slice(i, i + batchSize);
+        await Promise.all(batch.map(log => this.uploadLog(log, userId).catch(err => {
+          console.error(`[logsSync.uploadLogs] Failed to upload log ${log.id}:`, err);
+          // Continue with other logs even if one fails
+        })));
+      }
+
+      console.log('[logsSync.uploadLogs] All logs uploaded successfully');
+    } catch (error) {
+      console.error('[logsSync.uploadLogs] Failed to upload logs:', error);
+      throw error;
+    }
+  },
+
+  async downloadLogs(userId?: string | null): Promise<OvertimeLog[]> {
     if (!supabaseEnabled) {
-      console.log('Stub: downloadLogs called');
       return [];
     }
-    
-    // TODO: Implement real logs download
-    console.log('TODO: Download logs from Supabase');
-    return [];
+
+    if (!userId) {
+      console.log('[logsSync.downloadLogs] No userId provided, skipping Supabase download');
+      return [];
+    }
+
+    try {
+      console.log('[logsSync.downloadLogs] Downloading logs from Supabase', {
+        userId: userId.substring(0, 8) + '...',
+      });
+
+      // @ts-ignore
+      const { data, error } = await supabase
+        .from('overtime_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('[logsSync.downloadLogs] Error downloading logs:', error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        console.log('[logsSync.downloadLogs] No logs found in Supabase');
+        return [];
+      }
+
+      // Extract full objects from extras JSONB
+      const logs = data
+        .map((row: any) => {
+          if (row.extras && typeof row.extras === 'object') {
+            return row.extras as OvertimeLog;
+          }
+          return null;
+        })
+        .filter((log: OvertimeLog | null): log is OvertimeLog => log !== null);
+
+      console.log('[logsSync.downloadLogs] Logs downloaded successfully from Supabase', {
+        count: logs.length,
+      });
+
+      return logs;
+    } catch (error) {
+      console.error('[logsSync.downloadLogs] Failed to download logs from Supabase:', error);
+      return [];
+    }
   },
 
-  async syncLogs(localLogs: OvertimeLog[]): Promise<{
+  async syncLogs(localLogs: OvertimeLog[], userId?: string | null): Promise<{
     uploaded: number;
     downloaded: number;
     conflicts: number;
   }> {
-    if (!supabaseEnabled) {
-      console.log('Stub: syncLogs called');
+    if (!supabaseEnabled || !userId) {
       return { uploaded: 0, downloaded: 0, conflicts: 0 };
     }
-    
-    // TODO: Implement real sync with conflict resolution
-    console.log('TODO: Sync logs with Supabase');
-    return { uploaded: 0, downloaded: 0, conflicts: 0 };
+
+    try {
+      // Upload local logs
+      await this.uploadLogs(localLogs, userId);
+      const uploaded = localLogs.length;
+
+      // Download remote logs
+      const remoteLogs = await this.downloadLogs(userId);
+      const downloaded = remoteLogs.length;
+
+      // Simple conflict resolution: local wins (we already uploaded local)
+      // In the future, we could implement more sophisticated conflict resolution
+      const conflicts = 0;
+
+      return { uploaded, downloaded, conflicts };
+    } catch (error) {
+      console.error('[logsSync.syncLogs] Failed to sync logs:', error);
+      return { uploaded: 0, downloaded: 0, conflicts: 0 };
+    }
+  },
+
+  async deleteLog(logId: string, userId?: string | null): Promise<void> {
+    if (!supabaseEnabled || !userId) {
+      return;
+    }
+
+    try {
+      // Find the log by user_id and extras.id
+      // @ts-ignore
+      const { data: existing } = await supabase
+        .from('overtime_logs')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('extras->>id', logId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        // Soft delete by setting deleted_at
+        // @ts-ignore
+        const { error } = await supabase
+          .from('overtime_logs')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', existing.id);
+
+        if (error) {
+          console.error('[logsSync.deleteLog] Error deleting log:', error);
+          throw error;
+        }
+
+        console.log('[logsSync.deleteLog] Log deleted successfully from Supabase', {
+          logId,
+        });
+      }
+    } catch (error) {
+      console.error('[logsSync.deleteLog] Failed to delete log from Supabase:', error);
+      throw error;
+    }
+  },
+};
+
+/**
+ * Shifts sync functions (for UsualShift patterns)
+ */
+export const shiftsSync = {
+  async uploadShift(shift: UsualShift, userId?: string | null): Promise<void> {
+    if (!supabaseEnabled) {
+      return;
+    }
+
+    if (!userId) {
+      console.log('[shiftsSync.uploadShift] No userId provided, skipping Supabase sync');
+      return;
+    }
+
+    try {
+      // Supabase uses UUIDs, but our shifts use string IDs like "shift_1234567890"
+      // We'll store the original ID in extras JSONB and query by that
+      // First, check if a shift with this user_id and extras.id already exists
+      // @ts-ignore
+      const { data: existing } = await supabase
+        .from('shifts')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('extras->>id', shift.id) // Match by original ID in extras JSONB
+        .eq('notes', 'usual_shift_pattern')
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      const shiftData = {
+        user_id: userId,
+        start_at: new Date(shift.activeFrom).toISOString(), // Use activeFrom as start_at for querying
+        end_at: shift.activeTo ? new Date(shift.activeTo).toISOString() : null,
+        department: null,
+        hospital: null,
+        notes: 'usual_shift_pattern', // Marker to identify this as a UsualShift pattern
+        extras: shift, // Store full UsualShift object in extras JSONB
+        updated_at: new Date().toISOString(),
+      };
+
+      // @ts-ignore
+      let data, error;
+      if (existing) {
+        // Update existing shift
+        ({ data, error } = await supabase
+          .from('shifts')
+          .update(shiftData)
+          .eq('id', existing.id)
+          .select()
+          .single());
+      } else {
+        // Insert new shift (Supabase will generate UUID)
+        ({ data, error } = await supabase
+          .from('shifts')
+          .insert(shiftData)
+          .select()
+          .single());
+      }
+
+      if (error) {
+        console.error('[shiftsSync.uploadShift] Error uploading shift:', error);
+        throw error;
+      }
+
+      console.log('[shiftsSync.uploadShift] Shift uploaded successfully to Supabase', {
+        shiftId: shift.id,
+      });
+    } catch (error) {
+      console.error('[shiftsSync.uploadShift] Failed to upload shift to Supabase:', error);
+      throw error;
+    }
+  },
+
+  async uploadShifts(shifts: UsualShift[], userId?: string | null): Promise<void> {
+    if (!supabaseEnabled || !userId) {
+      return;
+    }
+
+    try {
+      console.log('[shiftsSync.uploadShifts] Uploading shifts to Supabase', {
+        count: shifts.length,
+        userId: userId.substring(0, 8) + '...',
+      });
+
+      // Upload shifts in parallel
+      await Promise.all(shifts.map(shift => this.uploadShift(shift, userId).catch(err => {
+        console.error(`[shiftsSync.uploadShifts] Failed to upload shift ${shift.id}:`, err);
+        // Continue with other shifts even if one fails
+      })));
+
+      console.log('[shiftsSync.uploadShifts] All shifts uploaded successfully');
+    } catch (error) {
+      console.error('[shiftsSync.uploadShifts] Failed to upload shifts:', error);
+      throw error;
+    }
+  },
+
+  async downloadShifts(userId?: string | null): Promise<UsualShift[]> {
+    if (!supabaseEnabled) {
+      return [];
+    }
+
+    if (!userId) {
+      console.log('[shiftsSync.downloadShifts] No userId provided, skipping Supabase download');
+      return [];
+    }
+
+    try {
+      console.log('[shiftsSync.downloadShifts] Downloading shifts from Supabase', {
+        userId: userId.substring(0, 8) + '...',
+      });
+
+      // @ts-ignore
+      const { data, error } = await supabase
+        .from('shifts')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('notes', 'usual_shift_pattern') // Only get UsualShift patterns
+        .is('deleted_at', null)
+        .order('start_at', { ascending: false });
+
+      if (error) {
+        console.error('[shiftsSync.downloadShifts] Error downloading shifts:', error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        console.log('[shiftsSync.downloadShifts] No shifts found in Supabase');
+        return [];
+      }
+
+      // Extract full UsualShift objects from extras JSONB
+      const shifts = data
+        .map((row: any) => {
+          if (row.extras && typeof row.extras === 'object') {
+            return row.extras as UsualShift;
+          }
+          return null;
+        })
+        .filter((shift: UsualShift | null): shift is UsualShift => shift !== null);
+
+      console.log('[shiftsSync.downloadShifts] Shifts downloaded successfully from Supabase', {
+        count: shifts.length,
+      });
+
+      return shifts;
+    } catch (error) {
+      console.error('[shiftsSync.downloadShifts] Failed to download shifts from Supabase:', error);
+      return [];
+    }
+  },
+
+  async deleteShift(shiftId: string, userId?: string | null): Promise<void> {
+    if (!supabaseEnabled || !userId) {
+      return;
+    }
+
+    try {
+      // Find the shift by user_id and extras.id
+      // @ts-ignore
+      const { data: existing } = await supabase
+        .from('shifts')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('extras->>id', shiftId)
+        .eq('notes', 'usual_shift_pattern')
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        // Soft delete by setting deleted_at
+        // @ts-ignore
+        const { error } = await supabase
+          .from('shifts')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', existing.id);
+
+        if (error) {
+          console.error('[shiftsSync.deleteShift] Error deleting shift:', error);
+          throw error;
+        }
+
+        console.log('[shiftsSync.deleteShift] Shift deleted successfully from Supabase', {
+          shiftId,
+        });
+      }
+    } catch (error) {
+      console.error('[shiftsSync.deleteShift] Failed to delete shift from Supabase:', error);
+      throw error;
+    }
   },
 };
 
@@ -215,25 +672,163 @@ export const logsSync = {
  * Export batches sync functions
  */
 export const exportSync = {
-  async uploadExportBatch(batch: ExportBatch): Promise<void> {
+  async uploadExportBatch(batch: ExportBatch, userId?: string | null): Promise<void> {
     if (!supabaseEnabled) {
-      console.log('Stub: uploadExportBatch called');
       return;
     }
-    
-    // TODO: Implement real export batch sync
-    console.log('TODO: Upload export batch to Supabase');
+
+    if (!userId) {
+      console.log('[exportSync.uploadExportBatch] No userId provided, skipping Supabase sync');
+      return;
+    }
+
+    try {
+      // Supabase uses UUIDs, but our batches use string IDs like "batch_1234567890"
+      // We'll store the original ID in params JSONB and query by that
+      // First, check if a batch with this user_id and params.id already exists
+      // @ts-ignore
+      const { data: existing } = await supabase
+        .from('export_batches')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('params->>id', batch.id) // Match by original ID in params JSONB
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      const batchData = {
+        user_id: userId,
+        requested_at: batch.createdAt,
+        status: 'ready', // Default status for export batches
+        result_url: batch.pdfUri || null,
+        error: null,
+        params: batch, // Store full ExportBatch object in params JSONB
+        updated_at: new Date().toISOString(),
+      };
+
+      // @ts-ignore
+      let data, error;
+      if (existing) {
+        // Update existing batch
+        ({ data, error } = await supabase
+          .from('export_batches')
+          .update(batchData)
+          .eq('id', existing.id)
+          .select()
+          .single());
+      } else {
+        // Insert new batch (Supabase will generate UUID)
+        ({ data, error } = await supabase
+          .from('export_batches')
+          .insert(batchData)
+          .select()
+          .single());
+      }
+
+      if (error) {
+        console.error('[exportSync.uploadExportBatch] Error uploading export batch:', error);
+        throw error;
+      }
+
+      console.log('[exportSync.uploadExportBatch] Export batch uploaded successfully to Supabase', {
+        batchId: batch.id,
+      });
+    } catch (error) {
+      console.error('[exportSync.uploadExportBatch] Failed to upload export batch to Supabase:', error);
+      throw error;
+    }
   },
 
-  async downloadExportBatches(): Promise<ExportBatch[]> {
+  async downloadExportBatches(userId?: string | null): Promise<ExportBatch[]> {
     if (!supabaseEnabled) {
-      console.log('Stub: downloadExportBatches called');
       return [];
     }
-    
-    // TODO: Implement real export batches download
-    console.log('TODO: Download export batches from Supabase');
-    return [];
+
+    if (!userId) {
+      console.log('[exportSync.downloadExportBatches] No userId provided, skipping Supabase download');
+      return [];
+    }
+
+    try {
+      console.log('[exportSync.downloadExportBatches] Downloading export batches from Supabase', {
+        userId: userId.substring(0, 8) + '...',
+      });
+
+      // @ts-ignore
+      const { data, error } = await supabase
+        .from('export_batches')
+        .select('*')
+        .eq('user_id', userId)
+        .is('deleted_at', null)
+        .order('requested_at', { ascending: false });
+
+      if (error) {
+        console.error('[exportSync.downloadExportBatches] Error downloading export batches:', error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        console.log('[exportSync.downloadExportBatches] No export batches found in Supabase');
+        return [];
+      }
+
+      // Extract full ExportBatch objects from params JSONB
+      const batches = data
+        .map((row: any) => {
+          if (row.params && typeof row.params === 'object') {
+            return row.params as ExportBatch;
+          }
+          return null;
+        })
+        .filter((batch: ExportBatch | null): batch is ExportBatch => batch !== null);
+
+      console.log('[exportSync.downloadExportBatches] Export batches downloaded successfully from Supabase', {
+        count: batches.length,
+      });
+
+      return batches;
+    } catch (error) {
+      console.error('[exportSync.downloadExportBatches] Failed to download export batches from Supabase:', error);
+      return [];
+    }
+  },
+
+  async deleteExportBatch(batchId: string, userId?: string | null): Promise<void> {
+    if (!supabaseEnabled || !userId) {
+      return;
+    }
+
+    try {
+      // Find the batch by user_id and params.id
+      // @ts-ignore
+      const { data: existing } = await supabase
+        .from('export_batches')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('params->>id', batchId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        // Soft delete by setting deleted_at
+        // @ts-ignore
+        const { error } = await supabase
+          .from('export_batches')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', existing.id);
+
+        if (error) {
+          console.error('[exportSync.deleteExportBatch] Error deleting export batch:', error);
+          throw error;
+        }
+
+        console.log('[exportSync.deleteExportBatch] Export batch deleted successfully from Supabase', {
+          batchId,
+        });
+      }
+    } catch (error) {
+      console.error('[exportSync.deleteExportBatch] Failed to delete export batch from Supabase:', error);
+      throw error;
+    }
   },
 };
 

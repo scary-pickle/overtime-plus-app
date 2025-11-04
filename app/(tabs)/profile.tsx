@@ -23,6 +23,7 @@ import { getDepartmentsForHospital, getHospitalById, QUEENSLAND_HOSPITALS, getDe
 import { Profile } from '../../types';
 import { profileStorage } from '../../lib/storage/profile';
 import { useAuthStore } from '../../lib/state/authStore';
+import { useOnboardingStore } from '../../lib/state/onboardingStore';
 
 // Separate component file would be better, but defining here for now
 // This component uses local state to prevent keyboard dismissal
@@ -262,10 +263,12 @@ export default function ProfileScreen() {
   const saveProfile = useProfileStore((state) => state.saveProfile);
   const loadProfile = useProfileStore((state) => state.loadProfile);
   const { user } = useAuthStore(); // Get user for userId
+  const { resetOnboarding } = useOnboardingStore();
   // Compute isComplete locally instead of from store to avoid re-renders
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const [formData, setFormData] = useState<Partial<Profile>>({});
-  const [isEditing, setIsEditing] = useState(false);
+  // Auto-enable edit mode if there's no profile (new user)
+  const [isEditing, setIsEditing] = useState(() => !profile);
   
   console.log(`[ProfileScreen] Render #${renderCount.current}`, {
     isEditing,
@@ -284,18 +287,22 @@ export default function ProfileScreen() {
   const isTypingRef = useRef(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Section expand/collapse state (all collapsed by default)
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    employeeDetails: false,
-    organisation: false,
-    delegateDetails: false,
-    account: false,
-    settings: false,
-    widgetSetup: false,
+  // Section expand/collapse state - auto-expand first section if no profile
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
+    const hasProfile = !!profile;
+    return {
+      employeeDetails: !hasProfile, // Auto-expand if no profile
+      organisation: false,
+      delegateDetails: false,
+      account: false,
+      settings: false,
+      widgetSetup: false,
+    };
   });
   
-  // Animation values for each section
-  const employeeDetailsAnimation = useRef(new Animated.Value(0)).current;
+  // Animation values for each section - initialize with expanded state if no profile
+  const hasProfileOnMount = !!profile;
+  const employeeDetailsAnimation = useRef(new Animated.Value(hasProfileOnMount ? 0 : 1)).current;
   const organisationAnimation = useRef(new Animated.Value(0)).current;
   const delegateDetailsAnimation = useRef(new Animated.Value(0)).current;
   const accountAnimation = useRef(new Animated.Value(0)).current;
@@ -303,8 +310,8 @@ export default function ProfileScreen() {
   const widgetSetupAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    loadProfile();
-  }, []);
+    loadProfile(user?.id);
+  }, [loadProfile, user?.id]);
 
   // Refresh profile when screen gains focus (prevents stale completeness state)
   // But don't reload if we're currently editing to prevent keyboard dismissal
@@ -312,9 +319,9 @@ export default function ProfileScreen() {
     React.useCallback(() => {
       // Only reload if not editing to prevent interrupting user input
       if (!isEditing) {
-        loadProfile();
+        loadProfile(user?.id);
       }
-    }, [isEditing]) // Include isEditing to check if we should reload
+    }, [isEditing, user?.id]) // Include isEditing and user?.id to check if we should reload
   );
 
   // Only update formData from profile when NOT editing and NOT typing to prevent keyboard dismissal
@@ -329,6 +336,26 @@ export default function ProfileScreen() {
       setFormData(profile);
       setSelectedHospital(profile.location || '');
       setIsSMO(profile.isSMO || false);
+    } else if (!profile) {
+      // If no profile, enable edit mode automatically and expand first section
+      if (!isEditing) {
+        console.log(`[ProfileScreen] No profile found, enabling edit mode`);
+        setIsEditing(true);
+      }
+      // Auto-expand first section if not already expanded
+      setExpandedSections(prev => {
+        if (prev.employeeDetails) return prev;
+        // Sync animation value when expanding
+        Animated.timing(employeeDetailsAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: false,
+        }).start();
+        return {
+          ...prev,
+          employeeDetails: true,
+        };
+      });
     } else {
       console.log(`[ProfileScreen] Skipping formData update (editing or typing)`);
     }
@@ -409,24 +436,29 @@ export default function ProfileScreen() {
   const handleCancel = () => {
     if (profile) {
       setFormData(profile);
+      setIsEditing(false);
+    } else {
+      // If no profile, keep editing enabled but reset form
+      setFormData({});
     }
-    setIsEditing(false);
   };
 
   const toggleSection = (sectionKey: string, animationValue: Animated.Value) => {
     const isExpanded = expandedSections[sectionKey];
     console.log(`[ProfileScreen] toggleSection called`, { sectionKey, isExpanded, willExpand: !isExpanded });
+    const willExpand = !isExpanded;
     setExpandedSections(prev => ({
       ...prev,
-      [sectionKey]: !isExpanded,
+      [sectionKey]: willExpand,
     }));
 
     Animated.timing(animationValue, {
-      toValue: isExpanded ? 0 : 1,
+      toValue: willExpand ? 1 : 0,
       duration: 300,
       useNativeDriver: false,
     }).start();
   };
+
 
   const getAnimationValue = (sectionKey: string): Animated.Value => {
     switch (sectionKey) {
@@ -540,22 +572,11 @@ export default function ProfileScreen() {
     };
   }, [updateField]);
 
-  if (!profile && !isEditing) {
-    return (
-      <EmptyState
-        title="Set Up Your Profile"
-        description="Complete your profile to start using Overtime+. This information will be used to generate your AVAC forms."
-        actionText="Create Profile"
-        onAction={() => setIsEditing(true)}
-        icon="👤"
-      />
-    );
-  }
-
+  // Calculate profile completion status - must be before early return
   const isProfileComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const missingFields = profile && !isProfileComplete ? profileStorage.getMissingFields(profile) : [];
 
-  // Group missing fields by section
+  // Group missing fields by section - must be before early return
   const missingFieldsBySection = React.useMemo(() => {
     const grouped: Record<string, { field: keyof Profile; label: string; section: string }[]> = {};
     missingFields.forEach(field => {
@@ -567,7 +588,7 @@ export default function ProfileScreen() {
     return grouped;
   }, [missingFields]);
 
-  // Function to scroll to a section
+  // Function to scroll to a section - must be before early return
   const scrollToSection = React.useCallback((sectionKey: string) => {
     // Expand the section
     setExpandedSections(prev => ({
@@ -608,7 +629,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Missing Fields Alert */}
-        {!isProfileComplete && missingFields.length > 0 && !isEditing && (
+        {!isProfileComplete && missingFields.length > 0 && (
           <View style={[styles.missingFieldsCard, isDark && styles.darkMissingFieldsCard]}>
             <View style={styles.missingFieldsHeader}>
               <Ionicons 
@@ -698,7 +719,7 @@ export default function ProfileScreen() {
           title="Employee Details"
           subtitle={formData.fullName ? `${formData.fullName}` : 'Personal information'}
           onEdit={isEditing ? handleSave : () => setIsEditing(true)}
-          showEdit={!!profile}
+          showEdit={true}
           isDark={isDark}
           isExpanded={expandedSections.employeeDetails}
           isEditing={isEditing}
@@ -804,7 +825,7 @@ export default function ProfileScreen() {
           title="Organisation"
           subtitle={selectedHospital ? `${selectedHospital}` : 'Hospital and department details'}
           onEdit={isEditing ? handleSave : () => setIsEditing(true)}
-          showEdit={!!profile}
+          showEdit={true}
           isDark={isDark}
           isExpanded={expandedSections.organisation}
           isEditing={isEditing}
@@ -873,7 +894,7 @@ export default function ProfileScreen() {
           title="Delegate Details"
           subtitle={formData.delegateName ? `${formData.delegateName}` : 'Delegate contact information'}
           onEdit={isEditing ? handleSave : () => setIsEditing(true)}
-          showEdit={!!profile}
+          showEdit={true}
           badge={isDelegateAutoFilled ? (
             <Text style={[styles.autoFilledIndicator, isDark && styles.darkAutoFilledIndicator]}>
               {' '}(Auto-filled)
@@ -1044,6 +1065,36 @@ export default function ProfileScreen() {
               Australia/Brisbane
             </Text>
           </View>
+          
+          <TouchableOpacity
+            style={[styles.settingRow, isDark && styles.darkSettingRow]}
+            onPress={async () => {
+              Alert.alert(
+                'Reset Onboarding',
+                'This will reset your onboarding status. You will need to complete onboarding again. This is useful for testing or if you want to see the onboarding flow again.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Reset',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        await resetOnboarding(user?.id);
+                        Alert.alert('Success', 'Onboarding has been reset. Please restart the app to see the onboarding flow again.');
+                      } catch (e) {
+                        Alert.alert('Error', 'Failed to reset onboarding. Please try again.');
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+              Reset Onboarding
+            </Text>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
         </CollapsibleSection>
 
         {/* Widget Setup */}

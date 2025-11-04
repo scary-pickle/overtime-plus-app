@@ -3,6 +3,7 @@ import { OvertimeLog, ExportBatch, MinutesCalculation } from '../../types';
 import { database } from '../db/sqlite';
 import { computeMinutes, roundToNearest5, getPreviousISODate, getCurrentDate } from '../time';
 import { useAuthStore } from './authStore';
+import { logsSync, exportSync } from '../supabase';
 
 interface LogsState {
   logs: OvertimeLog[];
@@ -55,12 +56,50 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   loadLogs: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
+      // Load from local SQLite first (fast)
       const logs = await database.getOvertimeLogs(userId);
       set({ 
         logs, 
         isLoading: false,
         error: null 
       });
+      
+      // Sync from Supabase in background (non-blocking)
+      if (userId) {
+        logsSync.downloadLogs(userId).then(remoteLogs => {
+          if (remoteLogs.length > 0) {
+            console.log('[logsStore.loadLogs] Syncing logs from Supabase in background', {
+              remoteCount: remoteLogs.length,
+              localCount: logs.length,
+            });
+            
+            // Merge remote logs with local (remote wins for conflicts)
+            const localLogMap = new Map(logs.map(log => [log.id, log]));
+            const remoteLogMap = new Map(remoteLogs.map(log => [log.id, log]));
+            
+            // Combine: remote logs override local ones, then add any local-only logs
+            const mergedLogs = [
+              ...remoteLogs,
+              ...logs.filter(log => !remoteLogMap.has(log.id))
+            ];
+            
+            // Save merged logs to local storage
+            for (const log of mergedLogs) {
+              if (remoteLogMap.has(log.id)) {
+                // Update from remote
+                database.updateOvertimeLog(log, userId).catch(err => {
+                  console.error('[logsStore.loadLogs] Failed to save merged log:', err);
+                });
+              }
+            }
+            
+            // Update store with merged logs
+            set({ logs: mergedLogs });
+          }
+        }).catch(err => {
+          console.error('[logsStore.loadLogs] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       set({ 
         isLoading: false, 
@@ -72,12 +111,35 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   loadExportBatches: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
+      // Load from local SQLite first (fast)
       const exportBatches = await database.getExportBatches(userId);
       set({ 
         exportBatches, 
         isLoading: false,
         error: null 
       });
+      
+      // Sync from Supabase in background (non-blocking)
+      if (userId) {
+        exportSync.downloadExportBatches(userId).then(remoteBatches => {
+          if (remoteBatches.length > 0) {
+            console.log('[logsStore.loadExportBatches] Syncing export batches from Supabase in background');
+            // Merge remote batches with local (remote wins for conflicts)
+            const localBatchMap = new Map(exportBatches.map(batch => [batch.id, batch]));
+            const remoteBatchMap = new Map(remoteBatches.map(batch => [batch.id, batch]));
+            
+            const mergedBatches = [
+              ...remoteBatches,
+              ...exportBatches.filter(batch => !remoteBatchMap.has(batch.id))
+            ];
+            
+            // Update store with merged batches
+            set({ exportBatches: mergedBatches });
+          }
+        }).catch(err => {
+          console.error('[logsStore.loadExportBatches] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       set({ 
         isLoading: false, 
@@ -91,6 +153,8 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     try {
       // Get userId from authStore if not provided
       const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Save to local SQLite first
       await database.createOvertimeLog(log, finalUserId);
       const { logs } = get();
       set({ 
@@ -98,6 +162,13 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        logsSync.uploadLog(log, finalUserId).catch(err => {
+          console.error('[logsStore.addLog] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       set({ 
         isLoading: false, 
@@ -111,6 +182,8 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     try {
       // Get userId from authStore if not provided
       const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Update local SQLite first
       await database.updateOvertimeLog(log, finalUserId);
       const { logs } = get();
       const updatedLogs = logs.map(l => l.id === log.id ? log : l);
@@ -119,6 +192,13 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        logsSync.uploadLog(log, finalUserId).catch(err => {
+          console.error('[logsStore.updateLog] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       set({ 
         isLoading: false, 
@@ -132,6 +212,8 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     try {
       // Get userId from authStore if not provided
       const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Delete from local SQLite first
       await database.deleteOvertimeLog(id, finalUserId);
       const { logs } = get();
       const filteredLogs = logs.filter(l => l.id !== id);
@@ -140,6 +222,13 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync delete to Supabase in background (non-blocking)
+      if (finalUserId) {
+        logsSync.deleteLog(id, finalUserId).catch(err => {
+          console.error('[logsStore.deleteLog] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       set({ 
         isLoading: false, 
@@ -160,6 +249,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     };
 
     // Get userId from authStore if not provided
+    // updateLog already handles Supabase sync
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
     await updateLog(updatedLog, finalUserId);
   },
@@ -186,6 +276,8 @@ export const useLogsStore = create<LogsState>((set, get) => ({
 
       // Get userId from authStore if not provided
       const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Save to local SQLite first
       await database.createExportBatch(batch, finalUserId);
       
       // Update logs to exported status in both database and store
@@ -199,6 +291,13 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       for (const log of updatedLogs) {
         if (logIds.includes(log.id)) {
           await database.updateOvertimeLog(log, finalUserId);
+          
+          // Sync updated log to Supabase in background
+          if (finalUserId) {
+            logsSync.uploadLog(log, finalUserId).catch(err => {
+              console.error('[logsStore.batchExport] Background sync failed (non-fatal):', err);
+            });
+          }
         }
       }
 
@@ -207,6 +306,13 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync export batch to Supabase in background (non-blocking)
+      if (finalUserId) {
+        exportSync.uploadExportBatch(batch, finalUserId).catch(err => {
+          console.error('[logsStore.batchExport] Background sync failed (non-fatal):', err);
+        });
+      }
 
       return batch;
     } catch (error) {
@@ -223,6 +329,8 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     try {
       // Get userId from authStore if not provided
       const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Update local SQLite first
       await database.updateExportBatch(batch, finalUserId);
       const { exportBatches } = get();
       const updatedBatches = exportBatches.map(b => b.id === batch.id ? batch : b);
@@ -231,6 +339,13 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        exportSync.uploadExportBatch(batch, finalUserId).catch(err => {
+          console.error('[logsStore.updateExportBatch] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       set({ 
         isLoading: false, 
@@ -244,6 +359,8 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     try {
       // Get userId from authStore if not provided
       const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Delete from local SQLite first
       await database.deleteExportBatch(id, finalUserId);
       const { exportBatches } = get();
       const filteredBatches = exportBatches.filter(b => b.id !== id);
@@ -252,6 +369,13 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync delete to Supabase in background (non-blocking)
+      if (finalUserId) {
+        exportSync.deleteExportBatch(id, finalUserId).catch(err => {
+          console.error('[logsStore.deleteExportBatch] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       set({ 
         isLoading: false, 
@@ -275,13 +399,24 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         submittedVia: method
       };
 
-      await database.updateExportBatch(updatedBatch);
+      // Get userId for sync
+      const finalUserId = useAuthStore.getState().user?.id ?? null;
+      
+      // Update local SQLite first
+      await database.updateExportBatch(updatedBatch, finalUserId);
       const updatedBatches = exportBatches.map(b => b.id === batchId ? updatedBatch : b);
       set({ 
         exportBatches: updatedBatches,
         isLoading: false,
         error: null 
       });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        exportSync.uploadExportBatch(updatedBatch, finalUserId).catch(err => {
+          console.error('[logsStore.markBatchAsSubmitted] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       set({ 
         isLoading: false, 
@@ -294,16 +429,24 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { logs } = get();
+      const finalUserId = useAuthStore.getState().user?.id ?? null;
       const updatedLogs = logs.map(log => 
         logIds.includes(log.id) 
           ? { ...log, status: 'ready' as const, exportBatchId: undefined, updatedAt: new Date().toISOString() }
           : log
       );
 
-      // Persist each updated log to the database
+      // Persist each updated log to the database and sync to Supabase
       for (const log of updatedLogs) {
         if (logIds.includes(log.id)) {
-          await database.updateOvertimeLog(log);
+          await database.updateOvertimeLog(log, finalUserId);
+          
+          // Sync to Supabase in background
+          if (finalUserId) {
+            logsSync.uploadLog(log, finalUserId).catch(err => {
+              console.error('[logsStore.resetLogsToReady] Background sync failed (non-fatal):', err);
+            });
+          }
         }
       }
 

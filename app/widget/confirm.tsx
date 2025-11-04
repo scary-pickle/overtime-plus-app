@@ -12,6 +12,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
+import { useAuthStore } from '../../lib/state/authStore';
 import { getCurrentTime, getCurrentDate } from '../../lib/time';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
 import { updateWidgetStatus } from '../../lib/widget/widgetStatusUpdater';
@@ -23,6 +24,7 @@ export default function WidgetConfirmScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
+  const { user } = useAuthStore();
   const { profile, loadProfile, initials } = useProfileStore();
   const { shifts, getRosterFor, loadShifts } = useShiftsStore();
   const { addLog, getActiveShiftDraft, loadLogs } = useLogsStore();
@@ -34,7 +36,11 @@ export default function WidgetConfirmScreen() {
 
   useEffect(() => {
     const initialize = async () => {
-      await Promise.all([loadProfile(), loadShifts(), loadLogs()]);
+      await Promise.all([
+        loadProfile(user?.id),
+        loadShifts(user?.id),
+        loadLogs(user?.id)
+      ]);
       if (action === 'end-shift') {
         loadActiveShift();
       } else {
@@ -42,12 +48,12 @@ export default function WidgetConfirmScreen() {
       }
     };
     initialize();
-  }, [action]);
+  }, [action, user?.id]);
 
   const loadActiveShift = async () => {
     try {
       // Ensure logs are loaded
-      await loadLogs();
+      await loadLogs(user?.id);
       const activeShift = getActiveShiftDraft();
       if (activeShift) {
         setEndShiftDraft(activeShift);

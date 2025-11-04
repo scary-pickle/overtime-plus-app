@@ -1,10 +1,27 @@
 import { database } from '../db/sqlite';
 import { OvertimeLog } from '../../types';
+import * as SecureStore from 'expo-secure-store';
 
 /**
  * Widget data provider for native widgets to access shift status
  * This service provides a simplified API for native code to query shift data
  */
+
+const CURRENT_USER_ID_KEY = 'overtime_plus_current_user_id';
+
+/**
+ * Get the current user ID from SecureStore
+ * This is stored by the auth store when a user signs in
+ */
+async function getCurrentUserId(): Promise<string | null> {
+  try {
+    const userId = await SecureStore.getItemAsync(CURRENT_USER_ID_KEY);
+    return userId;
+  } catch (error) {
+    console.error('Error getting current user ID:', error);
+    return null;
+  }
+}
 
 export interface WidgetShiftStatus {
   hasActiveShift: boolean;
@@ -24,8 +41,12 @@ export async function getWidgetShiftStatus(): Promise<WidgetShiftStatus> {
     // Ensure database is initialized
     await database.init();
 
+    // Get current user ID from SecureStore (stored by auth store)
+    const userId = await getCurrentUserId();
+
     // Query for active shift (draft status with isActiveShift = true)
-    const logs = await database.getOvertimeLogs();
+    // Pass userId to ensure we only get logs for the current user
+    const logs = await database.getOvertimeLogs(userId);
     const activeShift = logs.find(
       log => log.status === 'draft' && log.isActiveShift === true
     );
@@ -58,7 +79,11 @@ export async function getWidgetShiftStatus(): Promise<WidgetShiftStatus> {
  */
 export async function getActiveShiftDetails(): Promise<OvertimeLog | null> {
   try {
-    const logs = await database.getOvertimeLogs();
+    // Get current user ID from SecureStore (stored by auth store)
+    const userId = await getCurrentUserId();
+    
+    // Pass userId to ensure we only get logs for the current user
+    const logs = await database.getOvertimeLogs(userId);
     const activeShift = logs.find(
       log => log.status === 'draft' && log.isActiveShift === true
     );

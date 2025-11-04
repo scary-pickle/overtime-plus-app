@@ -3,6 +3,7 @@ import { UsualShift, RosterForDate } from '../../types';
 import { database } from '../db/sqlite';
 import { getRosterForDate } from '../roster';
 import { useAuthStore } from './authStore';
+import { shiftsSync } from '../supabase';
 
 interface ShiftsState {
   shifts: UsualShift[];
@@ -31,6 +32,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     console.log('🔄 ShiftsStore: Loading shifts from database...', { userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous' });
     set({ isLoading: true, error: null });
     try {
+      // Load from local SQLite first (fast)
       const shifts = await database.getUsualShifts(userId);
       console.log('✅ ShiftsStore: Loaded shifts successfully:', {
         count: shifts.length,
@@ -41,6 +43,42 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync from Supabase in background (non-blocking)
+      if (userId) {
+        shiftsSync.downloadShifts(userId).then(remoteShifts => {
+          if (remoteShifts.length > 0) {
+            console.log('[shiftsStore.loadShifts] Syncing shifts from Supabase in background', {
+              remoteCount: remoteShifts.length,
+              localCount: shifts.length,
+            });
+            
+            // Merge remote shifts with local (remote wins for conflicts)
+            const localShiftMap = new Map(shifts.map(shift => [shift.id, shift]));
+            const remoteShiftMap = new Map(remoteShifts.map(shift => [shift.id, shift]));
+            
+            const mergedShifts = [
+              ...remoteShifts,
+              ...shifts.filter(shift => !remoteShiftMap.has(shift.id))
+            ];
+            
+            // Save merged shifts to local storage
+            for (const shift of mergedShifts) {
+              if (remoteShiftMap.has(shift.id)) {
+                // Update from remote
+                database.updateUsualShift(shift, userId).catch(err => {
+                  console.error('[shiftsStore.loadShifts] Failed to save merged shift:', err);
+                });
+              }
+            }
+            
+            // Update store with merged shifts
+            set({ shifts: mergedShifts });
+          }
+        }).catch(err => {
+          console.error('[shiftsStore.loadShifts] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       console.error('❌ ShiftsStore: Failed to load shifts:', error);
       set({ 
@@ -63,6 +101,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     });
     set({ isLoading: true, error: null });
     try {
+      // Save to local SQLite first
       await database.createUsualShift(shift, finalUserId);
       const { shifts } = get();
       console.log('✅ ShiftsStore: Shift added successfully');
@@ -71,6 +110,13 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        shiftsSync.uploadShift(shift, finalUserId).catch(err => {
+          console.error('[shiftsStore.addShift] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       console.error('❌ ShiftsStore: Failed to add shift:', error);
       set({ 
@@ -92,6 +138,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     });
     set({ isLoading: true, error: null });
     try {
+      // Update local SQLite first
       await database.updateUsualShift(shift, finalUserId);
       const { shifts } = get();
       const updatedShifts = shifts.map(s => s.id === shift.id ? shift : s);
@@ -101,6 +148,13 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        shiftsSync.uploadShift(shift, finalUserId).catch(err => {
+          console.error('[shiftsStore.updateShift] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       console.error('❌ ShiftsStore: Failed to update shift:', error);
       set({ 
@@ -116,6 +170,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     console.log('🗑️ ShiftsStore: Deleting shift:', { id, userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous' });
     set({ isLoading: true, error: null });
     try {
+      // Delete from local SQLite first
       await database.deleteUsualShift(id, finalUserId);
       const { shifts } = get();
       const filteredShifts = shifts.filter(s => s.id !== id);
@@ -125,6 +180,13 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         isLoading: false,
         error: null 
       });
+      
+      // Sync delete to Supabase in background (non-blocking)
+      if (finalUserId) {
+        shiftsSync.deleteShift(id, finalUserId).catch(err => {
+          console.error('[shiftsStore.deleteShift] Background sync failed (non-fatal):', err);
+        });
+      }
     } catch (error) {
       console.error('❌ ShiftsStore: Failed to delete shift:', error);
       set({ 

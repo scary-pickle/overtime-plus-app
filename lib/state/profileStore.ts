@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Profile } from '../../types';
 import { profileStorage } from '../storage/profile';
+import { profileSync } from '../supabase';
 
 interface ProfileState {
   profile: Profile | null;
@@ -32,7 +33,36 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       if (userId) {
         await profileStorage.clearLegacyProfile();
       }
-      const profile = await profileStorage.loadProfile(userId);
+      
+      // Try loading from Supabase first (if authenticated)
+      let profile: Profile | null = null;
+      if (userId) {
+        try {
+          const supabaseProfile = await profileSync.downloadProfile(userId);
+          if (supabaseProfile) {
+            console.log('Profile loaded from Supabase, saving to local storage');
+            // Save to local storage for offline access
+            await profileStorage.saveProfile(supabaseProfile, userId);
+            profile = supabaseProfile;
+          }
+        } catch (syncError) {
+          console.error('Failed to load profile from Supabase (non-fatal):', syncError);
+          // Continue to local storage
+        }
+      }
+      
+      // If not found in Supabase, load from local storage
+      if (!profile) {
+        profile = await profileStorage.loadProfile(userId);
+        
+        // If we have a local profile and userId, sync it to Supabase (background sync)
+        if (profile && userId) {
+          profileSync.uploadProfile(profile, userId).catch(syncError => {
+            console.error('Failed to sync local profile to Supabase (non-fatal):', syncError);
+          });
+        }
+      }
+      
       console.log('Profile loaded from storage:', { 
         userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
         hasProfile: profile !== null 
@@ -62,8 +92,21 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   saveProfile: async (profile: Profile, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
+      // Save to local storage first
       await profileStorage.saveProfile(profile, userId);
       console.log('Profile saved to storage, updating store state');
+      
+      // Sync to Supabase (don't fail if this fails - local save is primary)
+      if (userId) {
+        try {
+          await profileSync.uploadProfile(profile, userId);
+          console.log('Profile synced to Supabase successfully');
+        } catch (syncError) {
+          console.error('Failed to sync profile to Supabase (non-fatal):', syncError);
+          // Continue - local save succeeded
+        }
+      }
+      
       set({ 
         profile, 
         isLoading: false,

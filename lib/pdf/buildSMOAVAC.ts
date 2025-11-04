@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
 import { Paths } from 'expo-file-system';
-import { writeAsStringAsync, readAsStringAsync, getInfoAsync } from 'expo-file-system/legacy';
+import { writeAsStringAsync, readAsStringAsync, getInfoAsync, copyAsync } from 'expo-file-system/legacy';
 import { Asset } from 'expo-asset';
 import { Profile, OvertimeLog } from '../../types';
 
@@ -211,27 +211,202 @@ function drawFieldOverlay(page: any, box: { left: number; top: number; width?: n
 }
 
 /**
+ * Copy SMO template to cache directory
+ */
+async function copySMOAVACTemplateToCache(): Promise<void> {
+  try {
+    const templatePath = `${Paths.cache.uri}/SMO_AVAC_Template.pdf`;
+    const fileInfo = await getInfoAsync(templatePath);
+    
+    if (!fileInfo.exists) {
+      console.log('SMO template not found in cache, attempting to copy from assets...');
+      
+      try {
+        // Load the template asset using the proper Expo Asset approach
+        const templateAsset = Asset.fromModule(require('../../assets/pdf/SMO AVAC Template.pdf'));
+        console.log('SMO template asset created:', templateAsset);
+        
+        // Download the asset if needed
+        if (!templateAsset.downloaded) {
+          console.log('Downloading SMO template asset...');
+          await templateAsset.downloadAsync();
+          console.log('SMO template asset download completed');
+        }
+        
+        console.log('SMO template asset downloaded, localUri:', templateAsset.localUri);
+        
+        if (templateAsset.localUri) {
+          // Validate the downloaded file before copying
+          try {
+            const downloadedFileInfo = await getInfoAsync(templateAsset.localUri);
+            console.log('Downloaded SMO template file info:', downloadedFileInfo);
+            
+            if (downloadedFileInfo.exists && downloadedFileInfo.size) {
+              const MIN_FILE_SIZE = 10000; // 10KB minimum
+              if (downloadedFileInfo.size < MIN_FILE_SIZE) {
+                console.warn(`Downloaded SMO template file too small (${downloadedFileInfo.size} bytes), likely corrupted. Skipping copy.`);
+                throw new Error(`Downloaded file too small: ${downloadedFileInfo.size} bytes`);
+              }
+              
+              // Copy the template to cache using the proper copyAsync syntax
+              console.log('Copying SMO template to cache...');
+              await copyAsync({ from: templateAsset.localUri, to: templatePath });
+              
+              // Verify the copied file
+              const copiedFileInfo = await getInfoAsync(templatePath);
+              if (copiedFileInfo.exists && copiedFileInfo.size && copiedFileInfo.size >= MIN_FILE_SIZE) {
+                console.log('SMO template copied to cache successfully, size:', copiedFileInfo.size);
+              } else {
+                throw new Error('Copied file validation failed');
+              }
+            } else {
+              throw new Error('Downloaded file does not exist or has no size');
+            }
+          } catch (validationError) {
+            console.warn('SMO template validation failed, skipping copy:', validationError);
+            throw validationError;
+          }
+        } else {
+          console.log('SMO template asset localUri not available');
+          console.log('Asset details:', {
+            downloaded: templateAsset.downloaded,
+            localUri: templateAsset.localUri,
+            uri: templateAsset.uri
+          });
+        }
+      } catch (assetError) {
+        console.error('SMO asset loading failed:', assetError);
+        console.log('SMO asset loading error details:', assetError);
+      }
+    } else {
+      console.log('SMO template already exists in cache');
+    }
+  } catch (error) {
+    console.error('Failed to copy SMO template:', error);
+    console.log('Copy SMO template error details:', error);
+  }
+}
+
+/**
  * Load SMO AVAC template PDF
  */
 async function loadSMOAVACTemplate(): Promise<ArrayBuffer> {
   try {
     console.log('Loading SMO AVAC template...');
     
-    // Load the SMO template using Asset system
-    const templateAsset = Asset.fromModule(require('../../assets/pdf/SMO AVAC Template.pdf'));
+    // First, check if template exists in cache (fastest path)
+    const templatePath = `${Paths.cache.uri}/SMO_AVAC_Template.pdf`;
+    const cacheFileInfo = await getInfoAsync(templatePath);
     
-    if (!templateAsset.downloaded) {
-      console.log('Downloading SMO template asset...');
-      await templateAsset.downloadAsync();
+    if (cacheFileInfo.exists && cacheFileInfo.size && cacheFileInfo.size >= 10000) {
+      console.log('SMO template found in cache, loading from cache...');
+      const base64Data = await readAsStringAsync(templatePath, { encoding: 'base64' });
+      const MIN_BASE64_SIZE = 13000;
+      
+      if (base64Data.length > MIN_BASE64_SIZE) {
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        console.log('SMO AVAC template loaded successfully from cache, size:', bytes.length);
+        return bytes.buffer;
+      }
     }
     
-    console.log('SMO template asset downloaded, localUri:', templateAsset.localUri);
+    // Try to copy template to cache if it doesn't exist or is corrupted
+    // This ensures we have a working copy in cache
+    try {
+      await copySMOAVACTemplateToCache();
+      // After copying, try loading from cache again
+      const newCacheFileInfo = await getInfoAsync(templatePath);
+      if (newCacheFileInfo.exists && newCacheFileInfo.size && newCacheFileInfo.size >= 10000) {
+        console.log('SMO template copied to cache, loading from cache...');
+        const base64Data = await readAsStringAsync(templatePath, { encoding: 'base64' });
+        const MIN_BASE64_SIZE = 13000;
+        
+        if (base64Data.length > MIN_BASE64_SIZE) {
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          console.log('SMO AVAC template loaded successfully from cache after copy, size:', bytes.length);
+          return bytes.buffer;
+        }
+      }
+    } catch (copyError) {
+      console.warn('Failed to copy SMO template to cache (non-fatal):', copyError);
+      // Continue anyway - we'll try other methods
+    }
     
-    if (templateAsset.localUri) {
-      const base64Data = await readAsStringAsync(templateAsset.localUri, { encoding: 'base64' });
-      console.log('SMO template data read, length:', base64Data.length);
+    // Try the SMO template using Asset system
+    try {
+      console.log('Loading SMO template using Asset system...');
+      const templateAsset = Asset.fromModule(require('../../assets/pdf/SMO AVAC Template.pdf'));
       
-      if (base64Data.length > 0) {
+      if (!templateAsset.downloaded) {
+        console.log('Downloading SMO template asset...');
+        await templateAsset.downloadAsync();
+      }
+      
+      console.log('SMO template asset downloaded, localUri:', templateAsset.localUri);
+      
+      if (templateAsset.localUri) {
+        // Check file size before reading
+        try {
+          const fileInfo = await getInfoAsync(templateAsset.localUri);
+          console.log('SMO template file info:', fileInfo);
+          
+          if (fileInfo.exists && fileInfo.size) {
+            // Validate file size (PDFs should be at least several KB)
+            const MIN_FILE_SIZE = 10000; // 10KB minimum
+            if (fileInfo.size < MIN_FILE_SIZE) {
+              console.warn(`SMO template file too small (${fileInfo.size} bytes), likely corrupted. Trying fallbacks...`);
+              throw new Error(`File too small: ${fileInfo.size} bytes`);
+            }
+            console.log(`SMO template file size OK: ${fileInfo.size} bytes`);
+          }
+        } catch (fileInfoError) {
+          console.warn('Could not check file info, proceeding anyway:', fileInfoError);
+        }
+        
+        const base64Data = await readAsStringAsync(templateAsset.localUri, { encoding: 'base64' });
+        console.log('SMO template data read, base64 length:', base64Data.length);
+        
+        // Validate that the file is reasonable size (PDFs should be at least several KB)
+        // Base64 is ~4/3 the size of binary, so 1000 bytes binary = ~1333 base64 chars
+        // Minimum reasonable PDF size: ~10KB binary = ~13KB base64
+        const MIN_BASE64_SIZE = 13000;
+        
+        if (base64Data.length > MIN_BASE64_SIZE) {
+          // Convert base64 to ArrayBuffer
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          console.log('SMO AVAC template loaded successfully from Asset system, size:', bytes.length);
+          return bytes.buffer;
+        } else {
+          console.warn(`SMO template file too small (${base64Data.length} base64 chars), likely corrupted. Trying fallbacks...`);
+        }
+      }
+    } catch (assetError) {
+      console.log('Asset system loading failed:', assetError);
+    }
+    
+    // Try direct file path as fallback
+    const directTemplatePath = 'assets/pdf/SMO AVAC Template.pdf';
+    console.log('Trying direct template path:', directTemplatePath);
+    
+    try {
+      const base64Data = await readAsStringAsync(directTemplatePath, { encoding: 'base64' });
+      console.log('Direct SMO template data read, length:', base64Data.length);
+      
+      const MIN_BASE64_SIZE = 13000;
+      if (base64Data.length > MIN_BASE64_SIZE) {
         // Convert base64 to ArrayBuffer
         const binaryString = atob(base64Data);
         const bytes = new Uint8Array(binaryString.length);
@@ -239,12 +414,50 @@ async function loadSMOAVACTemplate(): Promise<ArrayBuffer> {
           bytes[i] = binaryString.charCodeAt(i);
         }
         
-        console.log('SMO AVAC template loaded successfully, size:', bytes.length);
+        console.log('SMO AVAC template loaded successfully from direct path, size:', bytes.length);
         return bytes.buffer;
+      } else {
+        console.warn(`Direct SMO template file too small (${base64Data.length} base64 chars)`);
       }
+    } catch (directError) {
+      console.log('Direct template loading failed:', directError);
     }
     
-    throw new Error('Failed to load SMO template');
+    // Fallback to cache directory (reuse templatePath from earlier)
+    console.log('Trying cache template path:', templatePath);
+    
+    try {
+      // Check if template exists in cache
+      const fileInfo = await getInfoAsync(templatePath);
+      console.log('SMO Template file info:', fileInfo);
+      
+      if (fileInfo.exists) {
+        console.log('SMO Template found in cache, reading...');
+        const base64Data = await readAsStringAsync(templatePath, { encoding: 'base64' });
+        console.log('Cache SMO template data read, length:', base64Data.length);
+        
+        const MIN_BASE64_SIZE = 13000;
+        if (base64Data.length > MIN_BASE64_SIZE) {
+          // Convert base64 to ArrayBuffer
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          console.log('SMO AVAC template loaded successfully from cache, size:', bytes.length);
+          return bytes.buffer;
+        } else {
+          console.warn(`Cache SMO template file too small (${base64Data.length} base64 chars)`);
+        }
+      } else {
+        console.log('SMO Template not found in cache');
+      }
+    } catch (cacheError) {
+      console.log('Cache template loading failed:', cacheError);
+    }
+    
+    throw new Error('Failed to load SMO template: all loading methods failed or file is too small');
   } catch (error) {
     console.error('Failed to load SMO AVAC template:', error);
     throw error;

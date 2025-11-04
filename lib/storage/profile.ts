@@ -149,12 +149,12 @@ export class ProfileStorage {
   }
 
   // Helper to validate profile completeness
+  // Note: Delegate information is optional (only required for PDF generation)
   isProfileComplete(profile: Profile): boolean {
-    // Base required fields for all users
+    // Base required fields for all users (excluding delegate info)
     const baseRequiredFields: (keyof Profile)[] = [
       'fullName', 'payrollNumber', 'orgUnitNo', 'orgUnitName', 'location',
-      'delegateName', 'delegatePosition',
-      'delegateAreaCode', 'delegatePhone', 'employeeInitial', 'email'
+      'employeeInitial', 'email', 'isSMO'
     ];
 
     // For SMO users, payLevel is optional
@@ -164,17 +164,20 @@ export class ProfileStorage {
 
     return requiredFields.every(field => {
       const value = profile[field];
+      if (field === 'isSMO') {
+        return typeof value === 'boolean'; // isSMO can be true or false, just needs to be set
+      }
       return typeof value === 'string' && value.trim().length > 0;
     });
   }
 
   // Helper to get missing fields with user-friendly names
+  // Note: Delegate information is optional (only required for PDF generation)
   getMissingFields(profile: Profile): { field: keyof Profile; label: string; section: string }[] {
-    // Base required fields for all users
+    // Base required fields for all users (excluding delegate info)
     const baseRequiredFields: (keyof Profile)[] = [
       'fullName', 'payrollNumber', 'orgUnitNo', 'orgUnitName', 'location',
-      'delegateName', 'delegatePosition',
-      'delegateAreaCode', 'delegatePhone', 'employeeInitial', 'email'
+      'employeeInitial', 'email', 'isSMO'
     ];
 
     // For SMO users, payLevel is optional
@@ -232,7 +235,16 @@ export class ProfileStorage {
 
     requiredFields.forEach(field => {
       const value = profile[field];
-      if (!value || (typeof value === 'string' && value.trim().length === 0)) {
+      if (field === 'isSMO') {
+        // isSMO can be true or false, just needs to be set (not undefined)
+        if (value === undefined) {
+          missingFields.push({
+            field,
+            label: fieldLabels[field] || field,
+            section: fieldSections[field] || 'Other',
+          });
+        }
+      } else if (!value || (typeof value === 'string' && value.trim().length === 0)) {
         missingFields.push({
           field,
           label: fieldLabels[field] || field,

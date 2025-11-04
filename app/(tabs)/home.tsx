@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
+import { useAuthStore } from '../../lib/state/authStore';
 import { profileStorage } from '../../lib/storage/profile';
 import { getCurrentTime, getCurrentDate, formatMinutes, getShiftStartDate } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
@@ -29,6 +30,8 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
+  // Get user from auth store for userId
+  const { user } = useAuthStore();
   const { profile, loadProfile, initials } = useProfileStore();
   
   // Compute profile state from profile object
@@ -108,19 +111,19 @@ export default function HomeScreen() {
   // Reload profile when screen comes into focus
   useEffect(() => {
     const refreshProfile = () => {
-      loadProfile();
+      loadProfile(user?.id);
     };
     
     // Reload profile immediately
     refreshProfile();
-  }, []);
+  }, [loadProfile, user?.id]);
 
   // Refresh profile and logs when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      loadProfile();
-      loadLogs();
-    }, [loadProfile, loadLogs])
+      loadProfile(user?.id);
+      loadLogs(user?.id);
+    }, [loadProfile, loadLogs, user?.id])
   );
 
   // Handle pull-to-refresh
@@ -128,9 +131,9 @@ export default function HomeScreen() {
     setRefreshing(true);
     try {
       await Promise.all([
-        loadProfile(),
-        loadLogs(),
-        loadShifts()
+        loadProfile(user?.id),
+        loadLogs(user?.id),
+        loadShifts(user?.id)
       ]);
       // Update current time
       setCurrentTime(getCurrentTime());
@@ -160,7 +163,7 @@ export default function HomeScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [loadProfile, loadLogs, loadShifts, hasProfile, getRosterFor, hasLoggedShiftForDate, getLoggedShiftForDate]);
+  }, [loadProfile, loadLogs, loadShifts, hasProfile, getRosterFor, hasLoggedShiftForDate, getLoggedShiftForDate, user?.id]);
 
   const handleStartShift = async () => {
     if (!hasProfile || !isComplete) {

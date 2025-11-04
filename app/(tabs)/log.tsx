@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,12 @@ import {
   Animated,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useLogsStore } from '../../lib/state/logsStore';
+import { useProfileStore } from '../../lib/state/profileStore';
+import { useAuthStore } from '../../lib/state/authStore';
 import { LogCard } from '../../components/LogCard';
 import { EmptyState } from '../../components/EmptyState';
 import { OvertimeLog } from '../../types';
@@ -28,7 +31,10 @@ export default function LogScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { logs, deleteLog, markReady, loadLogs, getReadyLogs, getExportedLogs, resetLogsToReady, getYesterdayLog } = useLogsStore();
+  // Get user from auth store for userId
+  const { user } = useAuthStore();
+  const { logs, deleteLog, markReady, loadLogs, getReadyLogs, getExportedLogs, resetLogsToReady, getYesterdayLog, isLoading } = useLogsStore();
+  const { profile } = useProfileStore();
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [filterType, setFilterType] = useState<FilterType>('category');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -42,9 +48,12 @@ export default function LogScreen() {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [menuAnimation] = useState(new Animated.Value(0));
 
-  useEffect(() => {
-    loadLogs();
-  }, []);
+  // Load logs when screen comes into focus (similar to home screen)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadLogs(user?.id);
+    }, [loadLogs, user?.id])
+  );
 
   const handleToggleFilter = () => {
     setIsFilterExpanded(!isFilterExpanded);
@@ -53,7 +62,7 @@ export default function LogScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadLogs();
+    await loadLogs(user?.id);
     setRefreshing(false);
   };
 
@@ -137,6 +146,23 @@ export default function LogScreen() {
   };
 
   const handleExportReady = () => {
+    // Check if delegate information is complete
+    if (!profile?.delegateName || !profile?.delegatePosition || !profile?.delegatePhone || !profile?.delegateAreaCode) {
+      Alert.alert(
+        'Delegate Information Required',
+        'Delegate information is required to generate AVAC forms. Please complete your delegate details in your profile.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Go to Profile', 
+            onPress: () => {
+              router.push('/(tabs)/profile');
+            }
+          }
+        ]
+      );
+      return;
+    }
     const readyLogs = getReadyLogs();
     if (readyLogs.length === 0) {
       Alert.alert(
@@ -395,7 +421,8 @@ export default function LogScreen() {
     </TouchableOpacity>
   );
 
-  if (logs.length === 0) {
+  // Show empty state only if not loading and logs are empty
+  if (!isLoading && logs.length === 0) {
     return (
       <EmptyState
         title="No Overtime Logs"

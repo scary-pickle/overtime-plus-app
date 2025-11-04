@@ -4,18 +4,33 @@ import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 
 export default function SignIn() {
+  console.log('[sign-in] component render');
   const router = useRouter();
   const { signIn, isLoading, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  console.log('[sign-in] state snapshot', {
+    email: email.length > 0 ? '***' : 'empty',
+    passwordLength: password.length,
+    isLoading,
+    error,
+  });
+
   const onSubmit = async () => {
+    console.log('[sign-in] onSubmit called', { emailLength: email.length, passwordLength: password.length });
     clearError();
+    console.log('[sign-in] calling signIn');
     const result = await signIn(email.trim(), password);
+    console.log('[sign-in] signIn returned', { result });
     if (result === 'success') {
+      console.log('[sign-in] success - navigating to home');
       router.replace('/(tabs)/home');
     } else if (result === 'verify') {
+      console.log('[sign-in] needs verification - navigating to verify-email');
       router.replace('/auth/verify-email');
+    } else {
+      console.log('[sign-in] error result', { result });
     }
   };
 
@@ -45,7 +60,14 @@ export default function SignIn() {
             style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
           />
           {error ? <Text style={{ color: '#b91c1c' }}>{error}</Text> : null}
-          <TouchableOpacity onPress={onSubmit} disabled={isLoading} style={{ backgroundColor: '#2563EB', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, opacity: isLoading ? 0.7 : 1 }}>
+          <TouchableOpacity 
+            onPress={() => {
+              console.log('[sign-in] Sign In button pressed', { isLoading, emailLength: email.length, passwordLength: password.length });
+              onSubmit();
+            }}
+            disabled={isLoading} 
+            style={{ backgroundColor: '#2563EB', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, opacity: isLoading ? 0.7 : 1 }}
+          >
             <Text style={{ color: '#fff', fontWeight: '600' }}>{isLoading ? 'Signing in...' : 'Sign In'}</Text>
           </TouchableOpacity>
         </View>
