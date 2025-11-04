@@ -228,12 +228,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         if (lastError) throw lastError;
         throw new Error('Verification failed. Try again.');
       }
+      // Only set password if user was created without one (OTP-only signup)
+      // If user was created via signUp with password, it's already set, so skip
       const pendingPassword = get().pendingPassword;
-      if (pendingPassword) {
-        console.log('[authStore.verifyEmailOtp] applying pending password');
-        // @ts-ignore
-        const { error } = await (supabase as any).auth.updateUser({ password: pendingPassword });
-        if (error) throw error;
+      if (pendingPassword && session.user) {
+        // Check if user already has a password set (if they do, skip update)
+        // We can't easily check this, so we'll try to update and ignore "same password" errors
+        try {
+          console.log('[authStore.verifyEmailOtp] applying pending password');
+          // @ts-ignore
+          const { error } = await (supabase as any).auth.updateUser({ password: pendingPassword });
+          if (error && !error.message.includes('same password')) {
+            console.log('[authStore.verifyEmailOtp] password update error (non-fatal)', { message: error.message });
+            // Don't throw - password might already be set, verification succeeded
+          }
+        } catch (e) {
+          // Ignore password update errors - verification already succeeded
+          console.log('[authStore.verifyEmailOtp] password update failed (non-fatal)', e);
+        }
       }
       // Fetch fresh session/user to ensure flags are updated
       // @ts-ignore

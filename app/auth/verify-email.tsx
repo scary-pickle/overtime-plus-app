@@ -25,6 +25,7 @@ export default function VerifyEmail() {
   const [isSending, setIsSending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const autoSentRef = useRef<string | null>(null);
+  const verificationAttemptedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (emailVerified) {
@@ -86,9 +87,14 @@ export default function VerifyEmail() {
     return () => clearTimeout(t);
   }, [cooldown]);
 
-  // Auto-submit when 6 digits are entered
+  // Auto-submit when 6 digits are entered (only once per code)
   useEffect(() => {
-    if (otpCode.length === 6 && !busy && !isVerifying) {
+    // Reset ref if code length changes (user is typing a new code)
+    if (otpCode.length < 6) {
+      verificationAttemptedRef.current = null;
+    }
+    if (otpCode.length === 6 && !busy && !isVerifying && verificationAttemptedRef.current !== otpCode) {
+      verificationAttemptedRef.current = otpCode;
       Keyboard.dismiss();
       // Small delay to ensure keyboard is dismissed before submitting
       setTimeout(() => {
@@ -108,6 +114,10 @@ export default function VerifyEmail() {
   };
 
   const onVerifyOtp = async () => {
+    // Prevent multiple verification attempts
+    if (isVerifying || verificationAttemptedRef.current === otpCode) {
+      return;
+    }
     const targetEmail = (effectiveEmail || '').trim();
     if (!targetEmail) {
       setStatusMsg('Enter your email first.');
@@ -118,6 +128,7 @@ export default function VerifyEmail() {
       setStatusMsg('Enter the 6-digit code.');
       return;
     }
+    verificationAttemptedRef.current = token;
     clearError();
     setStatusMsg('Verifying code...');
     setIsVerifying(true);
@@ -126,9 +137,14 @@ export default function VerifyEmail() {
     if (outcome === 'success') {
       setStatusMsg('Verified. Redirecting...');
       setOtpCode('');
+      verificationAttemptedRef.current = null; // Reset for next attempt
       router.replace('/(tabs)/home');
     } else {
       setStatusMsg(null);
+      // Reset ref on failure so user can retry with new code
+      if (token.length < 6) {
+        verificationAttemptedRef.current = null;
+      }
     }
   };
 
