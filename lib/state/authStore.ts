@@ -110,7 +110,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // @ts-ignore
       const { data, error } = await (supabase as any).auth.signInWithOtp({
         email,
-        options: { shouldCreateUser: true },
+        options: { 
+          shouldCreateUser: true,
+          emailRedirectTo: undefined, // Don't send redirect links
+          // Force OTP format (not magic link)
+        },
       });
       if (error) {
         console.log('[authStore.signUp] signInWithOtp error', { message: error.message });
@@ -143,7 +147,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // @ts-ignore
       const { data, error } = await (supabase as any).auth.signInWithOtp({
         email,
-        options: { shouldCreateUser },
+        options: { 
+          shouldCreateUser,
+          emailRedirectTo: undefined, // Don't send redirect links, only OTP codes
+        },
       });
       console.log('[authStore.requestEmailOtp] response', { 
         hasData: !!data, 

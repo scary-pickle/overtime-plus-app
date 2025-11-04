@@ -20,6 +20,18 @@ Find your project ref in the Supabase dashboard URL: `https://app.supabase.com/p
   - SMTP: configure a verified sender (SES/Postmark/Resend)
 - In Settings → API:
   - Use the new Publishable key in `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- **Critical: Configure Email Templates for OTP Codes**
+  - Dashboard → Authentication → Email Templates
+  - Edit "Magic Link" template (or create a custom one)
+  - Change the template to show the OTP code instead of a link
+  - The code is available in the template as `{{ .Token }}` or `{{ .TokenHash }}`
+  - Example template body:
+    ```
+    Your OTP code is: {{ .Token }}
+    Enter this code in the app to verify your email.
+    This code expires in 1 hour.
+    ```
+  - Or use the default "OTP" template if available
  - In Authentication → URL Configuration:
   - Site URL: any valid https URL (can be your future web URL)
   - Additional Redirect URLs: add both `overtime-plus://` and `overtime-plus://auth-callback`
