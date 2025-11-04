@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Keyboard, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 
@@ -86,6 +86,18 @@ export default function VerifyEmail() {
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  // Auto-submit when 6 digits are entered
+  useEffect(() => {
+    if (otpCode.length === 6 && !busy && !isVerifying) {
+      Keyboard.dismiss();
+      // Small delay to ensure keyboard is dismissed before submitting
+      setTimeout(() => {
+        onVerifyOtp();
+      }, 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otpCode, busy, isVerifying]);
+
   const effectiveEmail = emailInput || pendingEmail || userEmail;
   const busy = isLoading || isSending || isVerifying;
   const sendLabel = isSending ? 'Sending...' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Send 6-digit code';
@@ -122,7 +134,10 @@ export default function VerifyEmail() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#0B2239' }}>
-      <View style={{ flex: 1, padding: 24, justifyContent: 'center' }}>
+      <ScrollView 
+        contentContainerStyle={{ flexGrow: 1, padding: 24, justifyContent: 'center' }}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={{ marginBottom: 24 }}>
           <Text style={{ fontSize: 28, fontWeight: '700', color: '#fff' }}>Verify your email</Text>
           <Text style={{ color: '#cfe0f7', marginTop: 4 }}>
@@ -172,6 +187,14 @@ export default function VerifyEmail() {
             placeholder="Enter 6-digit code"
             keyboardType="number-pad"
             maxLength={6}
+            returnKeyType="done"
+            onSubmitEditing={() => {
+              if (otpCode.length === 6 && !busy) {
+                Keyboard.dismiss();
+                onVerifyOtp();
+              }
+            }}
+            onBlur={() => Keyboard.dismiss()}
             style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
           />
           <TouchableOpacity
@@ -188,7 +211,7 @@ export default function VerifyEmail() {
             <Text style={{ color: '#fff', fontWeight: '600' }}>{verifyLabel}</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
