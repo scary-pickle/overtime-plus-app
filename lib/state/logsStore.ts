@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { OvertimeLog, ExportBatch, MinutesCalculation } from '../../types';
 import { database } from '../db/sqlite';
 import { computeMinutes, roundToNearest5, getPreviousISODate, getCurrentDate } from '../time';
+import { useAuthStore } from './authStore';
 
 interface LogsState {
   logs: OvertimeLog[];
@@ -10,15 +11,15 @@ interface LogsState {
   error: string | null;
   
   // Actions
-  loadLogs: () => Promise<void>;
-  loadExportBatches: () => Promise<void>;
-  addLog: (log: OvertimeLog) => Promise<void>;
-  updateLog: (log: OvertimeLog) => Promise<void>;
-  deleteLog: (id: string) => Promise<void>;
-  markReady: (id: string) => Promise<void>;
-  batchExport: (logIds: string[], pdfUri?: string) => Promise<ExportBatch>;
-  updateExportBatch: (batch: ExportBatch) => Promise<void>;
-  deleteExportBatch: (id: string) => Promise<void>;
+  loadLogs: (userId?: string | null) => Promise<void>;
+  loadExportBatches: (userId?: string | null) => Promise<void>;
+  addLog: (log: OvertimeLog, userId?: string | null) => Promise<void>;
+  updateLog: (log: OvertimeLog, userId?: string | null) => Promise<void>;
+  deleteLog: (id: string, userId?: string | null) => Promise<void>;
+  markReady: (id: string, userId?: string | null) => Promise<void>;
+  batchExport: (logIds: string[], pdfUri?: string, userId?: string | null) => Promise<ExportBatch>;
+  updateExportBatch: (batch: ExportBatch, userId?: string | null) => Promise<void>;
+  deleteExportBatch: (id: string, userId?: string | null) => Promise<void>;
   markBatchAsSubmitted: (batchId: string, method: 'email' | 'manual') => Promise<void>;
   resetLogsToReady: (logIds: string[]) => Promise<void>;
   clearError: () => void;
@@ -51,10 +52,10 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  loadLogs: async () => {
+  loadLogs: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const logs = await database.getOvertimeLogs();
+      const logs = await database.getOvertimeLogs(userId);
       set({ 
         logs, 
         isLoading: false,
@@ -68,10 +69,10 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
   },
 
-  loadExportBatches: async () => {
+  loadExportBatches: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const exportBatches = await database.getExportBatches();
+      const exportBatches = await database.getExportBatches(userId);
       set({ 
         exportBatches, 
         isLoading: false,
@@ -85,10 +86,12 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
   },
 
-  addLog: async (log: OvertimeLog) => {
+  addLog: async (log: OvertimeLog, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      await database.createOvertimeLog(log);
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      await database.createOvertimeLog(log, finalUserId);
       const { logs } = get();
       set({ 
         logs: [log, ...logs], 
@@ -103,10 +106,12 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
   },
 
-  updateLog: async (log: OvertimeLog) => {
+  updateLog: async (log: OvertimeLog, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      await database.updateOvertimeLog(log);
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      await database.updateOvertimeLog(log, finalUserId);
       const { logs } = get();
       const updatedLogs = logs.map(l => l.id === log.id ? log : l);
       set({ 
@@ -122,10 +127,12 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
   },
 
-  deleteLog: async (id: string) => {
+  deleteLog: async (id: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      await database.deleteOvertimeLog(id);
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      await database.deleteOvertimeLog(id, finalUserId);
       const { logs } = get();
       const filteredLogs = logs.filter(l => l.id !== id);
       set({ 
@@ -141,7 +148,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
   },
 
-  markReady: async (id: string) => {
+  markReady: async (id: string, userId?: string | null) => {
     const { logs, updateLog } = get();
     const log = logs.find(l => l.id === id);
     if (!log) return;
@@ -152,10 +159,12 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       updatedAt: new Date().toISOString()
     };
 
-    await updateLog(updatedLog);
+    // Get userId from authStore if not provided
+    const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+    await updateLog(updatedLog, finalUserId);
   },
 
-  batchExport: async (logIds: string[], pdfUri?: string) => {
+  batchExport: async (logIds: string[], pdfUri?: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
       const { logs } = get();
@@ -175,7 +184,9 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         submittedToEmail: undefined
       };
 
-      await database.createExportBatch(batch);
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      await database.createExportBatch(batch, finalUserId);
       
       // Update logs to exported status in both database and store
       const updatedLogs = logs.map(log => 
@@ -187,7 +198,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Persist each updated log to the database
       for (const log of updatedLogs) {
         if (logIds.includes(log.id)) {
-          await database.updateOvertimeLog(log);
+          await database.updateOvertimeLog(log, finalUserId);
         }
       }
 
@@ -207,10 +218,12 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
   },
 
-  updateExportBatch: async (batch: ExportBatch) => {
+  updateExportBatch: async (batch: ExportBatch, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      await database.updateExportBatch(batch);
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      await database.updateExportBatch(batch, finalUserId);
       const { exportBatches } = get();
       const updatedBatches = exportBatches.map(b => b.id === batch.id ? batch : b);
       set({ 
@@ -226,10 +239,12 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
   },
 
-  deleteExportBatch: async (id: string) => {
+  deleteExportBatch: async (id: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      await database.deleteExportBatch(id);
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      await database.deleteExportBatch(id, finalUserId);
       const { exportBatches } = get();
       const filteredBatches = exportBatches.filter(b => b.id !== id);
       set({ 

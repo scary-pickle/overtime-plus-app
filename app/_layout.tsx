@@ -42,11 +42,14 @@ export default function RootLayout() {
       // Load data from stores (only if authenticated and email verified)
       // Profile, shifts, logs are user-specific and should only load after auth
       if (user && emailVerified) {
+        // Clear old legacy data (without user_id) when a new authenticated user signs in
+        await database.clearLegacyData();
+        
         await Promise.all([
           loadProfile(user.id), // Pass userId to load user-specific profile
-          loadShifts(),
-          loadLogs(),
-          loadExportBatches(),
+          loadShifts(user.id), // Pass userId to load user-specific shifts
+          loadLogs(user.id), // Pass userId to load user-specific logs
+          loadExportBatches(user.id), // Pass userId to load user-specific export batches
         ]);
       }
 

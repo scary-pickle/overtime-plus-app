@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { UsualShift, RosterForDate } from '../../types';
 import { database } from '../db/sqlite';
 import { getRosterForDate } from '../roster';
+import { useAuthStore } from './authStore';
 
 interface ShiftsState {
   shifts: UsualShift[];
@@ -9,10 +10,10 @@ interface ShiftsState {
   error: string | null;
   
   // Actions
-  loadShifts: () => Promise<void>;
-  addShift: (shift: UsualShift) => Promise<void>;
-  updateShift: (shift: UsualShift) => Promise<void>;
-  deleteShift: (id: string) => Promise<void>;
+  loadShifts: (userId?: string | null) => Promise<void>;
+  addShift: (shift: UsualShift, userId?: string | null) => Promise<void>;
+  updateShift: (shift: UsualShift, userId?: string | null) => Promise<void>;
+  deleteShift: (id: string, userId?: string | null) => Promise<void>;
   clearError: () => void;
   
   // Helper methods
@@ -26,11 +27,11 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   isLoading: false,
   error: null,
 
-  loadShifts: async () => {
-    console.log('🔄 ShiftsStore: Loading shifts from database...');
+  loadShifts: async (userId?: string | null) => {
+    console.log('🔄 ShiftsStore: Loading shifts from database...', { userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous' });
     set({ isLoading: true, error: null });
     try {
-      const shifts = await database.getUsualShifts();
+      const shifts = await database.getUsualShifts(userId);
       console.log('✅ ShiftsStore: Loaded shifts successfully:', {
         count: shifts.length,
         shifts: shifts.map(s => ({ id: s.id, label: s.label, day: s.dayOfWeek, type: s.type }))
@@ -49,17 +50,20 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     }
   },
 
-  addShift: async (shift: UsualShift) => {
+  addShift: async (shift: UsualShift, userId?: string | null) => {
+    // Get userId from authStore if not provided
+    const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
     console.log('➕ ShiftsStore: Adding new shift:', {
       id: shift.id,
       label: shift.label,
       day: shift.dayOfWeek,
       type: shift.type,
-      times: `${shift.rosteredStart}-${shift.rosteredFinish}`
+      times: `${shift.rosteredStart}-${shift.rosteredFinish}`,
+      userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous'
     });
     set({ isLoading: true, error: null });
     try {
-      await database.createUsualShift(shift);
+      await database.createUsualShift(shift, finalUserId);
       const { shifts } = get();
       console.log('✅ ShiftsStore: Shift added successfully');
       set({ 
@@ -76,16 +80,19 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     }
   },
 
-  updateShift: async (shift: UsualShift) => {
+  updateShift: async (shift: UsualShift, userId?: string | null) => {
+    // Get userId from authStore if not provided
+    const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
     console.log('✏️ ShiftsStore: Updating shift:', {
       id: shift.id,
       label: shift.label,
       day: shift.dayOfWeek,
-      type: shift.type
+      type: shift.type,
+      userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous'
     });
     set({ isLoading: true, error: null });
     try {
-      await database.updateUsualShift(shift);
+      await database.updateUsualShift(shift, finalUserId);
       const { shifts } = get();
       const updatedShifts = shifts.map(s => s.id === shift.id ? shift : s);
       console.log('✅ ShiftsStore: Shift updated successfully');
@@ -103,11 +110,13 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
     }
   },
 
-  deleteShift: async (id: string) => {
-    console.log('🗑️ ShiftsStore: Deleting shift:', id);
+  deleteShift: async (id: string, userId?: string | null) => {
+    // Get userId from authStore if not provided
+    const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+    console.log('🗑️ ShiftsStore: Deleting shift:', { id, userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous' });
     set({ isLoading: true, error: null });
     try {
-      await database.deleteUsualShift(id);
+      await database.deleteUsualShift(id, finalUserId);
       const { shifts } = get();
       const filteredShifts = shifts.filter(s => s.id !== id);
       console.log('✅ ShiftsStore: Shift deleted successfully');

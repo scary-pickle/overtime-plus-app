@@ -117,6 +117,37 @@ class Database {
     }
 
     try {
+      // Migration: Add user_id columns to tables for multi-user support
+      await this.db.execAsync(`
+        ALTER TABLE usual_shifts ADD COLUMN user_id TEXT;
+      `);
+      console.log('✅ Added user_id column to usual_shifts');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE overtime_logs ADD COLUMN user_id TEXT;
+      `);
+      console.log('✅ Added user_id column to overtime_logs');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE export_batches ADD COLUMN user_id TEXT;
+      `);
+      console.log('✅ Added user_id column to export_batches');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    // Clear old data without user_id when a new authenticated user signs in
+    // This is done via a method that can be called explicitly, not automatically
+
+    try {
       // Migration: Add is_active_shift column to overtime_logs
       await this.db.execAsync(`
         ALTER TABLE overtime_logs ADD COLUMN is_active_shift INTEGER DEFAULT 0;
@@ -200,27 +231,31 @@ class Database {
   }
 
   // UsualShifts CRUD
-  async createUsualShift(shift: UsualShift): Promise<void> {
+  async createUsualShift(shift: UsualShift, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     await this.db.runAsync(`
       INSERT INTO usual_shifts (
         id, label, type, week_index, day_of_week, rostered_start, rostered_finish,
-        meal_break_minutes, active_from, active_to, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        meal_break_minutes, active_from, active_to, user_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       shift.id, shift.label, shift.type, shift.weekIndex || null, shift.dayOfWeek,
       shift.rosteredStart, shift.rosteredFinish, shift.mealBreakMinutes || 0,
-      shift.activeFrom, shift.activeTo || null, new Date().toISOString(), new Date().toISOString()
+      shift.activeFrom, shift.activeTo || null, userId || null,
+      new Date().toISOString(), new Date().toISOString()
     ]);
   }
 
-  async getUsualShifts(): Promise<UsualShift[]> {
+  async getUsualShifts(userId?: string | null): Promise<UsualShift[]> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const result = await this.db.getAllAsync(`
-      SELECT * FROM usual_shifts ORDER BY label, day_of_week
-    `);
+    const query = userId
+      ? `SELECT * FROM usual_shifts WHERE user_id = ? ORDER BY label, day_of_week`
+      : `SELECT * FROM usual_shifts WHERE user_id IS NULL ORDER BY label, day_of_week`;
+    const params = userId ? [userId] : [];
+    
+    const result = await this.db.getAllAsync(query, params);
 
     return result.map((row: any) => ({
       id: row.id as string,
@@ -236,32 +271,48 @@ class Database {
     }));
   }
 
-  async updateUsualShift(shift: UsualShift): Promise<void> {
+  async updateUsualShift(shift: UsualShift, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync(`
-      UPDATE usual_shifts SET
-        label = ?, type = ?, week_index = ?, day_of_week = ?, rostered_start = ?,
-        rostered_finish = ?, meal_break_minutes = ?, active_from = ?, active_to = ?,
-        updated_at = ?
-      WHERE id = ?
-    `, [
-      shift.label, shift.type, shift.weekIndex || null, shift.dayOfWeek,
-      shift.rosteredStart, shift.rosteredFinish, shift.mealBreakMinutes || 0,
-      shift.activeFrom, shift.activeTo || null, new Date().toISOString(), shift.id
-    ]);
+    const query = userId
+      ? `UPDATE usual_shifts SET
+          label = ?, type = ?, week_index = ?, day_of_week = ?, rostered_start = ?,
+          rostered_finish = ?, meal_break_minutes = ?, active_from = ?, active_to = ?,
+          updated_at = ?
+        WHERE id = ? AND user_id = ?`
+      : `UPDATE usual_shifts SET
+          label = ?, type = ?, week_index = ?, day_of_week = ?, rostered_start = ?,
+          rostered_finish = ?, meal_break_minutes = ?, active_from = ?, active_to = ?,
+          updated_at = ?
+        WHERE id = ? AND user_id IS NULL`;
+    const params = userId
+      ? [
+          shift.label, shift.type, shift.weekIndex || null, shift.dayOfWeek,
+          shift.rosteredStart, shift.rosteredFinish, shift.mealBreakMinutes || 0,
+          shift.activeFrom, shift.activeTo || null, new Date().toISOString(), shift.id, userId
+        ]
+      : [
+          shift.label, shift.type, shift.weekIndex || null, shift.dayOfWeek,
+          shift.rosteredStart, shift.rosteredFinish, shift.mealBreakMinutes || 0,
+          shift.activeFrom, shift.activeTo || null, new Date().toISOString(), shift.id
+        ];
+
+    await this.db.runAsync(query, params);
   }
 
-  async deleteUsualShift(id: string): Promise<void> {
+  async deleteUsualShift(id: string, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync(`
-      DELETE FROM usual_shifts WHERE id = ?
-    `, [id]);
+    const query = userId
+      ? `DELETE FROM usual_shifts WHERE id = ? AND user_id = ?`
+      : `DELETE FROM usual_shifts WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
   }
 
   // OvertimeLogs CRUD
-  async createOvertimeLog(log: OvertimeLog): Promise<void> {
+  async createOvertimeLog(log: OvertimeLog, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     await this.db.runAsync(`
@@ -269,8 +320,8 @@ class Database {
         id, date, rostered_start, rostered_finish, actual_start, actual_finish,
         meal_break_minutes, minutes_overtime, category, comments,
         initials, status, export_batch_id, source, is_active_shift, concurrent_employment,
-        smo_categories, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        smo_categories, user_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       log.id, log.date, log.rosteredStart || null, log.rosteredFinish || null,
       log.actualStart, log.actualFinish, log.mealBreakMinutes || 0, log.minutesOvertime,
@@ -278,16 +329,20 @@ class Database {
       log.initials, log.status, log.exportBatchId || null, log.source,
       log.isActiveShift ? 1 : 0, log.concurrentEmployment ? 1 : 0,
       log.smoCategories ? JSON.stringify(log.smoCategories) : null,
+      userId || null,
       log.createdAt, log.updatedAt
     ]);
   }
 
-  async getOvertimeLogs(): Promise<OvertimeLog[]> {
+  async getOvertimeLogs(userId?: string | null): Promise<OvertimeLog[]> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const result = await this.db.getAllAsync(`
-      SELECT * FROM overtime_logs ORDER BY date DESC, created_at DESC
-    `);
+    const query = userId
+      ? `SELECT * FROM overtime_logs WHERE user_id = ? ORDER BY date DESC, created_at DESC`
+      : `SELECT * FROM overtime_logs WHERE user_id IS NULL ORDER BY date DESC, created_at DESC`;
+    const params = userId ? [userId] : [];
+
+    const result = await this.db.getAllAsync(query, params);
 
     return result.map((row: any) => ({
       id: row.id as string,
@@ -312,12 +367,15 @@ class Database {
     }));
   }
 
-  async getOvertimeLogsByStatus(status: 'draft' | 'ready' | 'exported'): Promise<OvertimeLog[]> {
+  async getOvertimeLogsByStatus(status: 'draft' | 'ready' | 'exported', userId?: string | null): Promise<OvertimeLog[]> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const result = await this.db.getAllAsync(`
-      SELECT * FROM overtime_logs WHERE status = ? ORDER BY date DESC, created_at DESC
-    `, [status]);
+    const query = userId
+      ? `SELECT * FROM overtime_logs WHERE status = ? AND user_id = ? ORDER BY date DESC, created_at DESC`
+      : `SELECT * FROM overtime_logs WHERE status = ? AND user_id IS NULL ORDER BY date DESC, created_at DESC`;
+    const params = userId ? [status, userId] : [status];
+
+    const result = await this.db.getAllAsync(query, params);
 
     return result.map((row: any) => ({
       id: row.id as string,
@@ -342,56 +400,81 @@ class Database {
     }));
   }
 
-  async updateOvertimeLog(log: OvertimeLog): Promise<void> {
+  async updateOvertimeLog(log: OvertimeLog, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync(`
-      UPDATE overtime_logs SET
-        date = ?, rostered_start = ?, rostered_finish = ?, actual_start = ?,
-        actual_finish = ?, meal_break_minutes = ?, minutes_overtime = ?, category = ?,
-        comments = ?, initials = ?, status = ?,
-        export_batch_id = ?, source = ?, is_active_shift = ?, concurrent_employment = ?,
-        smo_categories = ?, updated_at = ?
-      WHERE id = ?
-    `, [
-      log.date, log.rosteredStart || null, log.rosteredFinish || null,
-      log.actualStart, log.actualFinish, log.mealBreakMinutes || 0, log.minutesOvertime,
-      log.category, log.comments || null,
-      log.initials, log.status, log.exportBatchId || null, log.source,
-      log.isActiveShift ? 1 : 0, log.concurrentEmployment ? 1 : 0,
-      log.smoCategories ? JSON.stringify(log.smoCategories) : null,
-      new Date().toISOString(), log.id
-    ]);
+    const query = userId
+      ? `UPDATE overtime_logs SET
+          date = ?, rostered_start = ?, rostered_finish = ?, actual_start = ?,
+          actual_finish = ?, meal_break_minutes = ?, minutes_overtime = ?, category = ?,
+          comments = ?, initials = ?, status = ?,
+          export_batch_id = ?, source = ?, is_active_shift = ?, concurrent_employment = ?,
+          smo_categories = ?, updated_at = ?
+        WHERE id = ? AND user_id = ?`
+      : `UPDATE overtime_logs SET
+          date = ?, rostered_start = ?, rostered_finish = ?, actual_start = ?,
+          actual_finish = ?, meal_break_minutes = ?, minutes_overtime = ?, category = ?,
+          comments = ?, initials = ?, status = ?,
+          export_batch_id = ?, source = ?, is_active_shift = ?, concurrent_employment = ?,
+          smo_categories = ?, updated_at = ?
+        WHERE id = ? AND user_id IS NULL`;
+    const params = userId
+      ? [
+          log.date, log.rosteredStart || null, log.rosteredFinish || null,
+          log.actualStart, log.actualFinish, log.mealBreakMinutes || 0, log.minutesOvertime,
+          log.category, log.comments || null,
+          log.initials, log.status, log.exportBatchId || null, log.source,
+          log.isActiveShift ? 1 : 0, log.concurrentEmployment ? 1 : 0,
+          log.smoCategories ? JSON.stringify(log.smoCategories) : null,
+          new Date().toISOString(), log.id, userId
+        ]
+      : [
+          log.date, log.rosteredStart || null, log.rosteredFinish || null,
+          log.actualStart, log.actualFinish, log.mealBreakMinutes || 0, log.minutesOvertime,
+          log.category, log.comments || null,
+          log.initials, log.status, log.exportBatchId || null, log.source,
+          log.isActiveShift ? 1 : 0, log.concurrentEmployment ? 1 : 0,
+          log.smoCategories ? JSON.stringify(log.smoCategories) : null,
+          new Date().toISOString(), log.id
+        ];
+
+    await this.db.runAsync(query, params);
   }
 
-  async deleteOvertimeLog(id: string): Promise<void> {
+  async deleteOvertimeLog(id: string, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync(`
-      DELETE FROM overtime_logs WHERE id = ?
-    `, [id]);
+    const query = userId
+      ? `DELETE FROM overtime_logs WHERE id = ? AND user_id = ?`
+      : `DELETE FROM overtime_logs WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
   }
 
   // ExportBatches CRUD
-  async createExportBatch(batch: ExportBatch): Promise<void> {
+  async createExportBatch(batch: ExportBatch, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     await this.db.runAsync(`
       INSERT INTO export_batches (
-        id, created_at, pdf_uri, count_logs, total_minutes, submitted_to_email, custom_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        id, created_at, pdf_uri, count_logs, total_minutes, submitted_to_email, custom_name, user_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       batch.id, batch.createdAt, batch.pdfUri, batch.countLogs,
-      batch.totalMinutes, batch.submittedToEmail || null, batch.customName || null
+      batch.totalMinutes, batch.submittedToEmail || null, batch.customName || null, userId || null
     ]);
   }
 
-  async getExportBatches(): Promise<ExportBatch[]> {
+  async getExportBatches(userId?: string | null): Promise<ExportBatch[]> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const result = await this.db.getAllAsync(`
-      SELECT * FROM export_batches ORDER BY created_at DESC
-    `);
+    const query = userId
+      ? `SELECT * FROM export_batches WHERE user_id = ? ORDER BY created_at DESC`
+      : `SELECT * FROM export_batches WHERE user_id IS NULL ORDER BY created_at DESC`;
+    const params = userId ? [userId] : [];
+
+    const result = await this.db.getAllAsync(query, params);
 
     return result.map((row: any) => ({
       id: row.id as string,
@@ -404,24 +487,32 @@ class Database {
     }));
   }
 
-  async updateExportBatch(batch: ExportBatch): Promise<void> {
+  async updateExportBatch(batch: ExportBatch, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync(`
-      UPDATE export_batches SET
-        pdf_uri = ?, submitted_to_email = ?, custom_name = ?
-      WHERE id = ?
-    `, [
-      batch.pdfUri, batch.submittedToEmail || null, batch.customName || null, batch.id
-    ]);
+    const query = userId
+      ? `UPDATE export_batches SET
+          pdf_uri = ?, submitted_to_email = ?, custom_name = ?
+        WHERE id = ? AND user_id = ?`
+      : `UPDATE export_batches SET
+          pdf_uri = ?, submitted_to_email = ?, custom_name = ?
+        WHERE id = ? AND user_id IS NULL`;
+    const params = userId
+      ? [batch.pdfUri, batch.submittedToEmail || null, batch.customName || null, batch.id, userId]
+      : [batch.pdfUri, batch.submittedToEmail || null, batch.customName || null, batch.id];
+
+    await this.db.runAsync(query, params);
   }
 
-  async deleteExportBatch(id: string): Promise<void> {
+  async deleteExportBatch(id: string, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync(`
-      DELETE FROM export_batches WHERE id = ?
-    `, [id]);
+    const query = userId
+      ? `DELETE FROM export_batches WHERE id = ? AND user_id = ?`
+      : `DELETE FROM export_batches WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
   }
 
   // LogTemplates CRUD
@@ -531,6 +622,17 @@ class Database {
       await this.db.closeAsync();
       this.db = null;
     }
+  }
+
+  // Clear old data without user_id (legacy data from before auth)
+  async clearLegacyData(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    
+    console.log('Clearing legacy data (without user_id)...');
+    await this.db.execAsync('DELETE FROM overtime_logs WHERE user_id IS NULL');
+    await this.db.execAsync('DELETE FROM usual_shifts WHERE user_id IS NULL');
+    await this.db.execAsync('DELETE FROM export_batches WHERE user_id IS NULL');
+    console.log('✅ Legacy data cleared');
   }
 
   // Clear all data methods for testing
