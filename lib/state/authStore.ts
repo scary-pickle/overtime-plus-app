@@ -141,16 +141,35 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       // @ts-ignore
-      const { error } = await (supabase as any).auth.signInWithOtp({
+      const { data, error } = await (supabase as any).auth.signInWithOtp({
         email,
         options: { shouldCreateUser },
       });
-      if (error) throw error;
+      console.log('[authStore.requestEmailOtp] response', { 
+        hasData: !!data, 
+        hasError: !!error,
+        errorCode: (error as any)?.code,
+        errorMessage: error?.message,
+        dataKeys: data ? Object.keys(data) : [],
+      });
+      if (error) {
+        console.log('[authStore.requestEmailOtp] error details', { 
+          code: (error as any)?.code,
+          message: error.message,
+          status: (error as any)?.status,
+        });
+        throw error;
+      }
+      console.log('[authStore.requestEmailOtp] OTP sent successfully');
       set({ pendingEmail: email, isLoading: false });
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to send code';
-      console.log('[authStore.requestEmailOtp] failed', { message: msg });
+      console.log('[authStore.requestEmailOtp] failed', { 
+        message: msg,
+        error: e,
+        errorString: String(e),
+      });
       set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
       return false;
     }
@@ -158,22 +177,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   verifyEmailOtp: async (email: string, token: string) => {
     const emailMasked = email.replace(/(^.).+(@.*$)/, '$1***$2');
-    console.log('[authStore.verifyEmailOtp] verifying', { emailMasked });
+    console.log('[authStore.verifyEmailOtp] verifying', { emailMasked, tokenLength: token.length });
     set({ isLoading: true, error: null });
     try {
       const attemptTypes: Array<'email' | 'signup'> = ['email', 'signup'];
       let session: any = null;
       let lastError: Error | null = null;
       for (const type of attemptTypes) {
+        console.log('[authStore.verifyEmailOtp] attempting', { type });
         // @ts-ignore
         const { data, error } = await (supabase as any).auth.verifyOtp({ email, token, type });
+        console.log('[authStore.verifyEmailOtp] attempt result', { 
+          type,
+          hasData: !!data,
+          hasSession: !!data?.session,
+          hasUser: !!data?.user,
+          hasError: !!error,
+          errorCode: (error as any)?.code,
+          errorMessage: error?.message,
+        });
         if (!error && (data?.session || data?.user)) {
           session = data?.session ?? null;
           lastError = null;
+          console.log('[authStore.verifyEmailOtp] success with type', type);
           break;
         }
         if (error) {
           lastError = error;
+          console.log('[authStore.verifyEmailOtp] failed with type', type, { message: error.message });
         }
       }
       if (!session) {
