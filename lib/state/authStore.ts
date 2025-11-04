@@ -40,6 +40,43 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (error) throw error;
       const session = data?.session ?? null;
       const user = session?.user ?? null;
+
+      // If we have a session, verify the user still exists in Supabase
+      if (session && user) {
+        console.log('[authStore.checkSession] Verifying user still exists...', { userId: user.id });
+        try {
+          // Verify the user still exists by calling getUser() - this will fail if user was deleted
+          // @ts-ignore
+          const { data: userData, error: userError } = await (supabase as any).auth.getUser();
+          if (userError) {
+            console.log('[authStore.checkSession] User validation failed - user may have been deleted:', userError);
+            // User was likely deleted or session is invalid - clear it
+            await (supabase as any).auth.signOut();
+            set({
+              session: null,
+              user: null,
+              emailVerified: false,
+              isLoading: false,
+            });
+            console.log('[authStore.checkSession] Session cleared due to invalid user');
+            return;
+          }
+          console.log('[authStore.checkSession] User verified successfully');
+        } catch (verifyError) {
+          console.log('[authStore.checkSession] Error verifying user:', verifyError);
+          // If verification fails, clear the session to be safe
+          await (supabase as any).auth.signOut();
+          set({
+            session: null,
+            user: null,
+            emailVerified: false,
+            isLoading: false,
+          });
+          console.log('[authStore.checkSession] Session cleared due to verification error');
+          return;
+        }
+      }
+
       set({
         session,
         user,
@@ -47,8 +84,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to get session';
-      set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
+      console.log('[authStore.checkSession] Error getting session:', e);
+      // Clear session on error
+      await (supabase as any).auth.signOut();
+      set({
+        session: null,
+        user: null,
+        emailVerified: false,
+        isLoading: false,
+        error: toFriendlyAuthMessage(e instanceof Error ? e.message : 'Failed to get session'),
+      });
     }
   },
 
