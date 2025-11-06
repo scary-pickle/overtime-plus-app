@@ -30,7 +30,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
-  isLoading: false,
+  isLoading: true, // Start as true - we haven't checked session yet
   error: null,
   emailVerified: false,
   pendingEmail: null,
@@ -86,9 +86,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
       }
 
-      // Check onboarding status
+      // Check onboarding status and get the result directly
       const onboardingStore = useOnboardingStore.getState();
-      await onboardingStore.checkOnboardingStatus(user?.id);
+      const hasCompletedOnboarding = await onboardingStore.checkOnboardingStatus(user?.id);
 
       // Store current user ID in SecureStore for widget access
       if (user?.id) {
@@ -97,13 +97,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await SecureStore.deleteItemAsync(CURRENT_USER_ID_KEY);
       }
 
+      console.log('[authStore.checkSession] Setting state:', {
+        hasSession: !!session,
+        hasUser: !!user,
+        userId: user?.id?.substring(0, 8),
+        emailVerified: !!user?.email_confirmed_at,
+        hasCompletedOnboarding,
+      });
+      
       set({
         session,
         user,
         emailVerified: !!user?.email_confirmed_at,
-        hasCompletedOnboarding: onboardingStore.hasCompletedOnboarding,
+        hasCompletedOnboarding,
         isLoading: false,
       });
+      
+      console.log('[authStore.checkSession] State set complete');
     } catch (e) {
       console.log('[authStore.checkSession] Error getting session:', e);
       // Clear session on error

@@ -91,6 +91,17 @@ class Database {
       );
     `);
 
+    // Create auth_sessions table for Supabase auth session storage
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        encrypted INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
     // Create indexes for better performance
     await this.db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_overtime_logs_date ON overtime_logs(date);
@@ -657,6 +668,34 @@ class Database {
       shifts: (shiftsResult as any)?.count || 0,
       batches: (batchesResult as any)?.count || 0
     };
+  }
+
+  // Auth sessions storage methods for Supabase auth
+  async getAuthSession(key: string): Promise<{ value: string; encrypted: number } | null> {
+    if (!this.db) throw new Error('Database not initialized');
+    
+    const row = await this.db.getFirstAsync<{ value: string; encrypted: number }>(
+      'SELECT value, encrypted FROM auth_sessions WHERE key = ?',
+      [key]
+    );
+    
+    return row || null;
+  }
+
+  async setAuthSession(key: string, value: string, encrypted: number = 0): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    
+    await this.db.runAsync(
+      `INSERT OR REPLACE INTO auth_sessions (key, value, encrypted, updated_at) 
+       VALUES (?, ?, ?, ?)`,
+      [key, value, encrypted, new Date().toISOString()]
+    );
+  }
+
+  async removeAuthSession(key: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    
+    await this.db.runAsync('DELETE FROM auth_sessions WHERE key = ?', [key]);
   }
 }
 

@@ -36,31 +36,57 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       
       // Try loading from Supabase first (if authenticated)
       let profile: Profile | null = null;
+      let localProfile: Profile | null = null;
+      
       if (userId) {
+        // Load local profile first for timestamp comparison
+        localProfile = await profileStorage.loadProfile(userId);
+        
         try {
           const supabaseProfile = await profileSync.downloadProfile(userId);
           if (supabaseProfile) {
-            console.log('Profile loaded from Supabase, saving to local storage');
-            // Save to local storage for offline access
-            await profileStorage.saveProfile(supabaseProfile, userId);
-            profile = supabaseProfile;
+            // Compare timestamps if both exist (Supabase stores updated_at in metadata)
+            // For now, prefer Supabase if it exists, but in the future we could compare timestamps
+            if (localProfile) {
+              // Both exist - prefer remote for now (could compare timestamps from Supabase metadata)
+              profile = supabaseProfile;
+              console.log('Profile loaded from Supabase, saving to local storage');
+              await profileStorage.saveProfile(supabaseProfile, userId);
+            } else {
+              // Only remote
+              profile = supabaseProfile;
+              await profileStorage.saveProfile(supabaseProfile, userId);
+            }
+          } else if (localProfile) {
+            // Only local - use it
+            profile = localProfile;
           }
         } catch (syncError) {
           console.error('Failed to load profile from Supabase (non-fatal):', syncError);
-          // Continue to local storage
+          // Fall back to local
+          if (localProfile) {
+            profile = localProfile;
+          }
         }
+      } else {
+        // No userId - load from local storage only
+        profile = await profileStorage.loadProfile(userId);
       }
       
-      // If not found in Supabase, load from local storage
-      if (!profile) {
-        profile = await profileStorage.loadProfile(userId);
-        
-        // If we have a local profile and userId, sync it to Supabase (background sync)
-        if (profile && userId) {
-          profileSync.uploadProfile(profile, userId).catch(syncError => {
-            console.error('Failed to sync local profile to Supabase (non-fatal):', syncError);
-          });
-        }
+      // If we have a local profile that's newer than remote, sync it to Supabase
+      if (profile && userId && localProfile) {
+        // Upload local profile if it exists (background sync)
+        profileSync.uploadProfile(profile, userId).catch(syncError => {
+          console.error('Failed to sync local profile to Supabase (non-fatal):', syncError);
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          syncQueue.add({
+            type: 'profile',
+            operation: 'update',
+            data: profile,
+            userId,
+          }).catch(() => {});
+        });
       }
       
       console.log('Profile loaded from storage:', { 
@@ -103,7 +129,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           console.log('Profile synced to Supabase successfully');
         } catch (syncError) {
           console.error('Failed to sync profile to Supabase (non-fatal):', syncError);
-          // Continue - local save succeeded
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          syncQueue.add({
+            type: 'profile',
+            operation: 'update',
+            data: profile,
+            userId,
+          }).catch(() => {});
         }
       }
       

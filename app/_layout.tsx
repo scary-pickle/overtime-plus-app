@@ -11,6 +11,7 @@ import { useLogsStore } from '../lib/state/logsStore';
 import { notificationManager } from '../lib/notifications';
 import { subscribeToAuthDeepLinks } from '../lib/auth/deeplinks';
 import { useAuthStore } from '../lib/state/authStore';
+import { syncQueue } from '../lib/sync/queue';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -21,7 +22,20 @@ export default function RootLayout() {
 
   useEffect(() => {
     (async () => {
+      // Initialize database FIRST before checking session
+      // This ensures SQLiteStorageAdapter can access the database
+      try {
+        await database.init();
+        console.log('Database initialized');
+      } catch (error) {
+        console.error('Failed to initialize database:', error);
+        return;
+      }
+      
+      // Now check session (Supabase will be able to read from SQLite)
       await checkSession();
+      
+      // Continue with rest of app initialization
       await initializeApp();
     })();
     const unsubscribeLinking = subscribeToAuthDeepLinks();
@@ -32,9 +46,11 @@ export default function RootLayout() {
 
   const initializeApp = async () => {
     try {
-      // Initialize database
-      await database.init();
-      console.log('Database initialized');
+      // Database is already initialized at this point
+
+      // Initialize sync queue
+      await syncQueue.init();
+      console.log('Sync queue initialized');
 
       // Request notification permissions
       await notificationManager.requestPermissions();

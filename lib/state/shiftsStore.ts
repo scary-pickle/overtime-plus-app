@@ -47,27 +47,69 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       // Sync from Supabase in background (non-blocking)
       if (userId) {
         shiftsSync.downloadShifts(userId).then(remoteShifts => {
-          if (remoteShifts.length > 0) {
+          if (remoteShifts.length > 0 || shifts.length > 0) {
             console.log('[shiftsStore.loadShifts] Syncing shifts from Supabase in background', {
               remoteCount: remoteShifts.length,
               localCount: shifts.length,
             });
             
-            // Merge remote shifts with local (remote wins for conflicts)
+            // Merge with timestamp-based conflict resolution
             const localShiftMap = new Map(shifts.map(shift => [shift.id, shift]));
             const remoteShiftMap = new Map(remoteShifts.map(shift => [shift.id, shift]));
             
-            const mergedShifts = [
-              ...remoteShifts,
-              ...shifts.filter(shift => !remoteShiftMap.has(shift.id))
-            ];
+            const mergedShifts: UsualShift[] = [];
+            const allShiftIds = new Set([...localShiftMap.keys(), ...remoteShiftMap.keys()]);
             
-            // Save merged shifts to local storage
-            for (const shift of mergedShifts) {
-              if (remoteShiftMap.has(shift.id)) {
-                // Update from remote
-                database.updateUsualShift(shift, userId).catch(err => {
-                  console.error('[shiftsStore.loadShifts] Failed to save merged shift:', err);
+            // Process all shifts with timestamp comparison (using activeFrom as proxy)
+            for (const shiftId of allShiftIds) {
+              const localShift = localShiftMap.get(shiftId);
+              const remoteShift = remoteShiftMap.get(shiftId);
+              
+              if (localShift && remoteShift) {
+                // Both exist - compare by activeFrom (proxy for timestamp)
+                const localTime = new Date(localShift.activeFrom);
+                const remoteTime = new Date(remoteShift.activeFrom);
+                
+                if (localTime > remoteTime) {
+                  // Local is newer - use local and upload it
+                  mergedShifts.push(localShift);
+                  shiftsSync.uploadShift(localShift, userId).catch(err => {
+                    console.error('[shiftsStore.loadShifts] Failed to upload newer local shift:', err);
+                    // Add to sync queue for retry
+                    const { syncQueue } = require('../sync/queue');
+                    syncQueue.add({
+                      type: 'shift',
+                      operation: 'update',
+                      data: localShift,
+                      userId,
+                    }).catch(() => {});
+                  });
+                } else {
+                  // Remote is newer - use remote and save it locally
+                  mergedShifts.push(remoteShift);
+                  database.updateUsualShift(remoteShift, userId).catch(err => {
+                    console.error('[shiftsStore.loadShifts] Failed to save merged shift:', err);
+                  });
+                }
+              } else if (localShift) {
+                // Only local - add it and upload if not already synced
+                mergedShifts.push(localShift);
+                shiftsSync.uploadShift(localShift, userId).catch(err => {
+                  console.error('[shiftsStore.loadShifts] Failed to upload local-only shift:', err);
+                  // Add to sync queue for retry
+                  const { syncQueue } = require('../sync/queue');
+                  syncQueue.add({
+                    type: 'shift',
+                    operation: 'create',
+                    data: localShift,
+                    userId,
+                  }).catch(() => {});
+                });
+              } else if (remoteShift) {
+                // Only remote - add it and save locally
+                mergedShifts.push(remoteShift);
+                database.createUsualShift(remoteShift, userId).catch(err => {
+                  console.error('[shiftsStore.loadShifts] Failed to save remote-only shift:', err);
                 });
               }
             }
@@ -115,6 +157,14 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       if (finalUserId) {
         shiftsSync.uploadShift(shift, finalUserId).catch(err => {
           console.error('[shiftsStore.addShift] Background sync failed (non-fatal):', err);
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          syncQueue.add({
+            type: 'shift',
+            operation: 'create',
+            data: shift,
+            userId: finalUserId,
+          }).catch(() => {});
         });
       }
     } catch (error) {
@@ -153,6 +203,14 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       if (finalUserId) {
         shiftsSync.uploadShift(shift, finalUserId).catch(err => {
           console.error('[shiftsStore.updateShift] Background sync failed (non-fatal):', err);
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          syncQueue.add({
+            type: 'shift',
+            operation: 'update',
+            data: shift,
+            userId: finalUserId,
+          }).catch(() => {});
         });
       }
     } catch (error) {
@@ -185,6 +243,14 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       if (finalUserId) {
         shiftsSync.deleteShift(id, finalUserId).catch(err => {
           console.error('[shiftsStore.deleteShift] Background sync failed (non-fatal):', err);
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          syncQueue.add({
+            type: 'shift',
+            operation: 'delete',
+            data: { id },
+            userId: finalUserId,
+          }).catch(() => {});
         });
       }
     } catch (error) {

@@ -14,6 +14,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
@@ -23,6 +24,7 @@ import { getInfoAsync, readAsStringAsync, writeAsStringAsync, deleteAsync } from
 import { PDFDocument } from 'pdf-lib';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useProfileStore } from '../../lib/state/profileStore';
+import { useAuthStore } from '../../lib/state/authStore';
 import { formatMinutes } from '../../lib/time';
 import { ExportBatch } from '../../types';
 import { sendAVACEmail } from '../../lib/email/emailService';
@@ -35,6 +37,7 @@ export default function ExportsScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
+  const { user } = useAuthStore();
   const { exportBatches, loadExportBatches, deleteExportBatch, updateExportBatch, markBatchAsSubmitted, isLoading } = useLogsStore();
   const { profile } = useProfileStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -52,8 +55,15 @@ export default function ExportsScreen() {
   const [isBatchSharing, setIsBatchSharing] = useState(false);
 
   useEffect(() => {
-    loadExportBatches();
-  }, []);
+    loadExportBatches(user?.id);
+  }, [user?.id]);
+
+  // Reload export batches when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadExportBatches(user?.id);
+    }, [loadExportBatches, user?.id])
+  );
 
   const handleToggleFilter = () => {
     setIsFilterExpanded(!isFilterExpanded);
@@ -191,7 +201,7 @@ export default function ExportsScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadExportBatches();
+    await loadExportBatches(user?.id);
     setRefreshing(false);
   };
 
@@ -218,8 +228,22 @@ export default function ExportsScreen() {
     }
 
     try {
+      // Handle cloud URLs - download to cache if needed
+      let pdfUri = batch.pdfUri;
+      const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+      
+      if (isCloudURL(batch.pdfUri)) {
+        try {
+          pdfUri = await downloadPDFFromStorage(batch.pdfUri, batch.id);
+        } catch (error) {
+          console.error('Failed to download PDF from cloud:', error);
+          Alert.alert('Error', 'Failed to download PDF from cloud. Please check your connection.');
+          return;
+        }
+      }
+
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(batch.pdfUri, {
+        await Sharing.shareAsync(pdfUri, {
           mimeType: 'application/pdf',
           dialogTitle: 'Share AVAC Form',
         });
@@ -404,6 +428,19 @@ export default function ExportsScreen() {
   const getPDFInfo = async (batch: ExportBatch) => {
     if (!batch.pdfUri) return null;
     
+    // Only get info for local files, not cloud URLs
+    const { isCloudURL } = await import('../../lib/storage/pdfStorage');
+    if (isCloudURL(batch.pdfUri)) {
+      console.log('[Exports] Skipping file info for cloud URL');
+      return null;
+    }
+    
+    // Check if it's a local file path
+    if (!batch.pdfUri.startsWith('file://') && !batch.pdfUri.startsWith('/')) {
+      console.log('[Exports] Skipping file info for non-local file');
+      return null;
+    }
+    
     try {
       const info = await getInfoAsync(batch.pdfUri);
       return info;
@@ -523,8 +560,22 @@ export default function ExportsScreen() {
       // Read all PDF files and merge their pages into the merged PDF
       for (const batch of selectedBatches) {
         try {
+          // Handle cloud URLs - download to cache if needed
+          let pdfUri = batch.pdfUri;
+          const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+          
+          if (isCloudURL(batch.pdfUri)) {
+            try {
+              pdfUri = await downloadPDFFromStorage(batch.pdfUri, batch.id);
+            } catch (error) {
+              console.error(`Failed to download PDF ${batch.id} from cloud:`, error);
+              Alert.alert('Error', `Failed to download PDF: ${batch.customName || batch.id}. Skipping...`);
+              continue;
+            }
+          }
+          
           // Read PDF file as base64
-          const pdfBase64 = await readAsStringAsync(batch.pdfUri, {
+          const pdfBase64 = await readAsStringAsync(pdfUri, {
             encoding: 'base64',
           });
           
@@ -586,9 +637,12 @@ export default function ExportsScreen() {
       // Clean up merged PDF file after a delay
       setTimeout(async () => {
         try {
-          const fileInfo = await getInfoAsync(mergedPdfUri);
-          if (fileInfo.exists) {
-            await deleteAsync(mergedPdfUri, { idempotent: true });
+          // Only get info for local files
+          if (mergedPdfUri && (mergedPdfUri.startsWith('file://') || mergedPdfUri.startsWith('/'))) {
+            const fileInfo = await getInfoAsync(mergedPdfUri);
+            if (fileInfo.exists) {
+              await deleteAsync(mergedPdfUri, { idempotent: true });
+            }
           }
         } catch (error) {
           console.error('Failed to clean up merged PDF file:', error);

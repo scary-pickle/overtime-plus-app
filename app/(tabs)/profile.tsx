@@ -24,6 +24,142 @@ import { Profile } from '../../types';
 import { profileStorage } from '../../lib/storage/profile';
 import { useAuthStore } from '../../lib/state/authStore';
 import { useOnboardingStore } from '../../lib/state/onboardingStore';
+import { useSyncStore } from '../../lib/state/syncStore';
+
+// Sync Status Indicator Component
+function SyncStatusIndicator({ isDark }: { isDark: boolean }) {
+  const { status, lastSyncTime, pendingOperations, error, checkSyncStatus, triggerFullSync } = useSyncStore();
+  const { user } = useAuthStore();
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
+
+  React.useEffect(() => {
+    if (user?.id) {
+      checkSyncStatus();
+      // Check sync status every 30 seconds
+      const interval = setInterval(() => {
+        checkSyncStatus();
+      }, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user?.id, checkSyncStatus]);
+
+  const handleSync = async () => {
+    if (!user?.id) return;
+    setIsRefreshing(true);
+    try {
+      await triggerFullSync(user.id);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const getStatusIcon = () => {
+    switch (status) {
+      case 'synced':
+        return 'checkmark-circle';
+      case 'syncing':
+        return 'sync';
+      case 'error':
+        return 'alert-circle';
+      case 'offline':
+        return 'cloud-offline';
+      case 'pending':
+        return 'time';
+      default:
+        return 'help-circle';
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (status) {
+      case 'synced':
+        return '#4CAF50';
+      case 'syncing':
+        return '#2196F3';
+      case 'error':
+        return '#f44336';
+      case 'offline':
+        return '#ff9800';
+      case 'pending':
+        return '#ff9800';
+      default:
+        return isDark ? '#999' : '#666';
+    }
+  };
+
+  const getStatusText = () => {
+    switch (status) {
+      case 'synced':
+        return 'Synced';
+      case 'syncing':
+        return 'Syncing...';
+      case 'error':
+        return error || 'Sync Error';
+      case 'offline':
+        return 'Offline';
+      case 'pending':
+        return `Pending (${pendingOperations})`;
+      default:
+        return 'Unknown';
+    }
+  };
+
+  const formatLastSync = () => {
+    if (!lastSyncTime) return null;
+    const lastSync = new Date(lastSyncTime);
+    const now = new Date();
+    const diffMs = now.getTime() - lastSync.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  return (
+    <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+          <Ionicons 
+            name={getStatusIcon() as any} 
+            size={18} 
+            color={getStatusColor()} 
+            style={{ marginRight: 8 }}
+          />
+          <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+            Sync Status
+          </Text>
+        </View>
+        <Text style={[styles.settingValue, isDark && styles.darkSettingValue, { marginTop: 4 }]}>
+          {getStatusText()}
+        </Text>
+        {lastSyncTime && status === 'synced' && (
+          <Text style={[styles.settingValue, isDark && styles.darkSettingValue, { fontSize: 12, marginTop: 2, opacity: 0.7 }]}>
+            Last synced: {formatLastSync()}
+          </Text>
+        )}
+      </View>
+      <TouchableOpacity
+        onPress={handleSync}
+        disabled={isRefreshing || status === 'syncing'}
+        style={[
+          styles.syncButton,
+          (isRefreshing || status === 'syncing') && styles.syncButtonDisabled,
+          isDark && styles.darkSyncButton,
+        ]}
+      >
+        <Ionicons 
+          name={status === 'syncing' ? 'sync' : 'refresh'} 
+          size={18} 
+          color={isDark ? '#fff' : '#2196F3'} 
+        />
+      </TouchableOpacity>
+    </View>
+  );
+}
 
 // Separate component file would be better, but defining here for now
 // This component uses local state to prevent keyboard dismissal
@@ -985,6 +1121,11 @@ export default function ProfileScreen() {
               </View>
             </View>
           )}
+
+          {/* Sync Status */}
+          {user && (
+            <SyncStatusIndicator isDark={isDark} />
+          )}
           
           {/* Sign Out action */}
           <TouchableOpacity
@@ -1571,5 +1712,16 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 15,
     fontWeight: '600',
+  },
+  syncButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+  },
+  syncButtonDisabled: {
+    opacity: 0.5,
+  },
+  darkSyncButton: {
+    backgroundColor: 'transparent',
   },
 });

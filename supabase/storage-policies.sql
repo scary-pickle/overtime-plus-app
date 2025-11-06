@@ -23,4 +23,23 @@ for delete using (
   bucket_id = 'attachments' and (storage.foldername(name))[1] = auth.uid()::text
 );
 
--- Similar policies can be created for an 'exports' private bucket.
+-- Policies for exports bucket (PDF export batches)
+create policy if not exists exportsreadown on storage.objects
+for select using (
+  bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy if not exists exportswriteown on storage.objects
+for insert with check (
+  bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy if not exists exportsupdateown on storage.objects
+for update using (
+  bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy if not exists exportsdeleteown on storage.objects
+for delete using (
+  bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
+);

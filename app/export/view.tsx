@@ -18,6 +18,7 @@ import { useLogsStore } from '../../lib/state/logsStore';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { formatMinutes } from '../../lib/time';
 import { sendAVACEmail } from '../../lib/email/emailService';
+import { downloadPDFFromStorage, isCloudURL, isLocalPath } from '../../lib/storage/pdfStorage';
 import InAppPDFViewer from '../../components/InAppPDFViewer';
 
 export default function PDFViewerScreen() {
@@ -33,32 +34,63 @@ export default function PDFViewerScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<'preview' | 'details'>('preview');
+  const [localPdfUri, setLocalPdfUri] = useState<string | null>(null);
 
   useEffect(() => {
     if (batchId) {
       const batch = exportBatches.find(b => b.id === batchId);
       if (batch) {
         setExportBatch(batch);
-        loadFileInfo(batch.pdfUri);
+        handlePDFUri(batch.pdfUri);
       }
     }
   }, [batchId, exportBatches]);
 
-  const loadFileInfo = async (pdfUri: string) => {
+  const handlePDFUri = async (pdfUri: string) => {
     if (!pdfUri) return;
     
-    try {
-      // Use the legacy API for now to avoid deprecation issues
-      const { getInfoAsync } = await import('expo-file-system/legacy');
-      const info = await getInfoAsync(pdfUri);
-      setFileInfo(info);
-    } catch (error) {
-      console.error('Failed to get file info:', error);
+    let finalUri = pdfUri;
+    
+    // If it's a cloud URL, download to local cache first
+    if (isCloudURL(pdfUri)) {
+      try {
+        setIsLoading(true);
+        console.log('[PDFViewer] Downloading PDF from cloud storage...');
+        finalUri = await downloadPDFFromStorage(pdfUri, batchId || '');
+        setLocalPdfUri(finalUri);
+        console.log('[PDFViewer] PDF downloaded to local cache:', finalUri);
+      } catch (error) {
+        console.error('[PDFViewer] Failed to download PDF from cloud:', error);
+        // Fallback to cloud URL if download fails
+        finalUri = pdfUri;
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      // Local path - use directly
+      setLocalPdfUri(finalUri);
+    }
+    
+    // Load file info (only for local files)
+    // Check if it's a local file path (starts with file://) and not a cloud URL
+    if (finalUri && !isCloudURL(finalUri) && (finalUri.startsWith('file://') || finalUri.startsWith('/'))) {
+      try {
+        const { getInfoAsync } = await import('expo-file-system/legacy');
+        const info = await getInfoAsync(finalUri);
+        setFileInfo(info);
+      } catch (error) {
+        // Non-fatal error - just log it
+        console.error('Failed to get file info:', error);
+      }
+    } else {
+      // Not a local file - skip file info
+      console.log('[PDFViewer] Skipping file info for non-local file:', finalUri?.substring(0, 50));
     }
   };
 
   const handleViewPDF = async () => {
-    if (!exportBatch?.pdfUri) {
+    const pdfUri = localPdfUri || exportBatch?.pdfUri;
+    if (!pdfUri) {
       Alert.alert('Error', 'PDF file not found');
       return;
     }
@@ -66,7 +98,7 @@ export default function PDFViewerScreen() {
     setIsLoading(true);
     try {
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(exportBatch.pdfUri, {
+        await Sharing.shareAsync(pdfUri, {
           mimeType: 'application/pdf',
           dialogTitle: 'View AVAC Form',
         });
@@ -82,7 +114,8 @@ export default function PDFViewerScreen() {
   };
 
   const handleSharePDF = async () => {
-    if (!exportBatch?.pdfUri) {
+    const pdfUri = localPdfUri || exportBatch?.pdfUri;
+    if (!pdfUri) {
       Alert.alert('Error', 'PDF file not found');
       return;
     }
@@ -90,7 +123,7 @@ export default function PDFViewerScreen() {
     setIsLoading(true);
     try {
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(exportBatch.pdfUri, {
+        await Sharing.shareAsync(pdfUri, {
           mimeType: 'application/pdf',
           dialogTitle: 'Share AVAC Form',
         });
@@ -116,14 +149,15 @@ export default function PDFViewerScreen() {
       return;
     }
 
-    if (!exportBatch?.pdfUri) {
+    const pdfUri = localPdfUri || exportBatch?.pdfUri;
+    if (!pdfUri) {
       Alert.alert('Error', 'PDF file not found');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await sendAVACEmail(profile, exportBatch.pdfUri, exportBatch);
+      const result = await sendAVACEmail(profile, pdfUri, exportBatch);
       
       if (result.success && result.useAppleMail) {
         // Apple Mail method - everything is pre-filled with attachment
@@ -147,7 +181,7 @@ export default function PDFViewerScreen() {
                 try {
                   // Open share sheet with PDF attachment
                   if (await Sharing.isAvailableAsync()) {
-                    await Sharing.shareAsync(exportBatch.pdfUri, {
+                    await Sharing.shareAsync(pdfUri, {
                       mimeType: 'application/pdf',
                       dialogTitle: 'Share AVAC via Email',
                       UTI: 'com.adobe.pdf'
@@ -223,9 +257,21 @@ export default function PDFViewerScreen() {
 
   // If in preview mode, show the PDF viewer
   if (viewMode === 'preview') {
+    const pdfUri = localPdfUri || exportBatch.pdfUri;
+    if (!pdfUri) {
+      return (
+        <View style={[styles.container, styles.centerContent, isDark && styles.darkContainer]}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={[styles.loadingText, isDark && styles.darkText]}>
+            Loading PDF...
+          </Text>
+        </View>
+      );
+    }
+    
     return (
       <InAppPDFViewer
-        pdfUri={exportBatch.pdfUri}
+        pdfUri={pdfUri}
         title={`Export #${exportBatch.id.split('_')[1]}`}
         onClose={() => router.replace('/(tabs)/exports')}
       />

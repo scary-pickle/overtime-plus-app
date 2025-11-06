@@ -16,9 +16,12 @@ import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useLogsStore } from '../../lib/state/logsStore';
+import { useAuthStore } from '../../lib/state/authStore';
+import { exportSync } from '../../lib/supabase';
 import { buildAVAC, validateLogsForPDF } from '../../lib/pdf/buildAVAC';
 import { buildSMOAVAC } from '../../lib/pdf/buildSMOAVAC';
 import { formatMinutes } from '../../lib/time';
+import { isCloudURL } from '../../lib/storage/pdfStorage';
 import InAppPDFViewer from '../../components/InAppPDFViewer';
 
 export default function ExportPreviewScreen() {
@@ -27,6 +30,7 @@ export default function ExportPreviewScreen() {
   const isDark = colorScheme === 'dark';
   
   const { profile } = useProfileStore();
+  const { user } = useAuthStore();
   const { logs, getReadyLogs, batchExport, updateExportBatch } = useLogsStore();
   
   const [pdfUri, setPdfUri] = useState<string | null>(null);
@@ -91,21 +95,48 @@ export default function ExportPreviewScreen() {
         : await buildAVAC(profile, readyLogs, customFileName);
       setPdfUri(pdfUri);
       
+      // Get userId for cloud upload
+      const userId = user?.id;
+      
       if (!regenerate) {
         // Create export batch with custom name
-        const batch = await batchExport(readyLogs.map(log => log.id));
+        const batch = await batchExport(readyLogs.map(log => log.id), pdfUri, userId);
         const batchWithCustomName = { ...batch, customName: customName.trim() || undefined };
         setExportBatch(batchWithCustomName);
         
         // Update the batch with the PDF URI and custom name
         const updatedBatch = { ...batchWithCustomName, pdfUri };
-        await updateExportBatch(updatedBatch);
+        await updateExportBatch(updatedBatch, userId);
         setExportBatch(updatedBatch);
+        
+        // Upload PDF to cloud storage in background (non-blocking)
+        // The exportSync.uploadExportBatch will handle this, but we can also trigger it here
+        // for immediate feedback
+        if (userId) {
+          exportSync.uploadExportBatch(updatedBatch, userId)
+            .then(() => {
+              console.log('[ExportPreview] PDF uploaded to cloud storage successfully');
+            })
+            .catch(err => {
+              console.error('[ExportPreview] PDF upload to cloud storage failed (non-fatal):', err);
+            });
+        }
       } else if (exportBatch) {
         // Update existing batch with new custom name and PDF URI
         const updatedBatch = { ...exportBatch, customName: customName.trim() || undefined, pdfUri };
-        await updateExportBatch(updatedBatch);
+        await updateExportBatch(updatedBatch, userId);
         setExportBatch(updatedBatch);
+        
+        // Upload PDF to cloud storage in background (non-blocking)
+        if (userId) {
+          exportSync.uploadExportBatch(updatedBatch, userId)
+            .then(() => {
+              console.log('[ExportPreview] PDF re-uploaded to cloud storage successfully');
+            })
+            .catch(err => {
+              console.error('[ExportPreview] PDF re-upload to cloud storage failed (non-fatal):', err);
+            });
+        }
       }
       
       console.log('PDF generated successfully:', pdfUri);
@@ -147,6 +178,18 @@ export default function ExportPreviewScreen() {
 
   const getPDFInfo = async () => {
     if (!pdfUri) return null;
+
+    // Only get info for local files, not cloud URLs
+    if (isCloudURL(pdfUri)) {
+      console.log('[Preview] Skipping file info for cloud URL');
+      return null;
+    }
+    
+    // Check if it's a local file path
+    if (!pdfUri.startsWith('file://') && !pdfUri.startsWith('/')) {
+      console.log('[Preview] Skipping file info for non-local file');
+      return null;
+    }
 
     try {
       const info = await getInfoAsync(pdfUri);

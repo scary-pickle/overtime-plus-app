@@ -1,21 +1,54 @@
 import 'react-native-reanimated';
-import React, { useEffect, useState } from 'react';
-import { Redirect } from 'expo-router';
+import React, { useEffect } from 'react';
+import { useRouter } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
 import { useAuthStore } from '../lib/state/authStore';
 
 export default function Index() {
-  const { checkSession, user, emailVerified, hasCompletedOnboarding, isLoading } = useAuthStore();
-  const [checked, setChecked] = useState(false);
+  const router = useRouter();
+  const { user, emailVerified, hasCompletedOnboarding, isLoading } = useAuthStore();
+
+  console.log('[app/index] Render state:', {
+    isLoading,
+    hasUser: !!user,
+    userId: user?.id?.substring(0, 8),
+    emailVerified,
+    hasCompletedOnboarding,
+  });
 
   useEffect(() => {
-    (async () => {
-      await checkSession();
-      setChecked(true);
-    })();
-  }, [checkSession]);
+    // Don't navigate while loading
+    if (isLoading) {
+      console.log('[app/index] Still loading, waiting...');
+      return;
+    }
 
-  if (!checked || isLoading) {
+    // Navigate based on auth state
+    if (!user) {
+      console.log('[app/index] No user - navigating to welcome');
+      router.replace('/auth/welcome');
+      return;
+    }
+
+    if (!emailVerified) {
+      console.log('[app/index] Email not verified - navigating to verify-email');
+      router.replace('/auth/verify-email');
+      return;
+    }
+
+    if (!hasCompletedOnboarding) {
+      console.log('[app/index] Onboarding not complete - navigating to onboarding');
+      router.replace('/onboarding/welcome');
+      return;
+    }
+
+    console.log('[app/index] User authenticated - navigating to home');
+    router.replace('/(tabs)/home');
+  }, [isLoading, user, emailVerified, hasCompletedOnboarding, router]);
+
+  // Show loading spinner while checking session
+  if (isLoading) {
+    console.log('[app/index] Showing loading spinner');
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />
@@ -23,17 +56,10 @@ export default function Index() {
     );
   }
 
-  if (!user) {
-    return <Redirect href="/auth/welcome" />;
-  }
-
-  if (!emailVerified) {
-    return <Redirect href="/auth/verify-email" />;
-  }
-
-  if (!hasCompletedOnboarding) {
-    return <Redirect href="/onboarding/welcome" />;
-  }
-
-  return <Redirect href="/(tabs)/home" />;
+  // Show loading spinner while navigating (prevents flash of wrong screen)
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <ActivityIndicator />
+    </View>
+  );
 }

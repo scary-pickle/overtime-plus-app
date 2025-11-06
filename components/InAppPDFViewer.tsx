@@ -6,12 +6,11 @@ import {
   TouchableOpacity,
   useColorScheme,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system';
-import { EncodingType } from 'expo-file-system/legacy';
+import { readAsStringAsync, EncodingType } from 'expo-file-system/legacy';
+import { downloadPDFFromStorage, isCloudURL } from '../lib/storage/pdfStorage';
 
 interface InAppPDFViewerProps {
   pdfUri: string;
@@ -26,20 +25,30 @@ export default function InAppPDFViewer({ pdfUri, title = 'PDF Viewer', onClose }
   const [error, setError] = useState<string | null>(null);
   const [fileInfo, setFileInfo] = useState<any>(null);
 
-  React.useEffect(() => {
-    loadFileInfo();
-  }, [pdfUri]);
-
-  const loadFileInfo = async () => {
-    if (!pdfUri) return;
+  const loadFileInfo = async (fileUri: string) => {
+    if (!fileUri) return;
+    
+    // Only get file info for local files (file:// or absolute paths starting with /)
+    // Don't try to get info for cloud URLs
+    if (isCloudURL(fileUri)) {
+      console.log('[InAppPDFViewer] Skipping file info for cloud URL');
+      return;
+    }
+    
+    // Check if it's a local file path
+    if (!fileUri.startsWith('file://') && !fileUri.startsWith('/')) {
+      console.log('[InAppPDFViewer] Skipping file info for non-local file:', fileUri?.substring(0, 50));
+      return;
+    }
     
     try {
       // Use the legacy API for now to avoid deprecation issues
       const { getInfoAsync } = await import('expo-file-system/legacy');
-      const info = await getInfoAsync(pdfUri);
+      const info = await getInfoAsync(fileUri);
       setFileInfo(info);
     } catch (error) {
-      console.error('Failed to get file info:', error);
+      // Non-fatal error - just log it
+      console.error('[InAppPDFViewer] Failed to get file info:', error);
     }
   };
 
@@ -63,33 +72,60 @@ export default function InAppPDFViewer({ pdfUri, title = 'PDF Viewer', onClose }
     setError(null);
   };
 
-  // Create a data URL for the PDF
-  const getPDFDataUrl = async () => {
-    try {
-      const base64 = await FileSystem.readAsStringAsync(pdfUri, {
-        encoding: EncodingType.Base64,
-      });
-      return `data:application/pdf;base64,${base64}`;
-    } catch (error) {
-      console.error('Failed to read PDF as base64:', error);
-      // Fallback: try using the file URI directly
-      return pdfUri;
-    }
-  };
-
   const [pdfDataUrl, setPdfDataUrl] = useState<string | null>(null);
 
   React.useEffect(() => {
     const loadPDF = async () => {
       try {
-        // First try to use the file URI directly
-        setPdfDataUrl(pdfUri);
+        setIsLoading(true);
+        let finalUri = pdfUri;
+        
+        // If it's a cloud URL, download to local cache first
+        if (isCloudURL(pdfUri)) {
+          try {
+            console.log('[InAppPDFViewer] Downloading PDF from cloud storage...');
+            // Extract batchId from URI or use a default
+            const batchId = pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
+            finalUri = await downloadPDFFromStorage(pdfUri, batchId);
+            console.log('[InAppPDFViewer] PDF downloaded to local cache:', finalUri);
+          } catch (error) {
+            console.error('[InAppPDFViewer] Failed to download PDF from cloud:', error);
+            setError('Failed to download PDF from cloud. Please check your connection.');
+            setIsLoading(false);
+            return;
+          }
+        }
+        
+        // Load file info only for the final local URI
+        await loadFileInfo(finalUri);
+        
+        // Always use base64 data URL for WebView to avoid WebKit file:// URL issues
+        // WKWebView.loadFileURL:allowingReadAccessToURL: can crash if the URL format is incorrect
+        // Using base64 data URLs is more reliable and avoids all file:// URL issues
+        try {
+          // readAsStringAsync handles paths with or without file:// prefix
+          const base64 = await readAsStringAsync(finalUri, {
+            encoding: EncodingType.Base64,
+          });
+          const dataUrl = `data:application/pdf;base64,${base64}`;
+          setPdfDataUrl(dataUrl);
+          console.log('[InAppPDFViewer] Successfully loaded PDF as base64 data URL, length:', dataUrl.length, 'starts with data:', dataUrl.startsWith('data:'));
+        } catch (error) {
+          console.error('[InAppPDFViewer] Failed to read PDF as base64:', error);
+          // If reading fails, we can't display the PDF
+          setError('Failed to load PDF file. The file may be corrupted or inaccessible.');
+          setIsLoading(false);
+          return;
+        }
+        
         setIsLoading(false);
       } catch (error) {
+        console.error('[InAppPDFViewer] Failed to load PDF:', error);
         setError('Failed to load PDF file');
         setIsLoading(false);
       }
     };
+    
     loadPDF();
   }, [pdfUri]);
 
@@ -152,7 +188,43 @@ export default function InAppPDFViewer({ pdfUri, title = 'PDF Viewer', onClose }
       {/* PDF WebView */}
       {pdfDataUrl && (
         <WebView
-          source={{ uri: pdfDataUrl }}
+          source={{
+            html: `
+              <!DOCTYPE html>
+              <html>
+                <head>
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+                  <style>
+                    body {
+                      margin: 0;
+                      padding: 0;
+                      overflow: hidden;
+                      background-color: #f5f5f5;
+                    }
+                    embed {
+                      width: 100%;
+                      height: 100vh;
+                      border: none;
+                    }
+                    object {
+                      width: 100%;
+                      height: 100vh;
+                      border: none;
+                    }
+                    iframe {
+                      width: 100%;
+                      height: 100vh;
+                      border: none;
+                    }
+                  </style>
+                </head>
+                <body>
+                  <iframe src="${pdfDataUrl}" type="application/pdf" style="width: 100%; height: 100vh; border: none;"></iframe>
+                </body>
+              </html>
+            `,
+            baseUrl: 'about:blank',
+          }}
           style={styles.webview}
           onError={handleWebViewError}
           onLoad={handleWebViewLoad}

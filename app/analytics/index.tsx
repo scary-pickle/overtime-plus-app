@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useLogsStore } from '../../lib/state/logsStore';
+import { useAuthStore } from '../../lib/state/authStore';
 import BarChart from '../../components/charts/Line';
 import Pie from '../../components/charts/Pie';
 import { CalendarPicker } from '../../components/CalendarPicker';
@@ -17,6 +18,7 @@ import {
 type RangeMode = 'month' | 'week' | 'custom';
 
 export default function AnalyticsScreen() {
+  const { user } = useAuthStore();
   const { logs, loadLogs } = useLogsStore();
   const [mode, setMode] = useState<RangeMode>('month');
   const colorScheme = useColorScheme();
@@ -42,8 +44,8 @@ export default function AnalyticsScreen() {
 
   // Load logs when screen mounts
   useEffect(() => {
-    loadLogs();
-  }, [loadLogs]);
+    loadLogs(user?.id);
+  }, [loadLogs, user?.id]);
 
   // Date range state (custom)
   const defaultRange = getLast30DaysRange();

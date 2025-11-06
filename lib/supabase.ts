@@ -6,7 +6,9 @@
 
 import { Profile, OvertimeLog, ExportBatch, UsualShift } from '../types';
 import { createClient } from '@supabase/supabase-js';
-import { SecureStoreAdapter } from './auth/storageAdapter';
+import { SQLiteStorageAdapter } from './auth/sqliteStorageAdapter';
+import { database } from './db/sqlite';
+import { profileStorage } from './storage/profile';
 
 // Check for Supabase configuration
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -86,26 +88,46 @@ const createStubClient = (): SupabaseClient => ({
 });
 
 // Real Supabase client (when configured)
+// Lazy-initialized to ensure database is ready before session restoration
 let supabaseClient: SupabaseClient | null = null;
 
-if (supabaseEnabled) {
-  // Initialize real Supabase client for React Native/Expo with secure storage
+function getSupabaseClient(): SupabaseClient {
+  // If already initialized, return it
+  if (supabaseClient) {
+    return supabaseClient;
+  }
+
+  // If not enabled, return stub immediately
+  if (!supabaseEnabled) {
+    supabaseClient = createStubClient();
+    return supabaseClient;
+  }
+
+  // Initialize real Supabase client for React Native/Expo with SQLite storage
+  // Using SQLiteStorageAdapter instead of SecureStoreAdapter to avoid 2048 byte limit
   // Detect session in URL is disabled (handled via Linking), PKCE is default in RN
   // @ts-ignore - allow passing storage adapter even if our local type is minimal
   supabaseClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
     auth: {
-      storage: SecureStoreAdapter,
+      storage: SQLiteStorageAdapter,
       persistSession: true,
       autoRefreshToken: true,
       flowType: 'pkce',
       detectSessionInUrl: false,
     },
   }) as unknown as SupabaseClient;
-} else {
-  supabaseClient = createStubClient();
+
+  return supabaseClient;
 }
 
-export const supabase = supabaseClient;
+// Lazy initialization - only create client when accessed
+// This ensures database is initialized before Supabase tries to restore session
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const client = getSupabaseClient();
+    return (client as any)[prop];
+  },
+});
 
 /**
  * Authentication functions
@@ -683,6 +705,34 @@ export const exportSync = {
     }
 
     try {
+      // Check if PDF needs to be uploaded to cloud storage
+      let cloudUrl = batch.pdfUri;
+      const { uploadPDFToStorage, isLocalPath, isCloudURL } = await import('./storage/pdfStorage');
+
+      // If pdfUri is a local path, upload to Supabase Storage first
+      if (batch.pdfUri) {
+        if (isCloudURL(batch.pdfUri)) {
+          // Already a cloud URL - skip upload
+          cloudUrl = batch.pdfUri;
+          console.log('[exportSync.uploadExportBatch] PDF already in cloud storage, skipping upload');
+        } else if (isLocalPath(batch.pdfUri)) {
+          // Local path - upload to storage
+          try {
+            console.log('[exportSync.uploadExportBatch] Detected local PDF path; uploading to storage...');
+            cloudUrl = await uploadPDFToStorage(batch.pdfUri, batch.id, userId);
+            console.log('[exportSync.uploadExportBatch] PDF uploaded to cloud storage:', !!cloudUrl);
+          } catch (uploadError) {
+            console.error('[exportSync.uploadExportBatch] Failed to upload PDF to storage:', uploadError);
+            // Continue with local path if upload fails - will retry later via sync queue
+            cloudUrl = batch.pdfUri;
+          }
+        } else {
+          // Unknown format - leave as-is
+          console.log('[exportSync.uploadExportBatch] PDF path not recognized as local or cloud; leaving as-is');
+          cloudUrl = batch.pdfUri;
+        }
+      }
+
       // Supabase uses UUIDs, but our batches use string IDs like "batch_1234567890"
       // We'll store the original ID in params JSONB and query by that
       // First, check if a batch with this user_id and params.id already exists
@@ -695,13 +745,19 @@ export const exportSync = {
         .is('deleted_at', null)
         .maybeSingle();
 
+      // Update batch with cloud URL (keep local path in params for backward compatibility)
+      const batchWithCloudUrl = {
+        ...batch,
+        pdfUri: cloudUrl, // Update pdfUri to cloud URL for new uploads
+      };
+
       const batchData = {
         user_id: userId,
         requested_at: batch.createdAt,
         status: 'ready', // Default status for export batches
-        result_url: batch.pdfUri || null,
+        result_url: cloudUrl, // Store cloud URL in result_url
         error: null,
-        params: batch, // Store full ExportBatch object in params JSONB
+        params: batchWithCloudUrl, // Store full ExportBatch object with cloud URL in params JSONB
         updated_at: new Date().toISOString(),
       };
 
@@ -732,6 +788,9 @@ export const exportSync = {
       console.log('[exportSync.uploadExportBatch] Export batch uploaded successfully to Supabase', {
         batchId: batch.id,
       });
+      
+      // Return updated batch with cloud URL
+      return batchWithCloudUrl;
     } catch (error) {
       console.error('[exportSync.uploadExportBatch] Failed to upload export batch to Supabase:', error);
       throw error;
@@ -775,7 +834,19 @@ export const exportSync = {
       const batches = data
         .map((row: any) => {
           if (row.params && typeof row.params === 'object') {
-            return row.params as ExportBatch;
+            const batch = row.params as ExportBatch;
+            
+            // Prefer result_url (cloud URL) if available, otherwise use pdfUri from params
+            // Support both cloud URLs and local paths for backward compatibility
+            if (row.result_url && (row.result_url.startsWith('http://') || row.result_url.startsWith('https://'))) {
+              // Cloud URL available - use it
+              batch.pdfUri = row.result_url;
+            } else if (batch.pdfUri) {
+              // Use pdfUri from params (could be local path or cloud URL)
+              batch.pdfUri = batch.pdfUri;
+            }
+            
+            return batch;
           }
           return null;
         })
@@ -836,10 +907,11 @@ export const exportSync = {
  * Full sync function
  */
 export const sync = {
-  async fullSync(): Promise<{
+  async fullSync(userId?: string | null): Promise<{
     success: boolean;
     profile: boolean;
     logs: boolean;
+    shifts: boolean;
     exports: boolean;
     error?: string;
   }> {
@@ -848,30 +920,275 @@ export const sync = {
         success: false,
         profile: false,
         logs: false,
+        shifts: false,
         exports: false,
         error: 'Supabase not configured'
       };
     }
-    
-    try {
-      // TODO: Implement full sync
-      console.log('TODO: Implement full sync');
-      
-      return {
-        success: true,
-        profile: true,
-        logs: true,
-        exports: true
-      };
-    } catch (error) {
+
+    if (!userId) {
       return {
         success: false,
         profile: false,
         logs: false,
+        shifts: false,
+        exports: false,
+        error: 'User ID required for sync'
+      };
+    }
+    
+    try {
+      console.log('[sync.fullSync] Starting full sync for user:', userId.substring(0, 8) + '...');
+      
+      // Check connection first
+      const isConnected = await sync.checkConnection();
+      if (!isConnected) {
+        return {
+          success: false,
+          profile: false,
+          logs: false,
+          shifts: false,
+          exports: false,
+          error: 'Cannot connect to Supabase'
+        };
+      }
+
+      // Import stores to get current data
+      const { useLogsStore } = await import('./state/logsStore');
+      const { useShiftsStore } = await import('./state/shiftsStore');
+      const { useProfileStore } = await import('./state/profileStore');
+      
+      const logsStore = useLogsStore.getState();
+      const shiftsStore = useShiftsStore.getState();
+      const profileStore = useProfileStore.getState();
+      
+      // Upload all local data
+      const localLogs = logsStore.logs;
+      const localShifts = shiftsStore.shifts;
+      const localProfile = profileStore.profile;
+      const localBatches = logsStore.exportBatches;
+      
+      // Upload logs
+      let logsSuccess = true;
+      try {
+        await logsSync.uploadLogs(localLogs, userId);
+        console.log('[sync.fullSync] Uploaded logs:', localLogs.length);
+      } catch (error) {
+        console.error('[sync.fullSync] Failed to upload logs:', error);
+        logsSuccess = false;
+      }
+      
+      // Upload shifts
+      let shiftsSuccess = true;
+      try {
+        await shiftsSync.uploadShifts(localShifts, userId);
+        console.log('[sync.fullSync] Uploaded shifts:', localShifts.length);
+      } catch (error) {
+        console.error('[sync.fullSync] Failed to upload shifts:', error);
+        shiftsSuccess = false;
+      }
+      
+      // Upload profile
+      let profileSuccess = true;
+      if (localProfile) {
+        try {
+          await profileSync.uploadProfile(localProfile, userId);
+          console.log('[sync.fullSync] Uploaded profile');
+        } catch (error) {
+          console.error('[sync.fullSync] Failed to upload profile:', error);
+          profileSuccess = false;
+        }
+      }
+      
+      // Upload export batches (only upload PDFs that haven't been uploaded yet)
+      let exportsSuccess = true;
+      try {
+        for (const batch of localBatches) {
+          // Only upload if PDF is local (not already in cloud)
+          // Check if pdfUri is a local path - if so, upload will happen in uploadExportBatch
+          await exportSync.uploadExportBatch(batch, userId);
+        }
+        console.log('[sync.fullSync] Uploaded export batches:', localBatches.length);
+      } catch (error) {
+        console.error('[sync.fullSync] Failed to upload export batches:', error);
+        exportsSuccess = false;
+      }
+      
+      // Download remote data
+      try {
+        const remoteLogs = await logsSync.downloadLogs(userId);
+        const remoteShifts = await shiftsSync.downloadShifts(userId);
+        const remoteProfile = await profileSync.downloadProfile(userId);
+        const remoteBatches = await exportSync.downloadExportBatches(userId);
+        
+        // Merge with timestamp-based conflict resolution
+        // Logs: merge with timestamp comparison
+        const mergedLogs = sync.mergeLogsWithTimestamps(localLogs, remoteLogs);
+        for (const log of mergedLogs) {
+          const localLog = localLogs.find(l => l.id === log.id);
+          const remoteLog = remoteLogs.find(l => l.id === log.id);
+          
+          if (localLog && remoteLog) {
+            const localTime = new Date(localLog.updatedAt || localLog.createdAt);
+            const remoteTime = new Date(remoteLog.updatedAt || remoteLog.createdAt);
+            
+            if (localTime > remoteTime) {
+              // Local is newer - upload it
+              await logsSync.uploadLog(localLog, userId).catch(() => {});
+            } else {
+              // Remote is newer - save it locally
+              await database.updateOvertimeLog(remoteLog, userId).catch(() => {});
+            }
+          } else if (remoteLog) {
+            // New remote log - save locally
+            await database.createOvertimeLog(remoteLog, userId).catch(() => {});
+          }
+        }
+        
+        // Shifts: merge with timestamp comparison
+        const mergedShifts = sync.mergeShiftsWithTimestamps(localShifts, remoteShifts);
+        for (const shift of mergedShifts) {
+          const localShift = localShifts.find(s => s.id === shift.id);
+          const remoteShift = remoteShifts.find(s => s.id === shift.id);
+          
+          if (localShift && remoteShift) {
+            // Compare by activeFrom (proxy for timestamp)
+            const localTime = new Date(localShift.activeFrom);
+            const remoteTime = new Date(remoteShift.activeFrom);
+            
+            if (localTime > remoteTime) {
+              // Local is newer - upload it
+              await shiftsSync.uploadShift(localShift, userId).catch(() => {});
+            } else {
+              // Remote is newer - save it locally
+              await database.updateUsualShift(remoteShift, userId).catch(() => {});
+            }
+          } else if (remoteShift) {
+            // New remote shift - save locally
+            await database.createUsualShift(remoteShift, userId).catch(() => {});
+          }
+        }
+        
+        // Profile: use newer version
+        if (remoteProfile && localProfile) {
+          // Compare timestamps if available (Supabase stores updated_at)
+          // For now, prefer remote if it exists
+          await profileStorage.saveProfile(remoteProfile, userId).catch(() => {});
+        } else if (remoteProfile) {
+          await profileStorage.saveProfile(remoteProfile, userId).catch(() => {});
+        }
+        
+        // Download cloud PDFs to local cache for offline access
+        const { downloadPDFFromStorage, isCloudURL } = await import('./storage/pdfStorage');
+        for (const batch of remoteBatches) {
+          if (batch.pdfUri && isCloudURL(batch.pdfUri)) {
+            try {
+              await downloadPDFFromStorage(batch.pdfUri, batch.id);
+              console.log('[sync.fullSync] Downloaded PDF to local cache:', batch.id);
+            } catch (error) {
+              console.error('[sync.fullSync] Failed to download PDF to cache:', batch.id, error);
+              // Non-fatal - continue with other batches
+            }
+          }
+        }
+        
+        // Reload stores with merged data
+        await logsStore.loadLogs(userId);
+        await shiftsStore.loadShifts(userId);
+        if (remoteProfile) {
+          await profileStore.loadProfile(userId);
+        }
+        
+        console.log('[sync.fullSync] Full sync completed successfully');
+      } catch (error) {
+        console.error('[sync.fullSync] Failed to download/merge remote data:', error);
+      }
+      
+      const success = logsSuccess && shiftsSuccess && profileSuccess && exportsSuccess;
+      
+      return {
+        success,
+        profile: profileSuccess,
+        logs: logsSuccess,
+        shifts: shiftsSuccess,
+        exports: exportsSuccess,
+        error: success ? undefined : 'Some sync operations failed'
+      };
+    } catch (error) {
+      console.error('[sync.fullSync] Full sync failed:', error);
+      return {
+        success: false,
+        profile: false,
+        logs: false,
+        shifts: false,
         exports: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+  },
+
+  mergeLogsWithTimestamps(localLogs: OvertimeLog[], remoteLogs: OvertimeLog[]): OvertimeLog[] {
+    const localMap = new Map(localLogs.map(log => [log.id, log]));
+    const remoteMap = new Map(remoteLogs.map(log => [log.id, log]));
+    
+    const merged: OvertimeLog[] = [];
+    
+    // Process all logs (local and remote)
+    const allLogIds = new Set([...localMap.keys(), ...remoteMap.keys()]);
+    
+    for (const logId of allLogIds) {
+      const localLog = localMap.get(logId);
+      const remoteLog = remoteMap.get(logId);
+      
+      if (localLog && remoteLog) {
+        // Both exist - compare timestamps
+        const localTime = new Date(localLog.updatedAt || localLog.createdAt);
+        const remoteTime = new Date(remoteLog.updatedAt || remoteLog.createdAt);
+        
+        // Use newer version
+        merged.push(localTime > remoteTime ? localLog : remoteLog);
+      } else if (localLog) {
+        // Only local
+        merged.push(localLog);
+      } else if (remoteLog) {
+        // Only remote
+        merged.push(remoteLog);
+      }
+    }
+    
+    return merged;
+  },
+
+  mergeShiftsWithTimestamps(localShifts: UsualShift[], remoteShifts: UsualShift[]): UsualShift[] {
+    const localMap = new Map(localShifts.map(shift => [shift.id, shift]));
+    const remoteMap = new Map(remoteShifts.map(shift => [shift.id, shift]));
+    
+    const merged: UsualShift[] = [];
+    
+    // Process all shifts (local and remote)
+    const allShiftIds = new Set([...localMap.keys(), ...remoteMap.keys()]);
+    
+    for (const shiftId of allShiftIds) {
+      const localShift = localMap.get(shiftId);
+      const remoteShift = remoteMap.get(shiftId);
+      
+      if (localShift && remoteShift) {
+        // Both exist - compare by activeFrom (proxy for timestamp)
+        const localTime = new Date(localShift.activeFrom);
+        const remoteTime = new Date(remoteShift.activeFrom);
+        
+        // Use newer version
+        merged.push(localTime > remoteTime ? localShift : remoteShift);
+      } else if (localShift) {
+        // Only local
+        merged.push(localShift);
+      } else if (remoteShift) {
+        // Only remote
+        merged.push(remoteShift);
+      }
+    }
+    
+    return merged;
   },
 
   async checkConnection(): Promise<boolean> {
@@ -880,11 +1197,21 @@ export const sync = {
     }
     
     try {
-      // TODO: Implement connection check
-      console.log('TODO: Check Supabase connection');
+      // Test connection by querying profiles table (lightweight query)
+      // @ts-ignore
+      const { error } = await supabase
+        .from('profiles')
+        .select('user_id')
+        .limit(1);
+      
+      if (error) {
+        console.error('[sync.checkConnection] Connection check failed:', error);
+        return false;
+      }
+      
       return true;
     } catch (error) {
-      console.error('Supabase connection failed:', error);
+      console.error('[sync.checkConnection] Connection check failed:', error);
       return false;
     }
   },

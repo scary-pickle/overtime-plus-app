@@ -4,6 +4,8 @@ import { database } from '../db/sqlite';
 import { computeMinutes, roundToNearest5, getPreviousISODate, getCurrentDate } from '../time';
 import { useAuthStore } from './authStore';
 import { logsSync, exportSync } from '../supabase';
+import { uploadPDFToStorage, isLocalPath } from '../storage/pdfStorage';
+import { syncQueue } from '../sync/queue';
 
 interface LogsState {
   logs: OvertimeLog[];
@@ -67,28 +69,69 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Sync from Supabase in background (non-blocking)
       if (userId) {
         logsSync.downloadLogs(userId).then(remoteLogs => {
-          if (remoteLogs.length > 0) {
+          if (remoteLogs.length > 0 || logs.length > 0) {
             console.log('[logsStore.loadLogs] Syncing logs from Supabase in background', {
               remoteCount: remoteLogs.length,
               localCount: logs.length,
             });
             
-            // Merge remote logs with local (remote wins for conflicts)
+            // Merge with timestamp-based conflict resolution
             const localLogMap = new Map(logs.map(log => [log.id, log]));
             const remoteLogMap = new Map(remoteLogs.map(log => [log.id, log]));
             
-            // Combine: remote logs override local ones, then add any local-only logs
-            const mergedLogs = [
-              ...remoteLogs,
-              ...logs.filter(log => !remoteLogMap.has(log.id))
-            ];
+            const mergedLogs: OvertimeLog[] = [];
+            const allLogIds = new Set([...localLogMap.keys(), ...remoteLogMap.keys()]);
             
-            // Save merged logs to local storage
-            for (const log of mergedLogs) {
-              if (remoteLogMap.has(log.id)) {
-                // Update from remote
-                database.updateOvertimeLog(log, userId).catch(err => {
-                  console.error('[logsStore.loadLogs] Failed to save merged log:', err);
+            // Process all logs with timestamp comparison
+            for (const logId of allLogIds) {
+              const localLog = localLogMap.get(logId);
+              const remoteLog = remoteLogMap.get(logId);
+              
+              if (localLog && remoteLog) {
+                // Both exist - compare timestamps (newer wins)
+                const localTime = new Date(localLog.updatedAt || localLog.createdAt);
+                const remoteTime = new Date(remoteLog.updatedAt || remoteLog.createdAt);
+                
+                if (localTime > remoteTime) {
+                  // Local is newer - use local and upload it
+                  mergedLogs.push(localLog);
+                  logsSync.uploadLog(localLog, userId).catch(err => {
+                    console.error('[logsStore.loadLogs] Failed to upload newer local log:', err);
+                    // Add to sync queue for retry
+                    const { syncQueue } = require('../sync/queue');
+                    syncQueue.add({
+                      type: 'log',
+                      operation: 'update',
+                      data: localLog,
+                      userId,
+                    }).catch(() => {});
+                  });
+                } else {
+                  // Remote is newer - use remote and save it locally
+                  mergedLogs.push(remoteLog);
+                  database.updateOvertimeLog(remoteLog, userId).catch(err => {
+                    console.error('[logsStore.loadLogs] Failed to save merged log:', err);
+                  });
+                }
+              } else if (localLog) {
+                // Only local - add it and upload if not already synced
+                mergedLogs.push(localLog);
+                logsSync.uploadLog(localLog, userId).catch(err => {
+                  console.error('[logsStore.loadLogs] Failed to upload local-only log:', err);
+                  // Add to sync queue for retry
+                  const { syncQueue } = require('../sync/queue');
+                  syncQueue.add({
+                    type: 'log',
+                    operation: 'create',
+                    data: localLog,
+                    userId,
+                  }).catch(() => {});
+                });
+              } else if (remoteLog) {
+                // Only remote - add it and save locally
+                mergedLogs.push(remoteLog);
+                database.createOvertimeLog(remoteLog, userId).catch(err => {
+                  console.error('[logsStore.loadLogs] Failed to save remote-only log:', err);
                 });
               }
             }
@@ -124,16 +167,35 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         exportSync.downloadExportBatches(userId).then(remoteBatches => {
           if (remoteBatches.length > 0) {
             console.log('[logsStore.loadExportBatches] Syncing export batches from Supabase in background');
-            // Merge remote batches with local (remote wins for conflicts)
-            const localBatchMap = new Map(exportBatches.map(batch => [batch.id, batch]));
+            // Get current batches from store (may have been updated since initial load)
+            const currentBatches = get().exportBatches;
+            const localBatchMap = new Map(currentBatches.map(batch => [batch.id, batch]));
             const remoteBatchMap = new Map(remoteBatches.map(batch => [batch.id, batch]));
             
-            const mergedBatches = [
-              ...remoteBatches,
-              ...exportBatches.filter(batch => !remoteBatchMap.has(batch.id))
-            ];
+            // Merge: remote batches take precedence, then add local-only batches
+            // Use a Map to ensure no duplicates by ID
+            const mergedMap = new Map<string, ExportBatch>();
             
-            // Update store with merged batches
+            // First add all remote batches (remote wins for conflicts)
+            for (const batch of remoteBatches) {
+              mergedMap.set(batch.id, batch);
+            }
+            
+            // Then add local batches that aren't in remote
+            for (const batch of currentBatches) {
+              if (!mergedMap.has(batch.id)) {
+                mergedMap.set(batch.id, batch);
+              }
+            }
+            
+            // Convert Map to array and sort by createdAt (newest first)
+            const mergedBatches = Array.from(mergedMap.values()).sort((a, b) => {
+              const aTime = new Date(a.createdAt).getTime();
+              const bTime = new Date(b.createdAt).getTime();
+              return bTime - aTime; // Descending order
+            });
+            
+            // Update store with merged batches (deduplicated)
             set({ exportBatches: mergedBatches });
           }
         }).catch(err => {
@@ -146,6 +208,81 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         error: error instanceof Error ? error.message : 'Failed to load export batches' 
       });
     }
+  },
+
+  // Audit current export batches and report how many have cloud vs local PDF URIs
+  auditExportBatchPDFs: () => {
+    const { exportBatches } = get();
+    const { classifyPdfUri } = require('../storage/pdfStorage');
+    const summary = exportBatches.reduce(
+      (acc: { total: number; cloud: number; local: number; unknown: number; localIds: string[] }, batch) => {
+        acc.total += 1;
+        const kind = classifyPdfUri(batch.pdfUri);
+        if (kind === 'cloud') acc.cloud += 1;
+        else if (kind === 'local') {
+          acc.local += 1;
+          acc.localIds.push(batch.id);
+        } else acc.unknown += 1;
+        return acc;
+      },
+      { total: 0, cloud: 0, local: 0, unknown: 0, localIds: [] as string[] }
+    );
+    console.log('[logsStore.auditExportBatchPDFs] Audit summary:', summary);
+    return summary;
+  },
+
+  // Upload any export batches whose pdfUri is currently a local path
+  uploadMissingBatchPDFs: async (userId?: string | null) => {
+    const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+    if (!finalUserId) {
+      console.log('[logsStore.uploadMissingBatchPDFs] No userId; skipping');
+      return { uploaded: 0, skipped: 0, errors: 0 };
+    }
+
+    const { exportBatches } = get();
+    const { isLocalPath } = require('../storage/pdfStorage');
+    let uploaded = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    console.log('[logsStore.uploadMissingBatchPDFs] Scanning export batches for local PDFs...', {
+      count: exportBatches.length,
+    });
+
+    for (const batch of exportBatches) {
+      if (batch.pdfUri && isLocalPath(batch.pdfUri)) {
+        try {
+          console.log('[logsStore.uploadMissingBatchPDFs] Uploading local PDF for batch...', {
+            batchId: batch.id,
+          });
+          const updated = await exportSync.uploadExportBatch(batch, finalUserId);
+          if (updated && updated.pdfUri && updated.pdfUri !== batch.pdfUri) {
+            // Update store and DB with cloud URL
+            const current = get().exportBatches;
+            const newBatches = current.map(b => (b.id === batch.id ? { ...b, pdfUri: updated.pdfUri } : b));
+            set({ exportBatches: newBatches });
+            await database.updateExportBatch({ ...batch, pdfUri: updated.pdfUri }, finalUserId).catch(() => {});
+          }
+          uploaded += 1;
+        } catch (e) {
+          console.error('[logsStore.uploadMissingBatchPDFs] Failed to upload PDF for batch:', batch.id, e);
+          errors += 1;
+          // Queue retry
+          syncQueue.add({
+            type: 'pdfUpload',
+            operation: 'update',
+            data: { pdfUri: batch.pdfUri, batchId: batch.id },
+            userId: finalUserId,
+          }).catch(() => {});
+        }
+      } else {
+        skipped += 1;
+      }
+    }
+
+    const result = { uploaded, skipped, errors };
+    console.log('[logsStore.uploadMissingBatchPDFs] Completed upload scan:', result);
+    return result;
   },
 
   addLog: async (log: OvertimeLog, userId?: string | null) => {
@@ -167,6 +304,14 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       if (finalUserId) {
         logsSync.uploadLog(log, finalUserId).catch(err => {
           console.error('[logsStore.addLog] Background sync failed (non-fatal):', err);
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          syncQueue.add({
+            type: 'log',
+            operation: 'create',
+            data: log,
+            userId: finalUserId,
+          }).catch(() => {});
         });
       }
     } catch (error) {
@@ -197,6 +342,14 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       if (finalUserId) {
         logsSync.uploadLog(log, finalUserId).catch(err => {
           console.error('[logsStore.updateLog] Background sync failed (non-fatal):', err);
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          syncQueue.add({
+            type: 'log',
+            operation: 'update',
+            data: log,
+            userId: finalUserId,
+          }).catch(() => {});
         });
       }
     } catch (error) {
@@ -227,6 +380,14 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       if (finalUserId) {
         logsSync.deleteLog(id, finalUserId).catch(err => {
           console.error('[logsStore.deleteLog] Background sync failed (non-fatal):', err);
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          syncQueue.add({
+            type: 'log',
+            operation: 'delete',
+            data: { id },
+            userId: finalUserId,
+          }).catch(() => {});
         });
       }
     } catch (error) {
@@ -264,18 +425,38 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         throw new Error('No ready logs to export');
       }
 
-      // Create export batch with PDF URI if provided
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+
+      // Generate batch ID first so we can use it for the upload
+      const batchId = `batch_${Date.now()}`;
+
+      // If we received a local PDF path, proactively upload to storage now with the actual batch ID
+      let effectivePdfUri = pdfUri || '';
+      if (finalUserId && pdfUri && isLocalPath(pdfUri)) {
+        try {
+          console.log('[logsStore.batchExport] Uploading newly generated local PDF to storage before saving batch...');
+          const cloudUrl = await uploadPDFToStorage(pdfUri, batchId, finalUserId);
+          if (cloudUrl) {
+            effectivePdfUri = cloudUrl;
+            console.log('[logsStore.batchExport] New PDF uploaded to storage:', true);
+          }
+        } catch (err) {
+          console.error('[logsStore.batchExport] Immediate upload failed, will fall back to background sync:', err);
+          // Leave effectivePdfUri as local path; background sync will handle upload later
+        }
+      }
+
+      // Create export batch with the effective PDF URI (cloud URL if uploaded, else local path)
       const batch: ExportBatch = {
-        id: `batch_${Date.now()}`,
+        id: batchId,
         createdAt: new Date().toISOString(),
-        pdfUri: pdfUri || '', // Use provided PDF URI or empty string
+        pdfUri: effectivePdfUri,
         countLogs: logsToExport.length,
         totalMinutes: logsToExport.reduce((sum, log) => sum + log.minutesOvertime, 0),
         submittedToEmail: undefined
       };
 
-      // Get userId from authStore if not provided
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
       
       // Save to local SQLite first
       await database.createExportBatch(batch, finalUserId);
@@ -301,17 +482,52 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         }
       }
 
+      // Update exportBatches in store to include the new batch
+      const { exportBatches } = get();
       set({ 
         logs: updatedLogs,
+        exportBatches: [batch, ...exportBatches], // Add new batch to the beginning of the array
         isLoading: false,
         error: null 
       });
       
       // Sync export batch to Supabase in background (non-blocking)
-      if (finalUserId) {
-        exportSync.uploadExportBatch(batch, finalUserId).catch(err => {
-          console.error('[logsStore.batchExport] Background sync failed (non-fatal):', err);
-        });
+      // Only upload if PDF is still local (if immediate upload succeeded, it's already a cloud URL)
+      if (finalUserId && batch.pdfUri) {
+        // Only call uploadExportBatch if PDF is still local - if it's already a cloud URL, just save metadata
+        if (isLocalPath(batch.pdfUri)) {
+          // PDF is still local, uploadExportBatch will handle the upload
+          exportSync.uploadExportBatch(batch, finalUserId)
+            .then((updatedBatch) => {
+              // If upload succeeded and PDF was uploaded to cloud, update local batch with cloud URL
+              if (updatedBatch && updatedBatch.pdfUri && updatedBatch.pdfUri !== batch.pdfUri) {
+                // Update local database with cloud URL
+                const { exportBatches: currentBatches } = get();
+                const updatedBatches = currentBatches.map(b => 
+                  b.id === batch.id ? { ...b, pdfUri: updatedBatch.pdfUri } : b
+                );
+                set({ exportBatches: updatedBatches });
+                
+                // Update database
+                database.updateExportBatch({ ...batch, pdfUri: updatedBatch.pdfUri }, finalUserId).catch(() => {});
+              }
+            })
+            .catch(err => {
+              console.error('[logsStore.batchExport] Background sync failed (non-fatal):', err);
+              // Add PDF upload to sync queue for retry
+              syncQueue.add({
+                type: 'pdfUpload',
+                operation: 'update',
+                data: { pdfUri: batch.pdfUri, batchId: batch.id },
+                userId: finalUserId,
+              }).catch(() => {});
+            });
+        } else {
+          // PDF is already in cloud storage, just upload batch metadata (no PDF upload needed)
+          exportSync.uploadExportBatch(batch, finalUserId).catch(err => {
+            console.error('[logsStore.batchExport] Background metadata sync failed (non-fatal):', err);
+          });
+        }
       }
 
       return batch;
