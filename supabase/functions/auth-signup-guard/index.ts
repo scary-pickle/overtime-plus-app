@@ -28,28 +28,31 @@ serve(async (req) => {
       });
     }
 
-    // Parse body first to check for secret in body (fallback for hooks that don't support custom headers)
     const body = await req.json().catch(() => ({}));
-    
-    // Check authorization: first try Authorization header, then check body.secret
-    // Also check if request comes from Supabase's internal network (for Before User Created hooks)
-    const providedAuth = req.headers.get('authorization') ?? '';
-    const providedSecretInBody = body?.secret;
-    
-    // Check if this is a Supabase internal hook call
-    // Supabase hooks may include specific headers or come from internal network
-    const isSupabaseInternal = 
-      req.headers.get('x-supabase-hook') === 'before-user-created' ||
-      req.headers.get('user-agent')?.includes('Supabase') ||
-      // Check if request has Supabase hook signature (if secret field is used for HMAC)
-      body?.type === 'before_user_created';
-    
-    const isAuthorized = 
-      providedAuth === `Bearer ${expectedSecret}` || 
-      providedSecretInBody === expectedSecret ||
-      isSupabaseInternal; // Allow Supabase internal hook calls
-    
-    if (!isAuthorized) {
+
+    const authHeader = req.headers.get('authorization') ?? '';
+    const headerSecret = authHeader.replace(/^Bearer\s+/i, '').trim();
+    const bodySecret = typeof body?.secret === 'string' ? String(body.secret) : '';
+
+    const toBytes = (value: string) => new TextEncoder().encode(value);
+    const timingSafeEqual = (a: string, b: string) => {
+      const aBytes = toBytes(a);
+      const bBytes = toBytes(b);
+      if (aBytes.length !== bBytes.length || aBytes.length === 0) {
+        return false;
+      }
+      let diff = 0;
+      for (let i = 0; i < aBytes.length; i++) {
+        diff |= aBytes[i] ^ bBytes[i];
+      }
+      return diff === 0;
+    };
+
+    const hasValidSecret =
+      (headerSecret && timingSafeEqual(headerSecret, expectedSecret)) ||
+      (bodySecret && timingSafeEqual(bodySecret, expectedSecret));
+
+    if (!hasValidSecret) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: JSON_HEADERS,

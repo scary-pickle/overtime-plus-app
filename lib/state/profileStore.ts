@@ -3,6 +3,12 @@ import { Profile } from '../../types';
 import { profileStorage } from '../storage/profile';
 import { profileSync } from '../supabase';
 
+const devLog = (...args: any[]) => {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(...args);
+  }
+};
+
 interface ProfileState {
   profile: Profile | null;
   isLoading: boolean;
@@ -50,7 +56,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
             if (localProfile) {
               // Both exist - prefer remote for now (could compare timestamps from Supabase metadata)
               profile = supabaseProfile;
-              console.log('Profile loaded from Supabase, saving to local storage');
+              devLog('Profile loaded from Supabase, saving to local storage');
               await profileStorage.saveProfile(supabaseProfile, userId);
             } else {
               // Only remote
@@ -89,20 +95,20 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         });
       }
       
-      console.log('Profile loaded from storage:', { 
+      devLog('Profile loaded from storage:', { 
         userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
         hasProfile: profile !== null 
       });
       if (profile) {
-        console.log('Profile completeness check:', profileStorage.isProfileComplete(profile));
-        console.log('Profile fields:', Object.keys(profile));
+        devLog('Profile completeness check:', profileStorage.isProfileComplete(profile));
+        devLog('Profile fields:', Object.keys(profile));
       }
       set({ 
         profile, 
         isLoading: false,
         error: null 
       });
-      console.log('Profile store state after load:', { 
+      devLog('Profile store state after load:', { 
         hasProfile: profile !== null, 
         isComplete: profile ? profileStorage.isProfileComplete(profile) : false 
       });
@@ -120,13 +126,13 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       // Save to local storage first
       await profileStorage.saveProfile(profile, userId);
-      console.log('Profile saved to storage, updating store state');
+      devLog('Profile saved to storage, updating store state');
       
       // Sync to Supabase (don't fail if this fails - local save is primary)
       if (userId) {
         try {
           await profileSync.uploadProfile(profile, userId);
-          console.log('Profile synced to Supabase successfully');
+          devLog('Profile synced to Supabase successfully');
         } catch (syncError) {
           console.error('Failed to sync profile to Supabase (non-fatal):', syncError);
           // Add to sync queue for retry
@@ -145,7 +151,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         isLoading: false,
         error: null 
       });
-      console.log('Profile store state updated:', { 
+      devLog('Profile store state updated:', { 
         hasProfile: profile !== null, 
         isComplete: profile ? profileStorage.isProfileComplete(profile) : false 
       });
@@ -189,7 +195,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   get initials() {
     const { profile } = get();
     const initials = profile?.employeeInitial || '';
-    console.log('ProfileStore initials getter:', { 
+    devLog('ProfileStore initials getter:', { 
       hasProfile: !!profile, 
       employeeInitial: profile?.employeeInitial,
       initials 
@@ -200,14 +206,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   get isComplete() {
     const { profile } = get();
     const result = profile ? profileStorage.isProfileComplete(profile) : false;
-    console.log('isComplete getter called:', { profile: !!profile, result });
+    devLog('isComplete getter called:', { profile: !!profile, result });
     return result;
   },
 
   get hasProfile() {
     const { profile } = get();
     const result = profile !== null;
-    console.log('hasProfile getter called:', { profile: !!profile, result });
+    devLog('hasProfile getter called:', { profile: !!profile, result });
     return result;
   }
 }));

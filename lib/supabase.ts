@@ -6,7 +6,7 @@
 
 import { Profile, OvertimeLog, ExportBatch, UsualShift } from '../types';
 import { createClient } from '@supabase/supabase-js';
-import { SQLiteStorageAdapter } from './auth/sqliteStorageAdapter';
+import { SecureStoreAdapter } from './auth/storageAdapter';
 import { database } from './db/sqlite';
 import { profileStorage } from './storage/profile';
 
@@ -130,8 +130,8 @@ function getSupabaseClient(): SupabaseClient {
     return supabaseClient;
   }
 
-  // Initialize real Supabase client for React Native/Expo with SQLite storage
-  // Use SQLiteStorageAdapter for session persistence (no 2048 byte limit)
+  // Initialize real Supabase client for React Native/Expo with SecureStore storage
+  // Use chunked SecureStoreAdapter for session persistence (no 2048 byte limit)
   // Detect session in URL is disabled (handled via Linking), PKCE is default in RN
   // @ts-ignore - allow passing storage adapter even if our local type is minimal
   debug('[supabase] Initializing Supabase client', {
@@ -143,7 +143,7 @@ function getSupabaseClient(): SupabaseClient {
   try {
     supabaseClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
       auth: {
-        storage: SQLiteStorageAdapter,
+        storage: SecureStoreAdapter,
         persistSession: true,
         autoRefreshToken: true,
         flowType: 'pkce',
@@ -878,7 +878,6 @@ export const logsSync = {
         // @ts-ignore
         const { error } = await supabase.rpc('soft_delete_overtime_log', {
           log_uuid: existing.id,
-          user_uuid: userId
         });
 
         if (error) {
@@ -1193,7 +1192,6 @@ export const shiftsSync = {
         // @ts-ignore
         const { error } = await supabase.rpc('soft_delete_shift', {
           shift_uuid: existing.id,
-          user_uuid: userId
         });
 
         if (error) {
@@ -1522,7 +1520,6 @@ export const exportSync = {
         // @ts-ignore
         const { error } = await supabase.rpc('soft_delete_export_batch', {
           batch_uuid: existing.id,
-          user_uuid: userId
         });
 
         if (error) {

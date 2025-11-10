@@ -26,6 +26,11 @@ import { useAuthStore } from '../../lib/state/authStore';
 import { useOnboardingStore } from '../../lib/state/onboardingStore';
 import { useSyncStore } from '../../lib/state/syncStore';
 
+const devLog = (...args: any[]) => {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(...args);
+  }
+};
 // Sync Status Indicator Component
 function SyncStatusIndicator({ isDark }: { isDark: boolean }) {
   const { status, lastSyncTime, pendingOperations, error, checkSyncStatus, triggerFullSync } = useSyncStore();
@@ -187,7 +192,7 @@ function FieldInputUncontrolled({
   const renderCount = useRef(0);
   
   renderCount.current += 1;
-  console.log(`[FieldInput-${fieldKey}] Render #${renderCount.current}`, {
+  devLog(`[FieldInput-${fieldKey}] Render #${renderCount.current}`, {
     localValue,
     initialValue,
     isEditing,
@@ -195,7 +200,7 @@ function FieldInputUncontrolled({
 
   // Update local value when initial value changes from parent (but not on first render during typing)
   useEffect(() => {
-    console.log(`[FieldInput-${fieldKey}] useEffect triggered`, {
+    devLog(`[FieldInput-${fieldKey}] useEffect triggered`, {
       isFirstRender: isFirstRender.current,
       initialValue,
       localValue,
@@ -208,7 +213,7 @@ function FieldInputUncontrolled({
   }, [initialValue, fieldKey, localValue]);
 
   const handleChange = (text: string) => {
-    console.log(`[FieldInput-${fieldKey}] handleChange called`, { text });
+    devLog(`[FieldInput-${fieldKey}] handleChange called`, { text });
     setLocalValue(text);
     onChangeText(text);
   };
@@ -279,7 +284,7 @@ const FieldInput = React.memo(FieldInputUncontrolled, (prevProps, nextProps) => 
     prevProps.required === nextProps.required &&
     prevProps.onChangeText === nextProps.onChangeText;
   
-  console.log(`[FieldInput-${nextProps.fieldKey}] memo comparison`, {
+  devLog(`[FieldInput-${nextProps.fieldKey}] memo comparison`, {
     shouldSkipRender,
     initialValueChanged: prevProps.initialValue !== nextProps.initialValue,
     isEditingChanged: prevProps.isEditing !== nextProps.isEditing,
@@ -406,7 +411,7 @@ export default function ProfileScreen() {
   // Auto-enable edit mode if there's no profile (new user)
   const [isEditing, setIsEditing] = useState(() => !profile);
   
-  console.log(`[ProfileScreen] Render #${renderCount.current}`, {
+  devLog(`[ProfileScreen] Render #${renderCount.current}`, {
     isEditing,
     hasProfile: !!profile,
     formDataKeys: Object.keys(formData),
@@ -462,20 +467,20 @@ export default function ProfileScreen() {
 
   // Only update formData from profile when NOT editing and NOT typing to prevent keyboard dismissal
   useEffect(() => {
-    console.log(`[ProfileScreen] profile/isEditing useEffect`, {
+    devLog(`[ProfileScreen] profile/isEditing useEffect`, {
       hasProfile: !!profile,
       isEditing,
       isTyping: isTypingRef.current,
     });
     if (profile && !isEditing && !isTypingRef.current) {
-      console.log(`[ProfileScreen] Updating formData from profile`);
+      devLog(`[ProfileScreen] Updating formData from profile`);
       setFormData(profile);
       setSelectedHospital(profile.location || '');
       setIsSMO(profile.isSMO || false);
     } else if (!profile) {
       // If no profile, enable edit mode automatically and expand first section
       if (!isEditing) {
-        console.log(`[ProfileScreen] No profile found, enabling edit mode`);
+        devLog(`[ProfileScreen] No profile found, enabling edit mode`);
         setIsEditing(true);
       }
       // Auto-expand first section if not already expanded
@@ -493,7 +498,7 @@ export default function ProfileScreen() {
         };
       });
     } else {
-      console.log(`[ProfileScreen] Skipping formData update (editing or typing)`);
+      devLog(`[ProfileScreen] Skipping formData update (editing or typing)`);
     }
     // Don't update while editing or typing - let the user's changes persist
   }, [profile, isEditing]);
@@ -547,12 +552,12 @@ export default function ProfileScreen() {
       isSMO: isSMO,
     };
 
-    console.log('Form data before saving:', {
+    devLog('Form data before saving:', {
       hasEmployeeInitial: !!formData.employeeInitial,
       employeeInitial: formData.employeeInitial
     });
     
-    console.log('Profile data being saved:', {
+    devLog('Profile data being saved:', {
       hasEmployeeInitial: !!formData.employeeInitial,
       employeeInitial: formData.employeeInitial,
       allFields: Object.keys(profileData)
@@ -561,7 +566,7 @@ export default function ProfileScreen() {
     try {
       await saveProfile(profileData, user?.id);
       setIsEditing(false);
-      console.log('Profile saved successfully, profileData:', profileData);
+      devLog('Profile saved successfully, profileData:', profileData);
       Alert.alert('Success', 'Profile saved successfully!');
     } catch (error) {
       console.error('Error saving profile:', error);
@@ -581,7 +586,7 @@ export default function ProfileScreen() {
 
   const toggleSection = (sectionKey: string, animationValue: Animated.Value) => {
     const isExpanded = expandedSections[sectionKey];
-    console.log(`[ProfileScreen] toggleSection called`, { sectionKey, isExpanded, willExpand: !isExpanded });
+    devLog(`[ProfileScreen] toggleSection called`, { sectionKey, isExpanded, willExpand: !isExpanded });
     const willExpand = !isExpanded;
     setExpandedSections(prev => ({
       ...prev,
@@ -622,21 +627,21 @@ export default function ProfileScreen() {
   };
 
   const handleFullNameChange = React.useCallback((value: string) => {
-    console.log(`[ProfileScreen] handleFullNameChange called`, { value });
+    devLog(`[ProfileScreen] handleFullNameChange called`, { value });
     setFormData(prev => {
       const updated = { ...prev, fullName: value };
       // Auto-generate employee initial from full name
       if (value.trim()) {
         updated.employeeInitial = generateEmployeeInitial(value);
       }
-      console.log(`[ProfileScreen] handleFullNameChange updating formData`, { updated });
+      devLog(`[ProfileScreen] handleFullNameChange updating formData`, { updated });
       return updated;
     });
   }, []);
 
   // Use useCallback to stabilize the updateField function
   const updateField = React.useCallback((field: keyof Profile, value: string) => {
-    console.log(`[ProfileScreen] updateField called`, { field, value });
+    devLog(`[ProfileScreen] updateField called`, { field, value });
     isTypingRef.current = true;
     
     // Clear existing timeout
@@ -646,13 +651,13 @@ export default function ProfileScreen() {
     
     // Set flag to false after user stops typing (300ms of no input)
     typingTimeoutRef.current = setTimeout(() => {
-      console.log(`[ProfileScreen] typing timeout expired for field: ${field}`);
+      devLog(`[ProfileScreen] typing timeout expired for field: ${field}`);
       isTypingRef.current = false;
     }, 300);
     
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
-      console.log(`[ProfileScreen] setFormData updating`, { field, value, newData });
+      devLog(`[ProfileScreen] setFormData updating`, { field, value, newData });
       return newData;
     });
   }, []);
@@ -696,7 +701,7 @@ export default function ProfileScreen() {
   };
 
   const fieldHandlers = React.useMemo(() => {
-    console.log('[ProfileScreen] fieldHandlers being created');
+    devLog('[ProfileScreen] fieldHandlers being created');
     return {
       payrollNumber: (value: string) => updateField('payrollNumber', value),
       payLevel: (value: string) => updateField('payLevel', value),

@@ -1,13 +1,23 @@
 -- =====================================================
--- MANUAL FIX FOR SOFT DELETE RLS ISSUE
+-- MANUAL FIX FOR SOFT DELETE RLS ISSUE (V2)
+-- This version drops old function signatures first
 -- Copy and paste this entire file into Supabase SQL Editor and run it
 -- =====================================================
 
--- Create functions that bypass RLS for soft deletes
+-- First, drop all existing soft_delete functions (with any signature)
+-- This ensures we start with a clean slate
+DROP FUNCTION IF EXISTS soft_delete_overtime_log(uuid);
+DROP FUNCTION IF EXISTS soft_delete_overtime_log(uuid, uuid);
+DROP FUNCTION IF EXISTS soft_delete_shift(uuid);
+DROP FUNCTION IF EXISTS soft_delete_shift(uuid, uuid);
+DROP FUNCTION IF EXISTS soft_delete_export_batch(uuid);
+DROP FUNCTION IF EXISTS soft_delete_export_batch(uuid, uuid);
+
+-- Now create the new secure versions that derive user from auth.uid()
 -- These use SECURITY DEFINER to run with elevated permissions
 -- but still verify user ownership before deleting
 
-CREATE OR REPLACE FUNCTION soft_delete_overtime_log(log_uuid uuid)
+CREATE FUNCTION soft_delete_overtime_log(log_uuid uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -32,7 +42,7 @@ END;
 $$;
 
 -- Function to soft delete shifts
-CREATE OR REPLACE FUNCTION soft_delete_shift(shift_uuid uuid)
+CREATE FUNCTION soft_delete_shift(shift_uuid uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -57,7 +67,7 @@ END;
 $$;
 
 -- Function to soft delete export batches
-CREATE OR REPLACE FUNCTION soft_delete_export_batch(batch_uuid uuid)
+CREATE FUNCTION soft_delete_export_batch(batch_uuid uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -102,5 +112,10 @@ WHERE n.nspname = 'public'
   AND p.proname LIKE 'soft_delete%'
 ORDER BY p.proname;
 
--- SUCCESS! You should see 3 functions listed above.
--- Now reload your app and try deleting a log again.
+-- SUCCESS! You should see exactly 3 functions listed above:
+-- 1. soft_delete_export_batch(batch_uuid uuid) - SECURITY DEFINER
+-- 2. soft_delete_overtime_log(log_uuid uuid) - SECURITY DEFINER
+-- 3. soft_delete_shift(shift_uuid uuid) - SECURITY DEFINER
+--
+-- If you see any duplicates or old versions, re-run this script.
+

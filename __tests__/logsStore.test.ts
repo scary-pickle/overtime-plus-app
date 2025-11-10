@@ -12,6 +12,15 @@ jest.mock('../lib/db/sqlite', () => ({
   },
 }));
 
+// Mock the auth store
+jest.mock('../lib/state/authStore', () => ({
+  useAuthStore: {
+    getState: jest.fn(() => ({
+      user: { id: 'test-user-id' },
+    })),
+  },
+}));
+
 describe('Logs Store - Active Shift Management', () => {
   beforeEach(() => {
     // Reset store state before each test
@@ -131,7 +140,8 @@ describe('Logs Store - Active Shift Management', () => {
         expect.objectContaining({
           id: 'log_active',
           isActiveShift: false,
-        })
+        }),
+        'test-user-id' // userId parameter
       );
     });
 
@@ -175,7 +185,7 @@ describe('Logs Store - Active Shift Management', () => {
 
       await useLogsStore.getState().addLog(newLog);
 
-      expect(database.createOvertimeLog).toHaveBeenCalledWith(newLog);
+      expect(database.createOvertimeLog).toHaveBeenCalledWith(newLog, 'test-user-id');
       
       const logs = useLogsStore.getState().logs;
       expect(logs).toHaveLength(1);

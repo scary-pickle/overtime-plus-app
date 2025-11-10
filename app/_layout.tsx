@@ -39,11 +39,13 @@ export default function RootLayout() {
       // CRITICAL: Log database state RIGHT BEFORE checkSession
       try {
         const sessionCount = await database.countAuthSessions();
-        const allKeys = await database.getAllAuthSessionKeys();
-        console.log('[authStore.checkSession] 🔍 Database state BEFORE checkSession:', {
-          sessionCount,
-          keys: allKeys
-        });
+        if (process.env.NODE_ENV !== 'production') {
+          const allKeys = await database.getAllAuthSessionKeys();
+          console.log('[authStore.checkSession] 🔍 Database state BEFORE checkSession:', {
+            sessionCount,
+            keys: allKeys
+          });
+        }
       } catch (dbError) {
         console.error('[authStore.checkSession] Failed to check database state:', dbError);
       }
