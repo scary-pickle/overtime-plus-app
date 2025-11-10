@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { UsualShift, RosterForDate } from '../../types';
 import { database } from '../db/sqlite';
 import { getRosterForDate } from '../roster';
+import { formatDateToISO } from '../time';
 import { useAuthStore } from './authStore';
 import { shiftsSync } from '../supabase';
 
@@ -273,7 +274,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   getShiftsForDay: (dayOfWeek: number, weekIndex?: 1 | 2) => {
     const { shifts } = get();
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = formatDateToISO(now);
     
     return shifts.filter(shift => {
       // Check if shift is active
@@ -297,7 +298,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   getActiveShifts: () => {
     const { shifts } = get();
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = formatDateToISO(now);
     
     return shifts.filter(shift => {
       return shift.activeFrom <= today && 

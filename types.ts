@@ -31,6 +31,7 @@ export type UsualShift = {
   mealBreakMinutes?: number; // default 0
   activeFrom: string;     // ISO date
   activeTo?: string;      // ISO date
+  deletedAt?: string;     // ISO timestamp for soft delete
 };
 
 export type OvertimeLog = {
@@ -61,6 +62,7 @@ export type OvertimeLog = {
   isActiveShift?: boolean; // Marks this draft as the currently active shift started via "Start Shift" button
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string;     // ISO timestamp for soft delete
 };
 
 export type ExportBatch = {
@@ -73,6 +75,7 @@ export type ExportBatch = {
   customName?: string;
   submittedAt?: string; // ISO timestamp
   submittedVia?: 'email' | 'manual';
+  deletedAt?: string;   // ISO timestamp for soft delete
 };
 
 export type NotificationSettings = {

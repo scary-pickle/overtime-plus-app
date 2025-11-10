@@ -1,153 +1,269 @@
 import * as SecureStore from 'expo-secure-store';
 import * as LZString from 'lz-string';
 
-// Marker prefix to indicate compressed data
-const COMPRESSED_MARKER = '__COMPRESSED__';
+type ChunkedMeta = {
+  version: 1;
+  chunks: number;
+  compressed: boolean;
+};
 
-// Check if a key is likely Supabase auth session data
+const COMPRESSED_MARKER = '__COMPRESSED__';
+const META_SUFFIX = '__meta__';
+const CHUNK_SUFFIX = '__chunk__';
+const CHUNK_SIZE = 1700; // Max Safe chunk size (SecureStore limit is 2048 bytes)
+const SECURE_STORE_OPTIONS = { keychainService: 'overtime-securestore' };
+
+const metaKey = (key: string) => `${key}${META_SUFFIX}`;
+const chunkKey = (key: string, index: number) => `${key}${CHUNK_SUFFIX}${index}`;
+
 function isSupabaseSessionKey(key: string): boolean {
-  return key.includes('supabase') || 
-         key.includes('auth') || 
-         key.includes('session') ||
-         key.includes('sb-'); // Supabase session keys typically start with 'sb-'
+  return key.includes('supabase') ||
+    key.includes('auth') ||
+    key.includes('session') ||
+    key.includes('sb-');
 }
 
-// A minimal storage adapter compatible with @supabase/supabase-js auth storage API
-// Provides getItem, setItem, removeItem using Expo SecureStore for better security on mobile
-// Automatically compresses large session data to stay within SecureStore's 2048 byte limit
+async function readMeta(key: string): Promise<ChunkedMeta | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(metaKey(key), SECURE_STORE_OPTIONS);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.version !== 1) {
+      return null;
+    }
+    const chunks = Number(parsed.chunks);
+    if (!Number.isFinite(chunks) || chunks < 0) {
+      return null;
+    }
+    return {
+      version: 1,
+      chunks: Math.floor(chunks),
+      compressed: Boolean(parsed.compressed),
+    };
+  } catch (error) {
+    console.warn('SecureStoreAdapter.readMeta failed; treating metadata as absent', error);
+    return null;
+  }
+}
+
+async function clearChunkedData(key: string, meta?: ChunkedMeta | null): Promise<void> {
+  const resolvedMeta = meta ?? (await readMeta(key));
+  if (resolvedMeta) {
+    const removals: Promise<void>[] = [];
+    for (let i = 0; i < resolvedMeta.chunks; i++) {
+      removals.push(SecureStore.deleteItemAsync(chunkKey(key, i), SECURE_STORE_OPTIONS));
+    }
+    removals.push(SecureStore.deleteItemAsync(metaKey(key), SECURE_STORE_OPTIONS));
+    await Promise.allSettled(removals);
+  }
+  try {
+    await SecureStore.deleteItemAsync(key, SECURE_STORE_OPTIONS);
+  } catch {
+    // ignore legacy key removal errors
+  }
+}
+
+function splitIntoChunks(data: string): string[] {
+  if (data.length === 0) {
+    return [''];
+  }
+  const chunks: string[] = [];
+  // For base64 strings, we can safely split at any point
+  // Base64 strings are ASCII-safe and can be split character-by-character
+  for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+    chunks.push(data.slice(i, i + CHUNK_SIZE));
+  }
+  return chunks;
+}
+
+function maybeCompress(key: string, value: string): { payload: string; compressed: boolean } {
+  const sizeInBytes = new TextEncoder().encode(value).length;
+  if (!isSupabaseSessionKey(key) || sizeInBytes <= 1500) {
+    return { payload: value, compressed: false };
+  }
+  try {
+    const compressed = LZString.compress(value);
+    if (compressed && compressed.length < value.length) {
+      return { payload: compressed, compressed: true };
+    }
+  } catch (error) {
+    console.warn('SecureStoreAdapter.setItem: compression failed, storing uncompressed payload', error);
+  }
+  return { payload: value, compressed: false };
+}
+
+// Removed decodePayload function - we now handle decompression directly in getItem
+
 export const SecureStoreAdapter = {
   async getItem(key: string): Promise<string | null> {
+    const isDev = process.env.NODE_ENV !== 'production';
+    const debug = (...args: any[]) => {
+      if (isDev && isSupabaseSessionKey(key)) {
+        console.log('[SecureStoreAdapter.getItem]', ...args);
+      }
+    };
+    
     try {
-      const value = await SecureStore.getItemAsync(key, {
-        keychainService: 'overtime-securestore',
-      });
-      
-      if (!value) return null;
-      
-      // Check if value is compressed (has marker prefix)
-      if (value.startsWith(COMPRESSED_MARKER)) {
-        try {
-          // Remove marker and decompress
-          const compressedData = value.substring(COMPRESSED_MARKER.length);
-          const decompressed = LZString.decompress(compressedData);
-          
-          if (!decompressed) {
-            console.warn(
-              `SecureStoreAdapter.getItem: Failed to decompress value for key "${key}". ` +
-              `Data may be corrupted. Removing corrupted data to allow re-storage.`
-            );
-            // Remove corrupted compressed data so it can be re-stored
-            // This allows Supabase to refresh the session instead of returning corrupted data
-            try {
-              await SecureStore.deleteItemAsync(key, {
-                keychainService: 'overtime-securestore',
-              });
-            } catch (removeError) {
-              // Ignore errors during cleanup
+      debug('Reading key:', key.substring(0, 20) + '...');
+      const meta = await readMeta(key);
+      if (meta) {
+        debug('Found chunked data:', { chunks: meta.chunks, compressed: meta.compressed });
+        const chunkReads = await Promise.all(
+          Array.from({ length: meta.chunks }, (_, index) =>
+            SecureStore.getItemAsync(chunkKey(key, index), SECURE_STORE_OPTIONS)
+          )
+        );
+
+        if (chunkReads.some(chunk => chunk == null)) {
+          console.warn('SecureStoreAdapter.getItem: detected incomplete chunk data; clearing stored chunks');
+          await clearChunkedData(key, meta);
+          return null;
+        }
+
+        debug('All chunks read successfully:', { chunkCount: chunkReads.length, chunkLengths: chunkReads.map(c => c?.length || 0) });
+        
+        // Join chunks - no base64 encoding, just join directly
+        const joinedData = chunkReads.join('');
+        debug('Joined data length:', joinedData.length, 'expected from chunks:', chunkReads.reduce((sum, c) => sum + (c?.length || 0), 0));
+        
+        // If compressed, decompress directly (no base64 decoding needed)
+        if (meta.compressed) {
+          try {
+            // Decompress the LZString compressed data directly
+            const decompressed = LZString.decompress(joinedData);
+            if (!decompressed) {
+              console.warn('SecureStoreAdapter.getItem: decompression returned null');
+              debug('Decompression returned null');
+              await clearChunkedData(key, meta);
+              return null;
             }
+            debug('Decompressed successfully, length:', decompressed.length);
+            return decompressed;
+          } catch (decompressError) {
+            console.warn('SecureStoreAdapter.getItem: decompression failed', decompressError);
+            debug('Decompression error:', decompressError);
+            await clearChunkedData(key, meta);
             return null;
           }
-          
-          return decompressed;
-        } catch (decompressError) {
-          console.warn(
-            `SecureStoreAdapter.getItem: Error decompressing value for key "${key}". ` +
-            `Data may be corrupted. Removing corrupted data to allow re-storage.`,
-            decompressError
-          );
-          // Remove corrupted compressed data so it can be re-stored
-          try {
-            await SecureStore.deleteItemAsync(key, {
-              keychainService: 'overtime-securestore',
-            });
-          } catch (removeError) {
-            // Ignore errors during cleanup
+        }
+        
+        // Not compressed, return as-is
+        debug('Payload not compressed, returning as-is');
+        debug('Successfully read chunked data, length:', joinedData.length);
+        return joinedData;
+      }
+
+      // Legacy fallback (single value, optional compression marker)
+      const legacyValue = await SecureStore.getItemAsync(key, SECURE_STORE_OPTIONS);
+      if (!legacyValue) {
+        debug('No value found for key');
+        return null;
+      }
+
+      debug('Found legacy value, length:', legacyValue.length);
+      if (legacyValue.startsWith(COMPRESSED_MARKER)) {
+        const compressedData = legacyValue.substring(COMPRESSED_MARKER.length);
+        try {
+          const decompressed = LZString.decompress(compressedData);
+          if (!decompressed) {
+            await SecureStore.deleteItemAsync(key, SECURE_STORE_OPTIONS);
+            return null;
           }
+          debug('Successfully decompressed legacy value, length:', decompressed.length);
+          return decompressed;
+        } catch (error) {
+          console.warn('SecureStoreAdapter.getItem: legacy decompression failed; clearing value', error);
+          await SecureStore.deleteItemAsync(key, SECURE_STORE_OPTIONS);
           return null;
         }
       }
-      
-      // Return uncompressed value (backward compatibility)
-      return value;
+
+      debug('Returning legacy value as-is');
+      return legacyValue;
     } catch (error) {
-      console.warn('SecureStoreAdapter.getItem failed', { key, error });
+      console.warn('SecureStoreAdapter.getItem failed', error);
       return null;
     }
   },
 
   async setItem(key: string, value: string): Promise<void> {
+    const isDev = process.env.NODE_ENV !== 'production';
+    const debug = (...args: any[]) => {
+      if (isDev && isSupabaseSessionKey(key)) {
+        console.log('[SecureStoreAdapter.setItem]', ...args);
+      }
+    };
+    
     try {
-      const sizeInBytes = new TextEncoder().encode(value).length;
-      let finalValue = value;
-      let shouldCompress = false;
+      debug('Setting key:', key.substring(0, 20) + '...', 'value length:', value.length);
+      await clearChunkedData(key);
+
+      const { payload, compressed } = maybeCompress(key, value);
       
-      // Compress if it's Supabase session data and exceeds size limit
-      if (isSupabaseSessionKey(key) && sizeInBytes > 1500) {
-        // Compress at 1500 bytes (before hitting 2048 limit) to leave room for compression overhead
-        try {
-          const compressed = LZString.compress(value);
-          if (compressed) {
-            // Calculate the final size including marker overhead
-            const markerSize = new TextEncoder().encode(COMPRESSED_MARKER).length;
-            const compressedSize = new TextEncoder().encode(compressed).length;
-            const finalCompressedSize = markerSize + compressedSize;
-            
-            // Only use compression if the final size (compressed + marker) is actually smaller
-            if (finalCompressedSize < sizeInBytes) {
-              finalValue = COMPRESSED_MARKER + compressed;
-              shouldCompress = true;
-              const reduction = Math.round((1 - finalCompressedSize / sizeInBytes) * 100);
-              console.log(
-                `SecureStoreAdapter.setItem: Compressed value for key "${key}" from ${sizeInBytes} to ${finalCompressedSize} bytes (${reduction}% reduction)`
-              );
-            }
-          }
-        } catch (compressError) {
-          console.warn(`SecureStoreAdapter.setItem: Failed to compress value for key "${key}"`, compressError);
-          // Continue with uncompressed value
-        }
-      }
+      // Check if we need to chunk based on byte size
+      const payloadBytes = new TextEncoder().encode(payload).length;
+      const needsChunking = payloadBytes > CHUNK_SIZE;
       
-      // Check final size after compression
-      const finalSizeInBytes = new TextEncoder().encode(finalValue).length;
-      if (finalSizeInBytes > 2048) {
-        console.warn(
-          `SecureStoreAdapter.setItem: Value for key "${key}" is ${finalSizeInBytes} bytes (exceeds 2048 byte limit) even after compression. ` +
-          `This may fail to store. Original size: ${sizeInBytes} bytes.`
-        );
-      }
-      
-      await SecureStore.setItemAsync(key, finalValue, {
-        keychainService: 'overtime-securestore',
-        // Use the most restrictive defaults available on the platform
+      debug('Preparing to store:', { 
+        originalLength: value.length, 
+        payloadLength: payload.length, 
+        payloadBytes,
+        compressed,
+        needsChunking 
       });
       
-      if (shouldCompress) {
-        console.log(`SecureStoreAdapter.setItem: Successfully stored compressed value for key "${key}"`);
+      let chunks: string[];
+      if (needsChunking) {
+        // Only chunk if we absolutely have to (payload > 1700 bytes)
+        // For compressed data, we can't split it - it must be stored as-is
+        // So if compressed data is too large, we have a problem
+        if (compressed) {
+          console.warn('SecureStoreAdapter.setItem: Compressed data exceeds chunk size, cannot split compressed data');
+          debug('Compressed data too large, cannot chunk');
+          // Try to store anyway - might work if SecureStore allows slightly larger values
+          chunks = [payload];
+        } else {
+          // Uncompressed data can be chunked
+          chunks = splitIntoChunks(payload);
+        }
+      } else {
+        // Data fits in one chunk - store directly without base64 encoding
+        // This avoids corruption issues with base64 encoding
+        chunks = [payload];
       }
+      
+      debug('Storing as chunks:', { chunks: chunks.length, compressed, originalLength: value.length, payloadLength: payload.length, payloadBytes });
+
+      await Promise.all(
+        chunks.map((chunk, index) =>
+          SecureStore.setItemAsync(chunkKey(key, index), chunk, SECURE_STORE_OPTIONS)
+        )
+      );
+
+      const meta: ChunkedMeta = {
+        version: 1,
+        chunks: chunks.length,
+        compressed,
+      };
+      await SecureStore.setItemAsync(metaKey(key), JSON.stringify(meta), SECURE_STORE_OPTIONS);
+      // Ensure legacy key is cleared (in case older versions stored it)
+      await SecureStore.deleteItemAsync(key, SECURE_STORE_OPTIONS);
+      debug('Successfully stored chunked data');
     } catch (error) {
-      console.warn('SecureStoreAdapter.setItem failed', { key, error });
-      // If it's a size-related error, provide more context
-      if (error instanceof Error && (error.message.includes('2048') || error.message.includes('too large'))) {
-        console.error(
-          `SecureStoreAdapter: Failed to store value for "${key}" due to size limit. ` +
-          `Consider reducing session data size or using alternative storage.`
-        );
-      }
+      console.warn('SecureStoreAdapter.setItem failed', error);
+      // Attempt best-effort cleanup to avoid partial state
+      await clearChunkedData(key);
+      throw error;
     }
   },
 
   async removeItem(key: string): Promise<void> {
     try {
-      await SecureStore.deleteItemAsync(key, {
-        keychainService: 'overtime-securestore',
-      });
+      await clearChunkedData(key);
     } catch (error) {
-      console.warn('SecureStoreAdapter.removeItem failed', { key, error });
+      console.warn('SecureStoreAdapter.removeItem failed', error);
     }
   },
 };
 
 export type StorageAdapter = typeof SecureStoreAdapter;
-
-

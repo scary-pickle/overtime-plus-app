@@ -16,6 +16,9 @@ for insert with check (
 create policy if not exists attachmentsupdateown on storage.objects
 for update using (
   bucket_id = 'attachments' and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+  bucket_id = 'attachments' and (storage.foldername(name))[1] = auth.uid()::text
 );
 
 create policy if not exists attachmentsdeleteown on storage.objects
@@ -36,6 +39,9 @@ for insert with check (
 
 create policy if not exists exportsupdateown on storage.objects
 for update using (
+  bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
   bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
 );
 

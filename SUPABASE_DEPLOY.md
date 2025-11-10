@@ -69,17 +69,42 @@ supabase db query < supabase/storage-policies.sql
 ## Deploy Edge Function
 The function rejects signups that are not in allowed domains.
 
+**Important:** Generate a secure random secret for `SIGNUP_GUARD_SECRET`:
+```bash
+# Generate a secure random secret (32+ characters recommended)
+openssl rand -hex 32
+```
+
+Deploy the function with environment variables:
 ```bash
 cd supabase/functions/auth-signup-guard
 supabase functions deploy auth-signup-guard \
   --no-verify-jwt \
   --env REQUIRE_DOMAIN=true \
-  --env ALLOWED_DOMAINS=health.qld.gov.au
+  --env ALLOWED_DOMAINS=health.qld.gov.au \
+  --env SIGNUP_GUARD_SECRET=<your-generated-secret>
 ```
 
-Hook it to Auth events (Dashboard → Authentication → Hooks):
-- Pre-signup (if available), otherwise User Signed Up webhook → URL:
-  - `https://<project-ref>.functions.supabase.co/auth-signup-guard`
+**Alternative:** Set secrets via Supabase Dashboard:
+1. Go to Dashboard → Edge Functions → `auth-signup-guard` → Settings
+2. Add secrets:
+   - `REQUIRE_DOMAIN=true`
+   - `ALLOWED_DOMAINS=health.qld.gov.au`
+   - `SIGNUP_GUARD_SECRET=<your-generated-secret>`
+
+### Configure Auth Hook
+Hook the function to Auth events (Dashboard → Authentication → Hooks):
+- **Event:** Pre-signup (if available), otherwise User Signed Up webhook
+- **URL:** `https://<project-ref>.functions.supabase.co/auth-signup-guard`
+- **HTTP Method:** POST
+
+**Note:** The function accepts the secret in two ways:
+1. **Authorization header** (preferred): `Authorization: Bearer <SIGNUP_GUARD_SECRET>`
+   - If your hook configuration supports custom headers, use this method
+2. **Request body** (fallback): Include `"secret": "<SIGNUP_GUARD_SECRET>"` in the JSON body
+   - Use this if your hook doesn't support custom headers
+
+If using the body method, you may need to configure a custom webhook transformer or use Supabase's Database Webhooks feature instead of Auth Hooks.
 
 ## App Link Handling
 - Ensure `scheme` in `app.config.ts` is `overtime-plus`

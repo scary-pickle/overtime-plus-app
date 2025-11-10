@@ -199,3 +199,5 @@ To manually trigger an update:
 3. Add widget configuration UI in the app settings
 4. Consider adding lock screen widgets for iOS 16+
 
+
+

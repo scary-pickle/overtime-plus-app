@@ -283,3 +283,5 @@ All sync operations download all data, not just changes since last sync. This is
 5. Implement full sync and connection check
 6. Upload local changes that are newer than remote during merge
 
+
+

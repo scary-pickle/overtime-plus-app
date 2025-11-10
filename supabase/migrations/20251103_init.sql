@@ -98,23 +98,23 @@ alter table public.attachments enable row level security;
 -- Policies (owners only, exclude soft-deleted by default for reads)
 create policy profiles_select on public.profiles for select using (user_id = auth.uid() and deleted_at is null);
 create policy profiles_insert on public.profiles for insert with check (user_id = auth.uid());
-create policy profiles_update on public.profiles for update using (user_id = auth.uid());
+create policy profiles_update on public.profiles for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 create policy shifts_select on public.shifts for select using (user_id = auth.uid() and deleted_at is null);
 create policy shifts_insert on public.shifts for insert with check (user_id = auth.uid());
-create policy shifts_update on public.shifts for update using (user_id = auth.uid());
+create policy shifts_update on public.shifts for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 create policy logs_select on public.overtime_logs for select using (user_id = auth.uid() and deleted_at is null);
 create policy logs_insert on public.overtime_logs for insert with check (user_id = auth.uid());
-create policy logs_update on public.overtime_logs for update using (user_id = auth.uid());
+create policy logs_update on public.overtime_logs for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 create policy exports_select on public.export_batches for select using (user_id = auth.uid() and deleted_at is null);
 create policy exports_insert on public.export_batches for insert with check (user_id = auth.uid());
-create policy exports_update on public.export_batches for update using (user_id = auth.uid());
+create policy exports_update on public.export_batches for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 create policy attachments_select on public.attachments for select using (user_id = auth.uid() and deleted_at is null);
 create policy attachments_insert on public.attachments for insert with check (user_id = auth.uid());
-create policy attachments_update on public.attachments for update using (user_id = auth.uid());
+create policy attachments_update on public.attachments for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- Indexes
 create index if not exists idx_shifts_user_start_at on public.shifts(user_id, start_at);

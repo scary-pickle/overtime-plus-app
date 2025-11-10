@@ -1,4 +1,5 @@
 import { UsualShift, RosterForDate } from '../types';
+import { formatDateToISO } from './time';
 
 /**
  * Get roster information for a specific date based on usual shifts
@@ -122,11 +123,15 @@ export function getNextShiftOccurrence(
       // For biweekly shifts, check week index
       if (shift.type === 'biweekly' && shift.weekIndex) {
         const weekIndex = getWeekIndex(current);
-        if (weekIndex === shift.weekIndex && isShiftActiveOnDate(shift, current.toISOString().split('T')[0])) {
-          return current.toISOString().split('T')[0];
+        const dateStr = formatDateToISO(current);
+        if (weekIndex === shift.weekIndex && isShiftActiveOnDate(shift, dateStr)) {
+          return dateStr;
         }
-      } else if (shift.type === 'weekly' && isShiftActiveOnDate(shift, current.toISOString().split('T')[0])) {
-        return current.toISOString().split('T')[0];
+      } else if (shift.type === 'weekly') {
+        const dateStr = formatDateToISO(current);
+        if (isShiftActiveOnDate(shift, dateStr)) {
+          return dateStr;
+        }
       }
     }
     
@@ -152,7 +157,7 @@ export function getShiftOccurrencesInRange(
   
   while (current <= end) {
     if (current.getDay() === shift.dayOfWeek) {
-      const dateStr = current.toISOString().split('T')[0];
+      const dateStr = formatDateToISO(current);
       
       if (isShiftActiveOnDate(shift, dateStr)) {
         // For biweekly shifts, check week index

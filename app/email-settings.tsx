@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Alert,
   useColorScheme,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -29,6 +31,10 @@ export default function EmailSettingsScreen() {
   const [emailTemplate, setEmailTemplate] = useState('');
   const [emailSubmissionMethod, setEmailSubmissionMethod] = useState<'apple-mail' | 'share-sheet'>('share-sheet');
   const [isSaving, setIsSaving] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const templateInputRef = useRef<TextInput>(null);
+  const templateSectionRef = useRef<View>(null);
+  const templateSectionY = useRef<number>(0);
 
   useEffect(() => {
     if (profile) {
@@ -131,9 +137,41 @@ export default function EmailSettingsScreen() {
     );
   }
 
+  const handleTemplateFocus = () => {
+    // Small delay to ensure keyboard is shown before scrolling
+    setTimeout(() => {
+      if (templateSectionY.current > 0) {
+        scrollViewRef.current?.scrollTo({ 
+          y: Math.max(0, templateSectionY.current - 100), 
+          animated: true 
+        });
+      } else {
+        // Fallback: scroll to end if position not tracked yet
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }
+    }, 300);
+  };
+
+  const handleTemplateSectionLayout = (event: any) => {
+    const { y } = event.nativeEvent.layout;
+    templateSectionY.current = y;
+  };
+
   return (
-    <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
-      <View style={styles.content}>
+    <KeyboardAvoidingView
+      style={[styles.container, isDark && styles.darkContainer]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+      >
+        <View style={styles.content}>
         {/* Header with back button */}
         <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
           <TouchableOpacity
@@ -227,7 +265,11 @@ export default function EmailSettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.section, isDark && styles.darkSection]}>
+        <View 
+          ref={templateSectionRef} 
+          style={[styles.section, isDark && styles.darkSection]}
+          onLayout={handleTemplateSectionLayout}
+        >
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
               Email Template
@@ -253,6 +295,7 @@ export default function EmailSettingsScreen() {
             Customize the email message sent with your AVAC forms. Use {'{User Name}'}, {'{Date}'}, and {'{Total Hours}'} as variables.
           </Text>
           <TextInput
+            ref={templateInputRef}
             style={[styles.textArea, isDark && styles.darkTextInput]}
             value={emailTemplate}
             onChangeText={setEmailTemplate}
@@ -261,6 +304,7 @@ export default function EmailSettingsScreen() {
             multiline
             numberOfLines={8}
             textAlignVertical="top"
+            onFocus={handleTemplateFocus}
           />
         </View>
 
@@ -279,7 +323,8 @@ export default function EmailSettingsScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -290,6 +335,12 @@ const styles = StyleSheet.create({
   },
   darkContainer: {
     backgroundColor: '#000',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   centerContent: {
     justifyContent: 'center',
@@ -336,13 +387,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
     marginBottom: 4,
+    flex: 1,
+    marginRight: 12,
   },
   sectionDescription: {
     fontSize: 14,
@@ -352,7 +405,7 @@ const styles = StyleSheet.create({
   },
   sectionActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
   },
   actionButton: {
     flexDirection: 'row',

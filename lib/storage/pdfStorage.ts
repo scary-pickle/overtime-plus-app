@@ -8,13 +8,44 @@ import { Paths } from 'expo-file-system';
 import { readAsStringAsync, writeAsStringAsync, getInfoAsync, uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 
 const EXPORTS_BUCKET = 'exports';
+const isDevLoggingEnabled = process.env.NODE_ENV !== 'production';
+const STORAGE_URI_PREFIX = `storage://${EXPORTS_BUCKET}/`;
+
+function isUuidSegment(segment: string | undefined): boolean {
+  if (!segment) return false;
+  return /^[0-9a-fA-F-]{32,36}$/.test(segment);
+}
+
+function extractStoragePath(uri: string): string | null {
+  if (!uri) return null;
+  if (uri.startsWith(STORAGE_URI_PREFIX)) {
+    return uri.slice(STORAGE_URI_PREFIX.length);
+  }
+  if (uri.startsWith('storage://')) {
+    const withoutScheme = uri.replace('storage://', '');
+    const parts = withoutScheme.split('/');
+    const bucketId = parts.shift();
+    if (!bucketId || bucketId !== EXPORTS_BUCKET) {
+      return null;
+    }
+    return parts.join('/');
+  }
+  if (uri.startsWith(`${EXPORTS_BUCKET}/`)) {
+    return uri.slice(EXPORTS_BUCKET.length + 1);
+  }
+  const parts = uri.split('/');
+  if (parts.length === 2 && parts[1].endsWith('.pdf') && isUuidSegment(parts[0])) {
+    return uri;
+  }
+  return null;
+}
 
 /**
  * Upload PDF to Supabase Storage
  * @param pdfUri - Local file path to the PDF
  * @param batchId - Export batch ID
  * @param userId - User ID
- * @returns Cloud URL (public URL or path)
+ * @returns Storage path (exports/{userId}/{batchId}.pdf) or original local URI
  */
 export async function uploadPDFToStorage(
   pdfUri: string,
@@ -22,12 +53,10 @@ export async function uploadPDFToStorage(
   userId: string
 ): Promise<string> {
   if (!supabaseEnabled) {
-    console.log('[pdfStorage.uploadPDFToStorage] Supabase not enabled, skipping upload');
     return pdfUri; // Return local path if Supabase not available
   }
 
   if (!userId) {
-    console.log('[pdfStorage.uploadPDFToStorage] No userId provided, skipping upload');
     return pdfUri;
   }
 
@@ -43,11 +72,6 @@ export async function uploadPDFToStorage(
     // @ts-ignore
     const { data: sessionData } = await (supabase as any).auth.getSession();
     const accessToken = sessionData?.session?.access_token;
-
-    console.log('[pdfStorage.uploadPDFToStorage] Uploading PDF via direct REST upload:', {
-      url: storageUrl,
-      path: storagePath,
-    });
 
     // Upload using FileSystem.uploadAsync to avoid Blob/ArrayBuffer issues in RN
     const result = await uploadAsync(storageUrl, pdfUri, {
@@ -85,23 +109,14 @@ export async function uploadPDFToStorage(
           // Read the source file and write to cache
           const fileData = await readAsStringAsync(pdfUri, { encoding: 'base64' });
           await writeAsStringAsync(localCachePath, fileData, { encoding: 'base64' });
-          console.log('[pdfStorage.uploadPDFToStorage] PDF cached locally:', localCachePath);
         }
       }
     } catch (cacheError) {
       // Non-fatal - cache error shouldn't prevent upload
-      console.log('[pdfStorage.uploadPDFToStorage] Failed to cache PDF locally (non-fatal):', cacheError);
+      console.warn('[pdfStorage.uploadPDFToStorage] Failed to cache PDF locally (non-fatal):', cacheError);
     }
 
-    // Construct public URL (assuming bucket policy allows public access via getPublicUrl)
-    // @ts-ignore
-    const { data: urlData } = await supabase.storage
-      .from(EXPORTS_BUCKET)
-      .getPublicUrl(storagePath);
-
-    const cloudUrl = urlData.publicUrl;
-    console.log('[pdfStorage.uploadPDFToStorage] PDF uploaded successfully:', cloudUrl);
-    return cloudUrl;
+    return `storage://${EXPORTS_BUCKET}/${storagePath}`;
   } catch (error) {
     console.error('[pdfStorage.uploadPDFToStorage] Failed to upload PDF to Supabase Storage:', error);
     throw error;
@@ -137,36 +152,31 @@ export async function downloadPDFFromStorage(
       const { getInfoAsync } = await import('expo-file-system/legacy');
       const cacheInfo = await getInfoAsync(localCachePath);
       if (cacheInfo.exists) {
-        console.log('[pdfStorage.downloadPDFFromStorage] ✅ PDF found in local cache, using cached version');
-        console.log('[pdfStorage.downloadPDFFromStorage] Cache path:', localCachePath);
         return localCachePath;
       }
     } catch (cacheCheckError) {
       // Cache doesn't exist, continue with download
-      console.log('[pdfStorage.downloadPDFFromStorage] 📥 PDF not in local cache, will download from cloud...');
+      if (isDevLoggingEnabled) {
+        console.warn('[pdfStorage.downloadPDFFromStorage] Cache miss for PDF', cacheCheckError);
+      }
     }
 
-    console.log('[pdfStorage.downloadPDFFromStorage] 🌐 Starting download from Supabase Storage...');
-    console.log('[pdfStorage.downloadPDFFromStorage] Cloud URL:', cloudUrl);
-    console.log('[pdfStorage.downloadPDFFromStorage] Batch ID:', batchId);
-
-    // Extract storage path from URL or use it directly
-    let storagePath: string;
-    if (cloudUrl.startsWith('http')) {
+    // Extract storage path from URI or use it directly
+    let storagePath = extractStoragePath(cloudUrl);
+    if (!storagePath && cloudUrl.startsWith('http')) {
       // Extract path from public URL: https://...supabase.co/storage/v1/object/public/exports/userId/batchId.pdf
       const urlParts = cloudUrl.split('/');
-      const exportsIndex = urlParts.findIndex(part => part === 'exports');
+      const exportsIndex = urlParts.findIndex(part => part === EXPORTS_BUCKET);
       if (exportsIndex >= 0 && exportsIndex < urlParts.length - 1) {
         storagePath = urlParts.slice(exportsIndex + 1).join('/');
       } else {
         throw new Error('Invalid cloud URL format');
       }
-    } else {
-      // Assume it's already a storage path
+    }
+    if (!storagePath) {
+      // Assume it's already a storage-relative path (legacy format userId/filename)
       storagePath = cloudUrl;
     }
-
-    console.log('[pdfStorage.downloadPDFFromStorage] Downloading PDF from storage:', storagePath);
 
     // Get access token for authenticated requests
     // @ts-ignore
@@ -203,7 +213,6 @@ export async function downloadPDFFromStorage(
               binaryString += String.fromCharCode(...chunk);
             }
             base64String = btoa(binaryString);
-            console.log('[pdfStorage.downloadPDFFromStorage] ✅ Downloaded via Supabase SDK (Blob)');
           } else {
             // In React Native, the SDK might return something else
             // Throw to fall back to signed URL method
@@ -211,7 +220,6 @@ export async function downloadPDFFromStorage(
           }
         } catch (convertError) {
           // SDK download didn't work with Blob conversion - fall back to signed URL
-          console.log('[pdfStorage.downloadPDFFromStorage] Supabase SDK download returned non-standard format, trying signed URL:', convertError);
           throw convertError; // Re-throw to trigger fallback
         }
 
@@ -225,39 +233,26 @@ export async function downloadPDFFromStorage(
           ? `${finalCacheDir}${fileName}` 
           : `${finalCacheDir}/${fileName}`;
         
-        await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
-        console.log('[pdfStorage.downloadPDFFromStorage] ✅ PDF downloaded and saved locally:', finalLocalCachePath);
-        console.log('[pdfStorage.downloadPDFFromStorage] File size:', base64String.length, 'bytes (base64)');
-        return finalLocalCachePath;
+      await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
+      return finalLocalCachePath;
       }
     } catch (sdkError) {
       // Expected in React Native: Supabase SDK .download() doesn't return standard Blob
       // Fall back to signed URL method which works reliably
-      console.log('[pdfStorage.downloadPDFFromStorage] Falling back to signed URL method (React Native compatibility):', sdkError?.message || sdkError);
-      
-      // Fallback: Try signed URL (works better for private buckets)
-      try {
-        // @ts-ignore
-        const { data: signedUrlData, error: signedError } = await supabase.storage
-          .from(EXPORTS_BUCKET)
-          .createSignedUrl(storagePath, 3600); // 1 hour expiry
-
-        if (signedError || !signedUrlData?.signedUrl) {
-          throw signedError || new Error('No signed URL returned');
-        }
-
-        downloadUrl = signedUrlData.signedUrl;
-        console.log('[pdfStorage.downloadPDFFromStorage] Using signed URL');
-      } catch (signedError) {
-        console.log('[pdfStorage.downloadPDFFromStorage] Signed URL failed, trying public URL:', signedError);
-        
-        // Final fallback: Try public URL
-        // @ts-ignore
-        const { data: urlData } = await supabase.storage
-          .from(EXPORTS_BUCKET)
-          .getPublicUrl(storagePath);
-        downloadUrl = urlData.publicUrl;
+      if (isDevLoggingEnabled) {
+        console.warn('[pdfStorage.downloadPDFFromStorage] Falling back to signed URL method:', sdkError);
       }
+      // Fallback: Try signed URL (works better for private buckets)
+      // @ts-ignore
+      const { data: signedUrlData, error: signedError } = await supabase.storage
+        .from(EXPORTS_BUCKET)
+        .createSignedUrl(storagePath, 3600); // 1 hour expiry
+
+      if (signedError || !signedUrlData?.signedUrl) {
+        throw signedError || new Error('No signed URL returned');
+      }
+
+      downloadUrl = signedUrlData.signedUrl;
 
       // Download using fetch
       response = await fetch(downloadUrl, {
@@ -276,7 +271,6 @@ export async function downloadPDFFromStorage(
         blob = await response.blob();
       } catch (blobError) {
         // If blob() fails, try arrayBuffer as fallback
-        console.log('[pdfStorage.downloadPDFFromStorage] blob() failed, trying arrayBuffer()');
         const arrayBuffer = await response.arrayBuffer();
         blob = new Blob([arrayBuffer], { type: 'application/pdf' });
       }
@@ -296,7 +290,6 @@ export async function downloadPDFFromStorage(
         base64String = btoa(binaryString);
       } catch (convertError) {
         // Fallback: use FileReader if available (web) or arrayBuffer directly
-        console.log('[pdfStorage.downloadPDFFromStorage] arrayBuffer() conversion failed, trying alternative');
         if (typeof FileReader !== 'undefined') {
           // FileReader is available (web)
           base64String = await new Promise((resolve, reject) => {
@@ -338,11 +331,14 @@ export async function downloadPDFFromStorage(
         ? `${finalCacheDir}${fileName}` 
         : `${finalCacheDir}/${fileName}`;
       
-      await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
-      console.log('[pdfStorage.downloadPDFFromStorage] ✅ PDF downloaded and saved locally:', finalLocalCachePath);
-      console.log('[pdfStorage.downloadPDFFromStorage] File size:', base64String.length, 'bytes (base64)');
-      return finalLocalCachePath;
-    }
+        await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
+        if (isDevLoggingEnabled) {
+          console.log('[pdfStorage.downloadPDFFromStorage] Saved PDF to cache', finalLocalCachePath);
+        }
+        return finalLocalCachePath;
+      }
+
+      throw new Error('Storage download returned no data');
   } catch (error) {
     console.error('[pdfStorage.downloadPDFFromStorage] ❌ Failed to download PDF from storage:', error);
     throw error;
@@ -365,8 +361,6 @@ export async function deletePDFFromStorage(
   try {
     const storagePath = `${userId}/${batchId}.pdf`;
 
-    console.log('[pdfStorage.deletePDFFromStorage] Deleting PDF from storage:', storagePath);
-
     // @ts-ignore
     const { error } = await supabase.storage
       .from(EXPORTS_BUCKET)
@@ -377,7 +371,6 @@ export async function deletePDFFromStorage(
       throw error;
     }
 
-    console.log('[pdfStorage.deletePDFFromStorage] PDF deleted successfully');
   } catch (error) {
     console.error('[pdfStorage.deletePDFFromStorage] Failed to delete PDF from storage:', error);
     throw error;
@@ -417,7 +410,6 @@ export async function getSignedURL(
       throw new Error('No signed URL returned');
     }
 
-    console.log('[pdfStorage.getSignedURL] Signed URL created:', data.signedUrl);
     return data.signedUrl;
   } catch (error) {
     console.error('[pdfStorage.getSignedURL] Failed to create signed URL:', error);
@@ -426,10 +418,18 @@ export async function getSignedURL(
 }
 
 /**
- * Check if a URI is a cloud URL
+ * Check if a URI points to Supabase storage
+ */
+export function isStoragePath(uri: string): boolean {
+  return extractStoragePath(uri) !== null;
+}
+
+/**
+ * Check if a URI is a cloud URL (Supabase storage or remote HTTP/S)
  */
 export function isCloudURL(uri: string): boolean {
-  return uri.startsWith('http://') || uri.startsWith('https://');
+  if (!uri) return false;
+  return isStoragePath(uri) || uri.startsWith('http://') || uri.startsWith('https://');
 }
 
 /**
@@ -471,7 +471,9 @@ export async function clearCachedPDF(batchId: string): Promise<boolean> {
     const fileName = `${batchId}.pdf`;
     const cacheDir = Paths?.cache?.uri;
     if (!cacheDir) {
-      console.log('[pdfStorage.clearCachedPDF] Cache directory not available');
+      if (isDevLoggingEnabled) {
+        console.log('[pdfStorage.clearCachedPDF] Cache directory not available');
+      }
       return false;
     }
     
@@ -482,10 +484,14 @@ export async function clearCachedPDF(batchId: string): Promise<boolean> {
       const cacheInfo = await getInfoAsync(localCachePath);
       if (cacheInfo.exists) {
         await deleteAsync(localCachePath, { idempotent: true });
-        console.log('[pdfStorage.clearCachedPDF] Cached PDF deleted:', localCachePath);
+        if (isDevLoggingEnabled) {
+          console.log('[pdfStorage.clearCachedPDF] Cached PDF deleted', localCachePath);
+        }
         return true;
       } else {
-        console.log('[pdfStorage.clearCachedPDF] Cached PDF not found:', localCachePath);
+        if (isDevLoggingEnabled) {
+          console.log('[pdfStorage.clearCachedPDF] Cached PDF not found', localCachePath);
+        }
         return false;
       }
     } catch (error) {
@@ -497,4 +503,3 @@ export async function clearCachedPDF(batchId: string): Promise<boolean> {
     return false;
   }
 }
-

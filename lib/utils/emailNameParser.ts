@@ -45,3 +45,5 @@ export function parseNameFromEmail(email: string): string {
   // Return formatted name
   return `${firstNameFormatted} ${lastNameFormatted}`.trim();
 }
+
+

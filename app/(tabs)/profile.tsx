@@ -1172,18 +1172,33 @@ export default function ProfileScreen() {
           onToggle={toggleSection}
         >
           <TouchableOpacity
-            style={[styles.settingRow, isDark && styles.darkSettingRow]}
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
             onPress={() => router.push('/email-settings')}
           >
-            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-              Email Settings
-            </Text>
-            <View style={styles.settingRight}>
-              <Text style={[styles.settingValue, isDark && styles.darkSettingValue]}>
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Email Settings
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
                 Customize email template
               </Text>
-              <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
             </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => router.push('/recently-deleted')}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Recently Deleted
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Restore or permanently delete
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
           
           <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
@@ -1208,7 +1223,7 @@ export default function ProfileScreen() {
           </View>
           
           <TouchableOpacity
-            style={[styles.settingRow, isDark && styles.darkSettingRow]}
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
             onPress={async () => {
               Alert.alert(
                 'Reset Onboarding',
@@ -1231,9 +1246,14 @@ export default function ProfileScreen() {
               );
             }}
           >
-            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-              Reset Onboarding
-            </Text>
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Reset Onboarding
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Restart the welcome flow
+              </Text>
+            </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
         </CollapsibleSection>
@@ -1421,9 +1441,31 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
+  settingRowStacked: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+    gap: 12,
+  },
+  settingLeft: {
+    flex: 1,
+    gap: 4,
+  },
   settingLabel: {
     fontSize: 16,
+    fontWeight: '600',
     color: '#333',
+  },
+  settingDescription: {
+    fontSize: 14,
+    color: '#999',
+    marginTop: 2,
+  },
+  darkSettingDescription: {
+    color: '#666',
   },
   settingRight: {
     flexDirection: 'row',

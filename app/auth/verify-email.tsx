@@ -3,8 +3,22 @@ import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Keyboard, Scroll
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 
+const isDev = process.env.NODE_ENV !== 'production';
+const debug = (...args: any[]) => {
+  if (isDev) {
+    console.log(...args);
+  }
+};
+
+const maskEmail = (email?: string | null) => {
+  if (!email) return email ?? undefined;
+  const [local, domain] = email.split('@');
+  if (!domain || !local) return '***';
+  return `${local[0]}***@${domain}`;
+};
+
 export default function VerifyEmail() {
-  console.log('[verify-email] component render');
+  debug('[verify-email] component render');
   const router = useRouter();
   const {
     user,
@@ -28,11 +42,17 @@ export default function VerifyEmail() {
   const autoSentRef = useRef<string | null>(null);
   const verificationAttemptedRef = useRef<string | null>(null);
 
-  console.log('[verify-email] state snapshot', {
-    userEmail,
-    pendingEmail,
+  const maskedState = {
+    userEmail: maskEmail(userEmail),
+    pendingEmail: maskEmail(pendingEmail),
+    emailInput: maskEmail(emailInput),
+  };
+
+  debug('[verify-email] state snapshot', {
+    userEmail: maskedState.userEmail,
+    pendingEmail: maskedState.pendingEmail,
     pendingPassword: !!pendingPassword,
-    emailInput,
+    emailInput: maskedState.emailInput,
     otpCode: otpCode.length > 0 ? `${otpCode.length} chars` : 'empty',
     otpCodeLength: otpCode.length,
     statusMsg,
@@ -46,53 +66,57 @@ export default function VerifyEmail() {
   });
 
   useEffect(() => {
-    console.log('[verify-email] emailVerified effect', { emailVerified });
+    debug('[verify-email] emailVerified effect', { emailVerified });
     if (emailVerified) {
-      console.log('[verify-email] email verified, redirecting to onboarding');
+      debug('[verify-email] email verified, redirecting to onboarding');
       router.replace('/onboarding/welcome');
     }
   }, [emailVerified, router]);
 
   useEffect(() => {
-    console.log('[verify-email] email input sync effect', { pendingEmail, userEmail, emailInput });
+    debug('[verify-email] email input sync effect', { 
+      pendingEmail: maskEmail(pendingEmail), 
+      userEmail: maskEmail(userEmail), 
+      emailInput: maskEmail(emailInput),
+    });
     if (pendingEmail && pendingEmail !== emailInput) {
-      console.log('[verify-email] updating emailInput from pendingEmail', { pendingEmail });
+      debug('[verify-email] updating emailInput from pendingEmail', { pendingEmail });
       setEmailInput(pendingEmail);
     } else if (!pendingEmail && userEmail && userEmail !== emailInput) {
-      console.log('[verify-email] updating emailInput from userEmail', { userEmail });
+      debug('[verify-email] updating emailInput from userEmail', { userEmail });
       setEmailInput(userEmail);
     }
   }, [pendingEmail, userEmail, emailInput]);
 
   const sendOtp = useCallback(
     async (rawEmail: string, shouldCreateUser: boolean, silent = false) => {
-      console.log('[verify-email] sendOtp called', { rawEmail, shouldCreateUser, silent });
+      debug('[verify-email] sendOtp called', { rawEmail: maskEmail(rawEmail), shouldCreateUser, silent });
       const targetEmail = rawEmail.trim();
-      console.log('[verify-email] sendOtp trimmed email', { targetEmail });
+      debug('[verify-email] sendOtp trimmed email', { targetEmail: maskEmail(targetEmail) });
       if (!targetEmail) {
-        console.log('[verify-email] sendOtp - no email provided');
+        debug('[verify-email] sendOtp - no email provided');
         if (!silent) setStatusMsg('Enter your email first.');
         return false;
       }
       if (!silent) {
-        console.log('[verify-email] sendOtp - clearing error and setting status');
+        debug('[verify-email] sendOtp - clearing error and setting status');
         clearError();
         setStatusMsg('Sending code...');
       }
-      console.log('[verify-email] sendOtp - setting isSending to true');
+      debug('[verify-email] sendOtp - setting isSending to true');
       setIsSending(true);
-      console.log('[verify-email] sendOtp - calling requestEmailOtp');
+      debug('[verify-email] sendOtp - calling requestEmailOtp');
       const sent = await requestEmailOtp(targetEmail, shouldCreateUser);
-      console.log('[verify-email] sendOtp - requestEmailOtp returned', { sent });
+      debug('[verify-email] sendOtp - requestEmailOtp returned', { sent });
       setIsSending(false);
-      console.log('[verify-email] sendOtp - setting isSending to false');
+      debug('[verify-email] sendOtp - setting isSending to false');
       if (sent) {
-        console.log('[verify-email] sendOtp - success, setting status and cooldown');
+        debug('[verify-email] sendOtp - success, setting status and cooldown');
         if (!silent) setStatusMsg('Code sent. Check your email.');
         setCooldown(30);
         setEmailInput(targetEmail);
       } else if (!silent) {
-        console.log('[verify-email] sendOtp - failed, clearing status');
+        debug('[verify-email] sendOtp - failed, clearing status');
         setStatusMsg(null);
       }
       return sent;
@@ -102,25 +126,29 @@ export default function VerifyEmail() {
 
   // Auto-send OTP when arriving from signup (pendingEmail + pendingPassword means we just signed up)
   useEffect(() => {
-    console.log('[verify-email] auto-send effect', { pendingEmail, pendingPassword, autoSentRef: autoSentRef.current });
+    debug('[verify-email] auto-send effect', { 
+      pendingEmail: maskEmail(pendingEmail), 
+      pendingPassword, 
+      autoSentRef: autoSentRef.current ? maskEmail(autoSentRef.current) : null,
+    });
     if (!pendingEmail) {
-      console.log('[verify-email] auto-send effect - no pendingEmail, returning');
+      debug('[verify-email] auto-send effect - no pendingEmail, returning');
       return;
     }
     if (autoSentRef.current === pendingEmail) {
-      console.log('[verify-email] auto-send effect - already sent for this email, returning');
+      debug('[verify-email] auto-send effect - already sent for this email, returning');
       return;
     }
     // Only auto-send if we have pendingPassword (came from signup flow)
     // This means signUp already sent the Magic Link email, so we don't need to resend
     // But if user is here without pendingPassword, they might need to request code manually
     if (pendingPassword) {
-      console.log('[verify-email] auto-send skipped - code already sent during signup');
+      debug('[verify-email] auto-send skipped - code already sent during signup');
       setStatusMsg('Check your email for the 6-digit code.');
       autoSentRef.current = pendingEmail; // Mark as sent so we don't try again
-      console.log('[verify-email] auto-send effect - marked as sent', { email: autoSentRef.current });
+      debug('[verify-email] auto-send effect - marked as sent', { email: maskEmail(autoSentRef.current) });
     } else {
-      console.log('[verify-email] auto-send effect - no pendingPassword, user may need to request code manually');
+      debug('[verify-email] auto-send effect - no pendingPassword, user may need to request code manually');
     }
   }, [pendingEmail, pendingPassword]);
 
@@ -130,9 +158,13 @@ export default function VerifyEmail() {
     return () => clearTimeout(t);
   }, [cooldown]);
 
+  // Compute busy state before it's used in effects
+  const effectiveEmail = emailInput || pendingEmail || userEmail;
+  const busy = isLoading || isSending || isVerifying;
+
   // Auto-submit when 6 digits are entered (only once per code)
   useEffect(() => {
-    console.log('[verify-email] auto-submit effect', {
+    debug('[verify-email] auto-submit effect', {
       otpCodeLength: otpCode.length,
       otpCode: otpCode.length > 0 ? '***' : 'empty',
       busy,
@@ -145,7 +177,7 @@ export default function VerifyEmail() {
     });
     // Reset ref if code length changes (user is typing a new code)
     if (otpCode.length < 6) {
-      console.log('[verify-email] auto-submit effect - code length < 6, resetting verificationAttemptedRef');
+      debug('[verify-email] auto-submit effect - code length < 6, resetting verificationAttemptedRef');
       verificationAttemptedRef.current = null;
     }
     // Only auto-submit if:
@@ -155,7 +187,7 @@ export default function VerifyEmail() {
     // 4. No error (prevent infinite loop after failed verification)
     // 5. Code hasn't been attempted yet
     if (otpCode.length === 6 && !busy && !isVerifying && !error && verificationAttemptedRef.current !== otpCode) {
-      console.log('[verify-email] auto-submit effect - triggering auto-submit', {
+      debug('[verify-email] auto-submit effect - triggering auto-submit', {
         otpCode: '***',
         busy,
         isVerifying,
@@ -163,15 +195,15 @@ export default function VerifyEmail() {
         verificationAttemptedRef: verificationAttemptedRef.current,
       });
       // Don't set verificationAttemptedRef here - let onVerifyOtp do it to avoid race conditions
-      console.log('[verify-email] auto-submit effect - dismissing keyboard');
+      debug('[verify-email] auto-submit effect - dismissing keyboard');
       Keyboard.dismiss();
       // Small delay to ensure keyboard is dismissed before submitting
       setTimeout(() => {
-        console.log('[verify-email] auto-submit effect - timeout callback, calling onVerifyOtp');
+        debug('[verify-email] auto-submit effect - timeout callback, calling onVerifyOtp');
         onVerifyOtp();
       }, 100);
     } else if (otpCode.length === 6) {
-      console.log('[verify-email] auto-submit effect - code is 6 digits but not attempting', {
+      debug('[verify-email] auto-submit effect - code is 6 digits but not attempting', {
         busy,
         isVerifying,
         hasError: !!error,
@@ -182,45 +214,42 @@ export default function VerifyEmail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [otpCode, busy, isVerifying, error]);
-
-  const effectiveEmail = emailInput || pendingEmail || userEmail;
-  const busy = isLoading || isSending || isVerifying;
   const sendLabel = isSending ? 'Sending...' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Send 6-digit code';
   const verifyLabel = isVerifying ? 'Verifying...' : 'Verify code';
 
-  console.log('[verify-email] computed values', {
-    effectiveEmail,
+  debug('[verify-email] computed values', {
+    effectiveEmail: maskEmail(effectiveEmail),
     busy,
     sendLabel,
     verifyLabel,
   });
 
   const onSendOtp = async () => {
-    console.log('[verify-email] onSendOtp button pressed', { effectiveEmail, pendingPassword: !!pendingPassword });
+    debug('[verify-email] onSendOtp button pressed', { effectiveEmail: maskEmail(effectiveEmail), pendingPassword: !!pendingPassword });
     await sendOtp(effectiveEmail, Boolean(pendingPassword), false);
   };
 
   const onVerifyOtp = async () => {
     const token = otpCode.trim();
-    console.log('[verify-email] onVerifyOtp called', {
+    debug('[verify-email] onVerifyOtp called', {
       isVerifying,
       verificationAttemptedRef: verificationAttemptedRef.current,
       otpCode: otpCode.length > 0 ? `${otpCode.length} chars` : 'empty',
       otpCodeLength: otpCode.length,
       tokenLength: token.length,
-      effectiveEmail,
+      effectiveEmail: maskEmail(effectiveEmail),
     });
     
     // Validate inputs first
     const targetEmail = (effectiveEmail || '').trim();
-    console.log('[verify-email] onVerifyOtp - targetEmail', { targetEmail });
+    debug('[verify-email] onVerifyOtp - targetEmail', { targetEmail: maskEmail(targetEmail) });
     if (!targetEmail) {
-      console.log('[verify-email] onVerifyOtp - no email, setting error message');
+      debug('[verify-email] onVerifyOtp - no email, setting error message');
       setStatusMsg('Enter your email first.');
       return;
     }
     if (token.length < 6) {
-      console.log('[verify-email] onVerifyOtp - token too short, setting error message');
+      debug('[verify-email] onVerifyOtp - token too short, setting error message');
       setStatusMsg('Enter the 6-digit code.');
       return;
     }
@@ -228,7 +257,7 @@ export default function VerifyEmail() {
     // Prevent multiple verification attempts with the same code
     // Check this AFTER validation so we can return early on invalid input
     if (isVerifying || verificationAttemptedRef.current === token) {
-      console.log('[verify-email] onVerifyOtp - blocked (already verifying or already attempted)', {
+      debug('[verify-email] onVerifyOtp - blocked (already verifying or already attempted)', {
         isVerifying,
         verificationAttemptedRef: verificationAttemptedRef.current,
         token: token.length > 0 ? '***' : 'empty',
@@ -238,32 +267,32 @@ export default function VerifyEmail() {
     }
     
     // Mark this code as attempted immediately to prevent duplicate calls
-    console.log('[verify-email] onVerifyOtp - setting verificationAttemptedRef and starting verification', {
+    debug('[verify-email] onVerifyOtp - setting verificationAttemptedRef and starting verification', {
       tokenLength: token.length,
     });
     verificationAttemptedRef.current = token;
     clearError();
     setStatusMsg('Verifying code...');
-    console.log('[verify-email] onVerifyOtp - setting isVerifying to true');
+    debug('[verify-email] onVerifyOtp - setting isVerifying to true');
     setIsVerifying(true);
-    console.log('[verify-email] onVerifyOtp - calling verifyEmailOtp', { targetEmail, tokenLength: token.length });
+    debug('[verify-email] onVerifyOtp - calling verifyEmailOtp', { targetEmail: maskEmail(targetEmail), tokenLength: token.length });
     const outcome = await verifyEmailOtp(targetEmail, token);
-    console.log('[verify-email] onVerifyOtp - verifyEmailOtp returned', { outcome });
+    debug('[verify-email] onVerifyOtp - verifyEmailOtp returned', { outcome });
     setIsVerifying(false);
-    console.log('[verify-email] onVerifyOtp - setting isVerifying to false');
+    debug('[verify-email] onVerifyOtp - setting isVerifying to false');
     if (outcome === 'success') {
-      console.log('[verify-email] onVerifyOtp - SUCCESS! Setting status and redirecting');
+      debug('[verify-email] onVerifyOtp - SUCCESS! Setting status and redirecting');
       setStatusMsg('Verified. Redirecting...');
       setOtpCode('');
       verificationAttemptedRef.current = null; // Reset for next attempt
-      console.log('[verify-email] onVerifyOtp - navigating to onboarding');
+      debug('[verify-email] onVerifyOtp - navigating to onboarding');
       router.replace('/onboarding/welcome');
     } else {
-      console.log('[verify-email] onVerifyOtp - FAILED', { outcome });
+      debug('[verify-email] onVerifyOtp - FAILED', { outcome });
       setStatusMsg(null);
       // Don't reset verificationAttemptedRef on failure - keep it set to prevent infinite loop
       // User needs to clear the code or type a new digit to trigger a new attempt
-      console.log('[verify-email] onVerifyOtp - keeping verificationAttemptedRef set to prevent infinite loop');
+      debug('[verify-email] onVerifyOtp - keeping verificationAttemptedRef set to prevent infinite loop');
       // The ref will be reset when user types a new digit (in the auto-submit effect when length < 6)
     }
   };
@@ -320,7 +349,7 @@ export default function VerifyEmail() {
           <TextInput
             value={otpCode}
             onChangeText={(text) => {
-              console.log('[verify-email] OTP input changed', { 
+              debug('[verify-email] OTP input changed', { 
                 oldLength: otpCode.length, 
                 newLength: text.length,
                 text: text.length > 0 ? '***' : 'empty',
@@ -332,34 +361,34 @@ export default function VerifyEmail() {
             maxLength={6}
             returnKeyType="done"
             onSubmitEditing={() => {
-              console.log('[verify-email] OTP input onSubmitEditing', { 
+              debug('[verify-email] OTP input onSubmitEditing', { 
                 otpCodeLength: otpCode.length, 
                 busy,
                 shouldSubmit: otpCode.length === 6 && !busy,
               });
               if (otpCode.length === 6 && !busy) {
-                console.log('[verify-email] OTP input onSubmitEditing - submitting');
+                debug('[verify-email] OTP input onSubmitEditing - submitting');
                 Keyboard.dismiss();
                 onVerifyOtp();
               } else {
-                console.log('[verify-email] OTP input onSubmitEditing - not submitting', {
+                debug('[verify-email] OTP input onSubmitEditing - not submitting', {
                   otpCodeLength: otpCode.length,
                   busy,
                 });
               }
             }}
             onBlur={() => {
-              console.log('[verify-email] OTP input onBlur');
+              debug('[verify-email] OTP input onBlur');
               Keyboard.dismiss();
             }}
             onFocus={() => {
-              console.log('[verify-email] OTP input onFocus', { otpCodeLength: otpCode.length });
+              debug('[verify-email] OTP input onFocus', { otpCodeLength: otpCode.length });
             }}
             style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
           />
           <TouchableOpacity
             onPress={() => {
-              console.log('[verify-email] Verify button pressed', { 
+              debug('[verify-email] Verify button pressed', { 
                 busy, 
                 isVerifying, 
                 isLoading, 

@@ -16,7 +16,34 @@ const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 export const supabaseEnabled = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
-console.log('Supabase enabled:', supabaseEnabled);
+const isDev = process.env.NODE_ENV !== 'production';
+const debug = (...args: any[]) => {
+  if (isDev) {
+    console.log(...args);
+  }
+};
+
+const maskUserId = (value?: string | null) =>
+  value ? `${value.substring(0, 8)}...` : undefined;
+
+const maskEmail = (email?: string | null) => {
+  if (!email) return undefined;
+  const [local, domain] = email.split('@');
+  if (!domain || !local) return '***';
+  return `${local[0]}***@${domain}`;
+};
+
+const maskName = (name?: string | null) => {
+  if (!name) return undefined;
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => `${part[0]}***`)
+    .join(' ');
+};
+
+debug('Supabase enabled:', supabaseEnabled);
 
 // Stub interfaces for when Supabase is not configured
 interface SupabaseClient {
@@ -38,39 +65,39 @@ interface SupabaseClient {
 const createStubClient = (): SupabaseClient => ({
   auth: {
     signIn: async () => {
-      console.log('Stub: signIn called');
+      debug('Stub: signIn called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     signUp: async () => {
-      console.log('Stub: signUp called');
+      debug('Stub: signUp called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     signInWithPassword: async () => {
-      console.log('Stub: signInWithPassword called');
+      debug('Stub: signInWithPassword called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     signInWithOtp: async () => {
-      console.log('Stub: signInWithOtp called');
+      debug('Stub: signInWithOtp called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     signOut: async () => {
-      console.log('Stub: signOut called');
+      debug('Stub: signOut called');
       return { error: null };
     },
     getSession: async () => {
-      console.log('Stub: getSession called');
+      debug('Stub: getSession called');
       return { data: { session: null }, error: null };
     },
     verifyOtp: async () => {
-      console.log('Stub: verifyOtp called');
+      debug('Stub: verifyOtp called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     updateUser: async () => {
-      console.log('Stub: updateUser called');
+      debug('Stub: updateUser called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     resend: async () => {
-      console.log('Stub: resend called');
+      debug('Stub: resend called');
       return { data: null, error: new Error('Supabase not configured') };
     },
   },
@@ -104,18 +131,66 @@ function getSupabaseClient(): SupabaseClient {
   }
 
   // Initialize real Supabase client for React Native/Expo with SQLite storage
-  // Using SQLiteStorageAdapter instead of SecureStoreAdapter to avoid 2048 byte limit
+  // Use SQLiteStorageAdapter for session persistence (no 2048 byte limit)
   // Detect session in URL is disabled (handled via Linking), PKCE is default in RN
   // @ts-ignore - allow passing storage adapter even if our local type is minimal
-  supabaseClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
-    auth: {
-      storage: SQLiteStorageAdapter,
-      persistSession: true,
-      autoRefreshToken: true,
-      flowType: 'pkce',
-      detectSessionInUrl: false,
-    },
-  }) as unknown as SupabaseClient;
+  debug('[supabase] Initializing Supabase client', {
+    url: SUPABASE_URL ? `${SUPABASE_URL.substring(0, 20)}...` : 'MISSING',
+    hasAnonKey: !!SUPABASE_ANON_KEY,
+    anonKeyLength: SUPABASE_ANON_KEY?.length || 0,
+  });
+  
+  try {
+    supabaseClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+      auth: {
+        storage: SQLiteStorageAdapter,
+        persistSession: true,
+        autoRefreshToken: true,
+        flowType: 'pkce',
+        detectSessionInUrl: false,
+      },
+      global: {
+        // Add fetch options for better error handling
+        fetch: (url, options = {}) => {
+          debug('[supabase] Making request', {
+            url: typeof url === 'string' ? url.substring(0, 50) : 'non-string',
+            method: options.method || 'GET',
+          });
+          return fetch(url, options);
+        },
+      },
+    }) as unknown as SupabaseClient;
+    debug('[supabase] Client initialized successfully');
+    
+    // After client initialization, Supabase should automatically restore session from storage
+    // However, this happens asynchronously, so we trigger restoration here (fire-and-forget)
+    // The actual session check will happen in checkSession() with retries
+    (async () => {
+      try {
+        // @ts-ignore
+        const { data: initialSession } = await (supabaseClient as any).auth.getSession();
+        debug('[supabase] Initial session check after client init:', {
+          hasSession: !!initialSession?.session,
+          hasUser: !!initialSession?.session?.user,
+        });
+        
+        // CRITICAL: Check if database still has the session after Supabase's getSession call
+        const { database } = await import('./db/sqlite');
+        const sessionCount = await database.countAuthSessions();
+        const allKeys = await database.getAllAuthSessionKeys();
+        console.log('[supabase] 🔍 Database state AFTER initial session check:', {
+          sessionCount,
+          keys: allKeys
+        });
+      } catch (sessionError) {
+        debug('[supabase] Error checking initial session (non-fatal):', sessionError);
+        // Non-fatal - session restoration might still be in progress
+      }
+    })();
+  } catch (error) {
+    console.error('[supabase] Failed to create Supabase client:', error);
+    throw error;
+  }
 
   return supabaseClient;
 }
@@ -172,44 +247,180 @@ export const auth = {
 export const profileSync = {
   async uploadProfile(profile: Profile, userId?: string | null): Promise<void> {
     if (!supabaseEnabled) {
-      console.log('Stub: uploadProfile called');
+      debug('Stub: uploadProfile called');
       return;
     }
 
     if (!userId) {
-      console.log('[profileSync.uploadProfile] No userId provided, skipping Supabase sync');
+      debug('[profileSync.uploadProfile] No userId provided, skipping Supabase sync');
       return;
     }
 
     try {
-      console.log('[profileSync.uploadProfile] Uploading profile to Supabase', {
-        userId: userId.substring(0, 8) + '...',
-        email: profile.email,
-        fullName: profile.fullName,
+      debug('[profileSync.uploadProfile] Uploading profile to Supabase', {
+        userId: maskUserId(userId),
+        email: maskEmail(profile.email),
+        fullName: maskName(profile.fullName),
       });
 
-      // @ts-ignore
-      const { data, error } = await supabase
-        .from('profiles')
-        .upsert({
-          user_id: userId,
-          email: profile.email,
-          display_name: profile.fullName,
-          metadata: profile,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: 'user_id',
-        })
-        .select()
-        .single();
-
-      if (error) {
+      // Try to get session from auth store first (most reliable)
+      // Import authStore to get current session
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() with retries
+      if (!sessionToUse) {
+        debug('[profileSync.uploadProfile] Session not in auth store, trying getSession()');
+        let sessionData: any = null;
+        let sessionError: any = null;
+        const maxRetries = 5;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          // @ts-ignore
+          const result = await (supabase as any).auth.getSession();
+          sessionData = result?.data;
+          sessionError = result?.error;
+          
+          if (!sessionError && sessionData?.session) {
+            sessionToUse = sessionData.session;
+            debug('[profileSync.uploadProfile] Session loaded from getSession()', {
+              attempt,
+              userId: maskUserId(sessionToUse.user?.id),
+              matchesUploadUserId: sessionToUse.user?.id === userId,
+            });
+            break;
+          }
+          
+          if (attempt < maxRetries) {
+            debug('[profileSync.uploadProfile] Session not found, retrying...', { attempt, error: sessionError });
+            // Exponential backoff to allow session to propagate
+            await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+          }
+        }
+      }
+      
+      if (!sessionToUse) {
+        debug('[profileSync.uploadProfile] No session available, cannot upload profile');
+        throw new Error('No active session - please sign in again');
+      }
+      
+      // Ensure session is set on client before making request
+      // This ensures the client will include the session token in the request
+      debug('[profileSync.uploadProfile] Ensuring session is set on client', {
+        userId: sessionToUse.user?.id,
+        hasAccessToken: !!sessionToUse.access_token,
+        hasRefreshToken: !!sessionToUse.refresh_token,
+      });
+      
+      // Set session with retries to ensure it's properly set
+      let sessionSet = false;
+      let setSessionError: any = null;
+      const maxSetRetries = 3;
+      for (let attempt = 1; attempt <= maxSetRetries; attempt++) {
+        try {
+          // @ts-ignore - supabase typings expect token pair
+          const { data, error } = await (supabase as any).auth.setSession({
+            access_token: sessionToUse.access_token,
+            refresh_token: sessionToUse.refresh_token,
+          });
+          if (error) {
+            setSessionError = error;
+            debug('[profileSync.uploadProfile] Error setting session (attempt ' + attempt + '):', error);
+            if (attempt < maxSetRetries) {
+              await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+            }
+          } else if (data?.session) {
+            sessionSet = true;
+            setSessionError = null;
+            sessionToUse = data.session;
+            debug('[profileSync.uploadProfile] Session set on client successfully (attempt ' + attempt + ')');
+            break;
+          } else {
+            setSessionError = new Error('No session returned from setSession');
+            debug('[profileSync.uploadProfile] No session returned from setSession (attempt ' + attempt + ')');
+            if (attempt < maxSetRetries) {
+              await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+            }
+          }
+        } catch (err) {
+          setSessionError = err;
+          debug('[profileSync.uploadProfile] Exception while setting session (attempt ' + attempt + '):', err);
+          if (attempt < maxSetRetries) {
+            await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+          }
+        }
+      }
+      
+      if (!sessionSet) {
+        debug('[profileSync.uploadProfile] Failed to set session after retries:', setSessionError);
+        throw new Error('Failed to set session - please try again');
+      }
+      
+      // Instead of waiting for SecureStore to persist (which can be very slow),
+      // we'll use the in-memory session to make an authenticated request
+      // by manually setting the Authorization header via the REST API
+      debug('[profileSync.uploadProfile] Using direct REST API with in-memory session token');
+      
+      const accessToken = sessionToUse.access_token;
+      if (!accessToken) {
+        debug('[profileSync.uploadProfile] No access token available in session');
+        throw new Error('No access token available - please try signing in again');
+      }
+      
+      // Make direct REST API call with Authorization header
+      // This bypasses the need for getSession() to work (which requires SecureStore persistence)
+      const restUrl = `${SUPABASE_URL}/rest/v1/profiles`;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      const profileData = {
+        user_id: userId,
+        email: profile.email,
+        display_name: profile.fullName,
+        metadata: profile,
+        updated_at: new Date().toISOString(),
+      };
+      
+      debug('[profileSync.uploadProfile] Making authenticated REST request', {
+        url: restUrl.substring(0, 50) + '...',
+        hasAccessToken: !!accessToken,
+        hasApiKey: !!apiKey,
+      });
+      
+      const response = await fetch(restUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation,resolution=merge-duplicates',
+        },
+        body: JSON.stringify(profileData),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        debug('[profileSync.uploadProfile] REST request failed', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+        });
+        const error = errorData;
         console.error('[profileSync.uploadProfile] Error uploading profile:', error);
         throw error;
       }
+      
+      const data = await response.json();
 
-      console.log('[profileSync.uploadProfile] Profile uploaded successfully to Supabase', {
-        user_id: data?.user_id,
+      const uploadedUserId = data?.[0]?.user_id || userId;
+      debug('[profileSync.uploadProfile] Profile uploaded successfully to Supabase', {
+        user_id: maskUserId(uploadedUserId),
+        dataReceived: !!data,
       });
     } catch (error) {
       console.error('[profileSync.uploadProfile] Failed to upload profile to Supabase:', error);
@@ -220,51 +431,115 @@ export const profileSync = {
 
   async downloadProfile(userId?: string | null): Promise<Profile | null> {
     if (!supabaseEnabled) {
-      console.log('Stub: downloadProfile called');
+      debug('Stub: downloadProfile called');
       return null;
     }
 
     if (!userId) {
-      console.log('[profileSync.downloadProfile] No userId provided, skipping Supabase download');
+      debug('[profileSync.downloadProfile] No userId provided, skipping Supabase download');
       return null;
     }
 
     try {
-      console.log('[profileSync.downloadProfile] Downloading profile from Supabase', {
-        userId: userId.substring(0, 8) + '...',
+      debug('[profileSync.downloadProfile] Downloading profile from Supabase', {
+        userId: maskUserId(userId),
       });
 
-      // @ts-ignore
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', userId)
-        .is('deleted_at', null)
-        .single();
-
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // No profile found - this is OK
-          console.log('[profileSync.downloadProfile] No profile found in Supabase');
+      // Try to get session from auth store first
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      // Use direct REST API if we have a session, otherwise fall back to Supabase client
+      if (sessionToUse?.access_token) {
+        const accessToken = sessionToUse.access_token;
+        const restUrl = `${SUPABASE_URL}/rest/v1/profiles?user_id=eq.${userId}&deleted_at=is.null&select=*`;
+        const apiKey = SUPABASE_ANON_KEY;
+        
+        debug('[profileSync.downloadProfile] Using direct REST API with session token');
+        
+        const response = await fetch(restUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 406) {
+            // No profile found - this is OK
+            debug('[profileSync.downloadProfile] No profile found in Supabase');
+            return null;
+          }
+          const errorText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { message: errorText };
+          }
+          console.error('[profileSync.downloadProfile] Error downloading profile:', errorData);
+          throw errorData;
+        }
+        
+        const dataArray = await response.json();
+        const data = Array.isArray(dataArray) && dataArray.length > 0 ? dataArray[0] : null;
+        
+        if (!data || !data.metadata) {
+          debug('[profileSync.downloadProfile] Profile found but metadata is empty');
           return null;
         }
-        console.error('[profileSync.downloadProfile] Error downloading profile:', error);
-        throw error;
+
+        debug('[profileSync.downloadProfile] Profile downloaded successfully from Supabase', {
+          user_id: maskUserId(data.user_id),
+          email: maskEmail(data.email),
+          display_name: maskName(data.display_name),
+        });
+
+        return data.metadata as Profile;
+      } else {
+        // Fallback to Supabase client (may fail if session not persisted yet)
+        debug('[profileSync.downloadProfile] No session available, using Supabase client (may fail)');
+        // @ts-ignore
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .is('deleted_at', null)
+          .single();
+
+        if (error) {
+          if (error.code === 'PGRST116') {
+            // No profile found - this is OK
+            debug('[profileSync.downloadProfile] No profile found in Supabase');
+            return null;
+          }
+          console.error('[profileSync.downloadProfile] Error downloading profile:', error);
+          throw error;
+        }
+
+        if (!data || !data.metadata) {
+          debug('[profileSync.downloadProfile] Profile found but metadata is empty');
+          return null;
+        }
+
+        debug('[profileSync.downloadProfile] Profile downloaded successfully from Supabase', {
+          user_id: maskUserId(data.user_id),
+          email: maskEmail(data.email),
+          display_name: maskName(data.display_name),
+        });
+
+        return data.metadata as Profile;
       }
-
-      if (!data || !data.metadata) {
-        console.log('[profileSync.downloadProfile] Profile found but metadata is empty');
-        return null;
-      }
-
-      console.log('[profileSync.downloadProfile] Profile downloaded successfully from Supabase', {
-        user_id: data.user_id,
-        email: data.email,
-        display_name: data.display_name,
-      });
-
-      // Return the profile from metadata
-      return data.metadata as Profile;
     } catch (error) {
       console.error('[profileSync.downloadProfile] Failed to download profile from Supabase:', error);
       // Don't throw - allow local load to continue even if sync fails
@@ -283,7 +558,7 @@ export const logsSync = {
     }
 
     if (!userId) {
-      console.log('[logsSync.uploadLog] No userId provided, skipping Supabase sync');
+      debug('[logsSync.uploadLog] No userId provided, skipping Supabase sync');
       return;
     }
 
@@ -291,17 +566,45 @@ export const logsSync = {
       // Convert minutes to hours for the hours field (for querying)
       const hours = log.minutesOvertime / 60;
 
-      // Supabase uses UUIDs, but our logs use string IDs like "log_1234567890"
-      // We'll store the original ID in extras JSONB and query by that
-      // First, check if a log with this user_id and extras.id already exists
-      // @ts-ignore
-      const { data: existing } = await supabase
-        .from('overtime_logs')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('extras->>id', log.id) // Match by original ID in extras JSONB
-        .is('deleted_at', null)
-        .maybeSingle();
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug('[logsSync.uploadLog] No session available, cannot upload log');
+        throw new Error('No active session - please sign in again');
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Check if log already exists using direct REST API
+      const checkUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?user_id=eq.${userId}&extras->>id=eq.${log.id}&deleted_at=is.null&select=id&limit=1`;
+      
+      const checkResponse = await fetch(checkUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      let existingId: string | null = null;
+      if (checkResponse.ok) {
+        const existingData = await checkResponse.json();
+        if (Array.isArray(existingData) && existingData.length > 0) {
+          existingId = existingData[0].id;
+        }
+      }
 
       const logData = {
         user_id: userId,
@@ -311,33 +614,53 @@ export const logsSync = {
         notes: log.comments || null,
         extras: log, // Store full object including original ID in extras JSONB
         updated_at: log.updatedAt || new Date().toISOString(),
+        deleted_at: log.deletedAt || null, // Include soft delete timestamp
       };
 
-      // @ts-ignore
-      let data, error;
-      if (existing) {
+      let response: Response;
+      if (existingId) {
         // Update existing log
-        ({ data, error } = await supabase
-          .from('overtime_logs')
-          .update(logData)
-          .eq('id', existing.id)
-          .select()
-          .single());
+        debug('[logsSync.uploadLog] Updating existing log', { existingId, logId: log.id });
+        const updateUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?id=eq.${existingId}&select=*`;
+        response = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(logData),
+        });
       } else {
-        // Insert new log (Supabase will generate UUID)
-        ({ data, error } = await supabase
-          .from('overtime_logs')
-          .insert(logData)
-          .select()
-          .single());
+        // Insert new log
+        debug('[logsSync.uploadLog] Inserting new log', { logId: log.id });
+        const insertUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?select=*`;
+        response = await fetch(insertUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(logData),
+        });
       }
 
-      if (error) {
-        console.error('[logsSync.uploadLog] Error uploading log:', error);
-        throw error;
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        console.error('[logsSync.uploadLog] Error uploading log:', errorData);
+        throw errorData;
       }
 
-      console.log('[logsSync.uploadLog] Log uploaded successfully to Supabase', {
+      debug('[logsSync.uploadLog] Log uploaded successfully to Supabase', {
         logId: log.id,
       });
     } catch (error) {
@@ -352,7 +675,7 @@ export const logsSync = {
     }
 
     try {
-      console.log('[logsSync.uploadLogs] Uploading logs to Supabase', {
+      debug('[logsSync.uploadLogs] Uploading logs to Supabase', {
         count: logs.length,
         userId: userId.substring(0, 8) + '...',
       });
@@ -367,7 +690,7 @@ export const logsSync = {
         })));
       }
 
-      console.log('[logsSync.uploadLogs] All logs uploaded successfully');
+      debug('[logsSync.uploadLogs] All logs uploaded successfully');
     } catch (error) {
       console.error('[logsSync.uploadLogs] Failed to upload logs:', error);
       throw error;
@@ -380,49 +703,125 @@ export const logsSync = {
     }
 
     if (!userId) {
-      console.log('[logsSync.downloadLogs] No userId provided, skipping Supabase download');
+      debug('[logsSync.downloadLogs] No userId provided, skipping Supabase download');
       return [];
     }
 
     try {
-      console.log('[logsSync.downloadLogs] Downloading logs from Supabase', {
+      debug('[logsSync.downloadLogs] Downloading logs from Supabase', {
         userId: userId.substring(0, 8) + '...',
       });
 
-      // @ts-ignore
-      const { data, error } = await supabase
-        .from('overtime_logs')
-        .select('*')
-        .eq('user_id', userId)
-        .is('deleted_at', null)
-        .order('date', { ascending: false })
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('[logsSync.downloadLogs] Error downloading logs:', error);
-        throw error;
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
       }
-
-      if (!data || data.length === 0) {
-        console.log('[logsSync.downloadLogs] No logs found in Supabase');
-        return [];
-      }
-
-      // Extract full objects from extras JSONB
-      const logs = data
-        .map((row: any) => {
-          if (row.extras && typeof row.extras === 'object') {
-            return row.extras as OvertimeLog;
+      
+      // Use direct REST API if we have a session, otherwise fall back to Supabase client
+      if (sessionToUse?.access_token) {
+        const accessToken = sessionToUse.access_token;
+        const apiKey = SUPABASE_ANON_KEY;
+        const restUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?user_id=eq.${userId}&deleted_at=is.null&order=date.desc,created_at.desc&select=*`;
+        
+        debug('[logsSync.downloadLogs] Using direct REST API with session token');
+        
+        const response = await fetch(restUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 406) {
+            // No logs found - this is OK
+            debug('[logsSync.downloadLogs] No logs found in Supabase');
+            return [];
           }
-          return null;
-        })
-        .filter((log: OvertimeLog | null): log is OvertimeLog => log !== null);
+          const errorText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { message: errorText };
+          }
+          console.error('[logsSync.downloadLogs] Error downloading logs:', errorData);
+          throw errorData;
+        }
+        
+        const data = await response.json();
+        
+        if (!data || !Array.isArray(data) || data.length === 0) {
+          debug('[logsSync.downloadLogs] No logs found in Supabase');
+          return [];
+        }
 
-      console.log('[logsSync.downloadLogs] Logs downloaded successfully from Supabase', {
-        count: logs.length,
-      });
+        // Extract full objects from extras JSONB
+        const logs = data
+          .map((row: any) => {
+            if (row.extras && typeof row.extras === 'object') {
+              return row.extras as OvertimeLog;
+            }
+            debug('[logsSync.downloadLogs] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
+            return null;
+          })
+          .filter((log: OvertimeLog | null): log is OvertimeLog => log !== null);
 
-      return logs;
+        debug('[logsSync.downloadLogs] Logs downloaded successfully from Supabase', {
+          count: logs.length,
+          rawCount: data.length,
+        });
+
+        return logs;
+      } else {
+        // Fallback to Supabase client (may fail if session not persisted yet)
+        debug('[logsSync.downloadLogs] No session available, using Supabase client (may fail)');
+        // @ts-ignore
+        const { data, error } = await supabase
+          .from('overtime_logs')
+          .select('*')
+          .eq('user_id', userId)
+          .is('deleted_at', null)
+          .order('date', { ascending: false })
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('[logsSync.downloadLogs] Error downloading logs:', error);
+          throw error;
+        }
+
+        if (!data || data.length === 0) {
+          debug('[logsSync.downloadLogs] No logs found in Supabase');
+          return [];
+        }
+
+        // Extract full objects from extras JSONB
+        const logs = data
+          .map((row: any) => {
+            if (row.extras && typeof row.extras === 'object') {
+              return row.extras as OvertimeLog;
+            }
+            debug('[logsSync.downloadLogs] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
+            return null;
+          })
+          .filter((log: OvertimeLog | null): log is OvertimeLog => log !== null);
+
+        debug('[logsSync.downloadLogs] Logs downloaded successfully from Supabase', {
+          count: logs.length,
+          rawCount: data.length,
+        });
+
+        return logs;
+      }
     } catch (error) {
       console.error('[logsSync.downloadLogs] Failed to download logs from Supabase:', error);
       return [];
@@ -475,19 +874,19 @@ export const logsSync = {
         .maybeSingle();
 
       if (existing) {
-        // Soft delete by setting deleted_at
+        // Soft delete using RPC function to bypass RLS policy issues
         // @ts-ignore
-        const { error } = await supabase
-          .from('overtime_logs')
-          .update({ deleted_at: new Date().toISOString() })
-          .eq('id', existing.id);
+        const { error } = await supabase.rpc('soft_delete_overtime_log', {
+          log_uuid: existing.id,
+          user_uuid: userId
+        });
 
         if (error) {
           console.error('[logsSync.deleteLog] Error deleting log:', error);
           throw error;
         }
 
-        console.log('[logsSync.deleteLog] Log deleted successfully from Supabase', {
+        debug('[logsSync.deleteLog] Log deleted successfully from Supabase', {
           logId,
         });
       }
@@ -508,23 +907,50 @@ export const shiftsSync = {
     }
 
     if (!userId) {
-      console.log('[shiftsSync.uploadShift] No userId provided, skipping Supabase sync');
+      debug('[shiftsSync.uploadShift] No userId provided, skipping Supabase sync');
       return;
     }
 
     try {
-      // Supabase uses UUIDs, but our shifts use string IDs like "shift_1234567890"
-      // We'll store the original ID in extras JSONB and query by that
-      // First, check if a shift with this user_id and extras.id already exists
-      // @ts-ignore
-      const { data: existing } = await supabase
-        .from('shifts')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('extras->>id', shift.id) // Match by original ID in extras JSONB
-        .eq('notes', 'usual_shift_pattern')
-        .is('deleted_at', null)
-        .maybeSingle();
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug('[shiftsSync.uploadShift] No session available, cannot upload shift');
+        throw new Error('No active session - please sign in again');
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Check if shift already exists using direct REST API
+      const checkUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${shift.id}&notes=eq.usual_shift_pattern&deleted_at=is.null&select=id&limit=1`;
+      
+      const checkResponse = await fetch(checkUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      let existingId: string | null = null;
+      if (checkResponse.ok) {
+        const existingData = await checkResponse.json();
+        if (Array.isArray(existingData) && existingData.length > 0) {
+          existingId = existingData[0].id;
+        }
+      }
 
       const shiftData = {
         user_id: userId,
@@ -535,33 +961,53 @@ export const shiftsSync = {
         notes: 'usual_shift_pattern', // Marker to identify this as a UsualShift pattern
         extras: shift, // Store full UsualShift object in extras JSONB
         updated_at: new Date().toISOString(),
+        deleted_at: shift.deletedAt || null, // Include soft delete timestamp
       };
 
-      // @ts-ignore
-      let data, error;
-      if (existing) {
+      let response: Response;
+      if (existingId) {
         // Update existing shift
-        ({ data, error } = await supabase
-          .from('shifts')
-          .update(shiftData)
-          .eq('id', existing.id)
-          .select()
-          .single());
+        debug('[shiftsSync.uploadShift] Updating existing shift', { existingId, shiftId: shift.id });
+        const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingId}&select=*`;
+        response = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(shiftData),
+        });
       } else {
-        // Insert new shift (Supabase will generate UUID)
-        ({ data, error } = await supabase
-          .from('shifts')
-          .insert(shiftData)
-          .select()
-          .single());
+        // Insert new shift
+        debug('[shiftsSync.uploadShift] Inserting new shift', { shiftId: shift.id });
+        const insertUrl = `${SUPABASE_URL}/rest/v1/shifts?select=*`;
+        response = await fetch(insertUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(shiftData),
+        });
       }
 
-      if (error) {
-        console.error('[shiftsSync.uploadShift] Error uploading shift:', error);
-        throw error;
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        console.error('[shiftsSync.uploadShift] Error uploading shift:', errorData);
+        throw errorData;
       }
 
-      console.log('[shiftsSync.uploadShift] Shift uploaded successfully to Supabase', {
+      debug('[shiftsSync.uploadShift] Shift uploaded successfully to Supabase', {
         shiftId: shift.id,
       });
     } catch (error) {
@@ -576,7 +1022,7 @@ export const shiftsSync = {
     }
 
     try {
-      console.log('[shiftsSync.uploadShifts] Uploading shifts to Supabase', {
+      debug('[shiftsSync.uploadShifts] Uploading shifts to Supabase', {
         count: shifts.length,
         userId: userId.substring(0, 8) + '...',
       });
@@ -587,7 +1033,7 @@ export const shiftsSync = {
         // Continue with other shifts even if one fails
       })));
 
-      console.log('[shiftsSync.uploadShifts] All shifts uploaded successfully');
+      debug('[shiftsSync.uploadShifts] All shifts uploaded successfully');
     } catch (error) {
       console.error('[shiftsSync.uploadShifts] Failed to upload shifts:', error);
       throw error;
@@ -600,49 +1046,125 @@ export const shiftsSync = {
     }
 
     if (!userId) {
-      console.log('[shiftsSync.downloadShifts] No userId provided, skipping Supabase download');
+      debug('[shiftsSync.downloadShifts] No userId provided, skipping Supabase download');
       return [];
     }
 
     try {
-      console.log('[shiftsSync.downloadShifts] Downloading shifts from Supabase', {
+      debug('[shiftsSync.downloadShifts] Downloading shifts from Supabase', {
         userId: userId.substring(0, 8) + '...',
       });
 
-      // @ts-ignore
-      const { data, error } = await supabase
-        .from('shifts')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('notes', 'usual_shift_pattern') // Only get UsualShift patterns
-        .is('deleted_at', null)
-        .order('start_at', { ascending: false });
-
-      if (error) {
-        console.error('[shiftsSync.downloadShifts] Error downloading shifts:', error);
-        throw error;
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
       }
-
-      if (!data || data.length === 0) {
-        console.log('[shiftsSync.downloadShifts] No shifts found in Supabase');
-        return [];
-      }
-
-      // Extract full UsualShift objects from extras JSONB
-      const shifts = data
-        .map((row: any) => {
-          if (row.extras && typeof row.extras === 'object') {
-            return row.extras as UsualShift;
+      
+      // Use direct REST API if we have a session, otherwise fall back to Supabase client
+      if (sessionToUse?.access_token) {
+        const accessToken = sessionToUse.access_token;
+        const apiKey = SUPABASE_ANON_KEY;
+        const restUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&notes=eq.usual_shift_pattern&deleted_at=is.null&order=start_at.desc&select=*`;
+        
+        debug('[shiftsSync.downloadShifts] Using direct REST API with session token');
+        
+        const response = await fetch(restUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 406) {
+            // No shifts found - this is OK
+            debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
+            return [];
           }
-          return null;
-        })
-        .filter((shift: UsualShift | null): shift is UsualShift => shift !== null);
+          const errorText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { message: errorText };
+          }
+          console.error('[shiftsSync.downloadShifts] Error downloading shifts:', errorData);
+          throw errorData;
+        }
+        
+        const data = await response.json();
+        
+        if (!data || !Array.isArray(data) || data.length === 0) {
+          debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
+          return [];
+        }
 
-      console.log('[shiftsSync.downloadShifts] Shifts downloaded successfully from Supabase', {
-        count: shifts.length,
-      });
+        // Extract full UsualShift objects from extras JSONB
+        const shifts = data
+          .map((row: any) => {
+            if (row.extras && typeof row.extras === 'object') {
+              return row.extras as UsualShift;
+            }
+            debug('[shiftsSync.downloadShifts] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
+            return null;
+          })
+          .filter((shift: UsualShift | null): shift is UsualShift => shift !== null);
 
-      return shifts;
+        debug('[shiftsSync.downloadShifts] Shifts downloaded successfully from Supabase', {
+          count: shifts.length,
+          rawCount: data.length,
+        });
+
+        return shifts;
+      } else {
+        // Fallback to Supabase client (may fail if session not persisted yet)
+        debug('[shiftsSync.downloadShifts] No session available, using Supabase client (may fail)');
+        // @ts-ignore
+        const { data, error } = await supabase
+          .from('shifts')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('notes', 'usual_shift_pattern') // Only get UsualShift patterns
+          .is('deleted_at', null)
+          .order('start_at', { ascending: false });
+
+        if (error) {
+          console.error('[shiftsSync.downloadShifts] Error downloading shifts:', error);
+          throw error;
+        }
+
+        if (!data || data.length === 0) {
+          debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
+          return [];
+        }
+
+        // Extract full UsualShift objects from extras JSONB
+        const shifts = data
+          .map((row: any) => {
+            if (row.extras && typeof row.extras === 'object') {
+              return row.extras as UsualShift;
+            }
+            debug('[shiftsSync.downloadShifts] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
+            return null;
+          })
+          .filter((shift: UsualShift | null): shift is UsualShift => shift !== null);
+
+        debug('[shiftsSync.downloadShifts] Shifts downloaded successfully from Supabase', {
+          count: shifts.length,
+          rawCount: data.length,
+        });
+
+        return shifts;
+      }
     } catch (error) {
       console.error('[shiftsSync.downloadShifts] Failed to download shifts from Supabase:', error);
       return [];
@@ -667,19 +1189,19 @@ export const shiftsSync = {
         .maybeSingle();
 
       if (existing) {
-        // Soft delete by setting deleted_at
+        // Soft delete using RPC function to bypass RLS policy issues
         // @ts-ignore
-        const { error } = await supabase
-          .from('shifts')
-          .update({ deleted_at: new Date().toISOString() })
-          .eq('id', existing.id);
+        const { error } = await supabase.rpc('soft_delete_shift', {
+          shift_uuid: existing.id,
+          user_uuid: userId
+        });
 
         if (error) {
           console.error('[shiftsSync.deleteShift] Error deleting shift:', error);
           throw error;
         }
 
-        console.log('[shiftsSync.deleteShift] Shift deleted successfully from Supabase', {
+        debug('[shiftsSync.deleteShift] Shift deleted successfully from Supabase', {
           shiftId,
         });
       }
@@ -694,103 +1216,137 @@ export const shiftsSync = {
  * Export batches sync functions
  */
 export const exportSync = {
-  async uploadExportBatch(batch: ExportBatch, userId?: string | null): Promise<void> {
+  async uploadExportBatch(batch: ExportBatch, userId?: string | null): Promise<ExportBatch | undefined> {
     if (!supabaseEnabled) {
       return;
     }
 
     if (!userId) {
-      console.log('[exportSync.uploadExportBatch] No userId provided, skipping Supabase sync');
+      debug('[exportSync.uploadExportBatch] No userId provided, skipping Supabase sync');
       return;
     }
 
     try {
       // Check if PDF needs to be uploaded to cloud storage
-      let cloudUrl = batch.pdfUri;
-      const { uploadPDFToStorage, isLocalPath, isCloudURL } = await import('./storage/pdfStorage');
+      let remoteUri = batch.pdfUri;
+      const { uploadPDFToStorage, isLocalPath, isCloudURL, isStoragePath } = await import('./storage/pdfStorage');
 
-      // If pdfUri is a local path, upload to Supabase Storage first
       if (batch.pdfUri) {
-        if (isCloudURL(batch.pdfUri)) {
-          // Already a cloud URL - skip upload
-          cloudUrl = batch.pdfUri;
-          console.log('[exportSync.uploadExportBatch] PDF already in cloud storage, skipping upload');
-        } else if (isLocalPath(batch.pdfUri)) {
-          // Local path - upload to storage
+        if (isLocalPath(batch.pdfUri)) {
           try {
-            console.log('[exportSync.uploadExportBatch] Detected local PDF path; uploading to storage...');
-            cloudUrl = await uploadPDFToStorage(batch.pdfUri, batch.id, userId);
-            console.log('[exportSync.uploadExportBatch] PDF uploaded to cloud storage:', !!cloudUrl);
+            remoteUri = await uploadPDFToStorage(batch.pdfUri, batch.id, userId);
           } catch (uploadError) {
             console.error('[exportSync.uploadExportBatch] Failed to upload PDF to storage:', uploadError);
             // Continue with local path if upload fails - will retry later via sync queue
-            cloudUrl = batch.pdfUri;
+            remoteUri = batch.pdfUri;
           }
-        } else {
-          // Unknown format - leave as-is
-          console.log('[exportSync.uploadExportBatch] PDF path not recognized as local or cloud; leaving as-is');
-          cloudUrl = batch.pdfUri;
+        } else if (isStoragePath(batch.pdfUri) || isCloudURL(batch.pdfUri)) {
+          remoteUri = batch.pdfUri;
         }
       }
 
-      // Supabase uses UUIDs, but our batches use string IDs like "batch_1234567890"
-      // We'll store the original ID in params JSONB and query by that
-      // First, check if a batch with this user_id and params.id already exists
-      // @ts-ignore
-      const { data: existing } = await supabase
-        .from('export_batches')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('params->>id', batch.id) // Match by original ID in params JSONB
-        .is('deleted_at', null)
-        .maybeSingle();
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug('[exportSync.uploadExportBatch] No session available, cannot upload export batch');
+        throw new Error('No active session - please sign in again');
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Check if batch already exists using direct REST API
+      const checkUrl = `${SUPABASE_URL}/rest/v1/export_batches?user_id=eq.${userId}&params->>id=eq.${batch.id}&deleted_at=is.null&select=id&limit=1`;
+      
+      const checkResponse = await fetch(checkUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      let existingId: string | null = null;
+      if (checkResponse.ok) {
+        const existingData = await checkResponse.json();
+        if (Array.isArray(existingData) && existingData.length > 0) {
+          existingId = existingData[0].id;
+        }
+      }
 
       // Update batch with cloud URL (keep local path in params for backward compatibility)
-      const batchWithCloudUrl = {
+      const batchWithRemoteUri = {
         ...batch,
-        pdfUri: cloudUrl, // Update pdfUri to cloud URL for new uploads
+        pdfUri: remoteUri,
       };
 
       const batchData = {
         user_id: userId,
         requested_at: batch.createdAt,
         status: 'ready', // Default status for export batches
-        result_url: cloudUrl, // Store cloud URL in result_url
+        result_url: remoteUri,
         error: null,
-        params: batchWithCloudUrl, // Store full ExportBatch object with cloud URL in params JSONB
+        params: batchWithRemoteUri,
         updated_at: new Date().toISOString(),
+        deleted_at: batch.deletedAt || null, // Include soft delete timestamp
       };
 
-      // @ts-ignore
-      let data, error;
-      if (existing) {
+      let response: Response;
+      if (existingId) {
         // Update existing batch
-        ({ data, error } = await supabase
-          .from('export_batches')
-          .update(batchData)
-          .eq('id', existing.id)
-          .select()
-          .single());
+        debug('[exportSync.uploadExportBatch] Updating existing batch', { existingId, batchId: batch.id });
+        const updateUrl = `${SUPABASE_URL}/rest/v1/export_batches?id=eq.${existingId}&select=*`;
+        response = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(batchData),
+        });
       } else {
-        // Insert new batch (Supabase will generate UUID)
-        ({ data, error } = await supabase
-          .from('export_batches')
-          .insert(batchData)
-          .select()
-          .single());
+        // Insert new batch
+        debug('[exportSync.uploadExportBatch] Inserting new batch', { batchId: batch.id });
+        const insertUrl = `${SUPABASE_URL}/rest/v1/export_batches?select=*`;
+        response = await fetch(insertUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(batchData),
+        });
       }
 
-      if (error) {
-        console.error('[exportSync.uploadExportBatch] Error uploading export batch:', error);
-        throw error;
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        console.error('[exportSync.uploadExportBatch] Error uploading export batch:', errorData);
+        throw errorData;
       }
 
-      console.log('[exportSync.uploadExportBatch] Export batch uploaded successfully to Supabase', {
-        batchId: batch.id,
-      });
-      
-      // Return updated batch with cloud URL
-      return batchWithCloudUrl;
+      // Return updated batch with storage reference
+      return batchWithRemoteUri;
     } catch (error) {
       console.error('[exportSync.uploadExportBatch] Failed to upload export batch to Supabase:', error);
       throw error;
@@ -803,60 +1359,142 @@ export const exportSync = {
     }
 
     if (!userId) {
-      console.log('[exportSync.downloadExportBatches] No userId provided, skipping Supabase download');
+      debug('[exportSync.downloadExportBatches] No userId provided, skipping Supabase download');
       return [];
     }
 
     try {
-      console.log('[exportSync.downloadExportBatches] Downloading export batches from Supabase', {
+      debug('[exportSync.downloadExportBatches] Downloading export batches from Supabase', {
         userId: userId.substring(0, 8) + '...',
       });
 
-      // @ts-ignore
-      const { data, error } = await supabase
-        .from('export_batches')
-        .select('*')
-        .eq('user_id', userId)
-        .is('deleted_at', null)
-        .order('requested_at', { ascending: false });
-
-      if (error) {
-        console.error('[exportSync.downloadExportBatches] Error downloading export batches:', error);
-        throw error;
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
       }
-
-      if (!data || data.length === 0) {
-        console.log('[exportSync.downloadExportBatches] No export batches found in Supabase');
-        return [];
-      }
-
-      // Extract full ExportBatch objects from params JSONB
-      const batches = data
-        .map((row: any) => {
-          if (row.params && typeof row.params === 'object') {
-            const batch = row.params as ExportBatch;
-            
-            // Prefer result_url (cloud URL) if available, otherwise use pdfUri from params
-            // Support both cloud URLs and local paths for backward compatibility
-            if (row.result_url && (row.result_url.startsWith('http://') || row.result_url.startsWith('https://'))) {
-              // Cloud URL available - use it
-              batch.pdfUri = row.result_url;
-            } else if (batch.pdfUri) {
-              // Use pdfUri from params (could be local path or cloud URL)
-              batch.pdfUri = batch.pdfUri;
-            }
-            
-            return batch;
+      
+      // Use direct REST API if we have a session, otherwise fall back to Supabase client
+      if (sessionToUse?.access_token) {
+        const accessToken = sessionToUse.access_token;
+        const apiKey = SUPABASE_ANON_KEY;
+        const restUrl = `${SUPABASE_URL}/rest/v1/export_batches?user_id=eq.${userId}&deleted_at=is.null&order=requested_at.desc&select=*`;
+        
+        debug('[exportSync.downloadExportBatches] Using direct REST API with session token');
+        
+        const response = await fetch(restUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 406) {
+            // No export batches found - this is OK
+            debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
+            return [];
           }
-          return null;
-        })
-        .filter((batch: ExportBatch | null): batch is ExportBatch => batch !== null);
+          const errorText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { message: errorText };
+          }
+          console.error('[exportSync.downloadExportBatches] Error downloading export batches:', errorData);
+          throw errorData;
+        }
+        
+        const data = await response.json();
+        
+        if (!data || !Array.isArray(data) || data.length === 0) {
+          debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
+          return [];
+        }
 
-      console.log('[exportSync.downloadExportBatches] Export batches downloaded successfully from Supabase', {
-        count: batches.length,
-      });
+        const { isCloudURL } = await import('./storage/pdfStorage');
+        // Extract full ExportBatch objects from params JSONB
+        const batches = data
+          .map((row: any) => {
+            if (row.params && typeof row.params === 'object') {
+              const batch = row.params as ExportBatch;
 
-      return batches;
+              if (row.result_url && isCloudURL(row.result_url)) {
+                batch.pdfUri = row.result_url;
+              } else if (batch.pdfUri) {
+                batch.pdfUri = batch.pdfUri;
+              }
+
+              return batch;
+            }
+            debug('[exportSync.downloadExportBatches] Row missing params:', { rowId: row.id, hasParams: !!row.params });
+            return null;
+          })
+          .filter((batch: ExportBatch | null): batch is ExportBatch => batch !== null);
+
+        debug('[exportSync.downloadExportBatches] Export batches downloaded successfully from Supabase', {
+          count: batches.length,
+          rawCount: data.length,
+        });
+
+        return batches;
+      } else {
+        // Fallback to Supabase client (may fail if session not persisted yet)
+        debug('[exportSync.downloadExportBatches] No session available, using Supabase client (may fail)');
+        // @ts-ignore
+        const { data, error } = await supabase
+          .from('export_batches')
+          .select('*')
+          .eq('user_id', userId)
+          .is('deleted_at', null)
+          .order('requested_at', { ascending: false });
+
+        if (error) {
+          console.error('[exportSync.downloadExportBatches] Error downloading export batches:', error);
+          throw error;
+        }
+
+        if (!data || data.length === 0) {
+          debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
+          return [];
+        }
+
+        const { isCloudURL } = await import('./storage/pdfStorage');
+        // Extract full ExportBatch objects from params JSONB
+        const batches = data
+          .map((row: any) => {
+            if (row.params && typeof row.params === 'object') {
+              const batch = row.params as ExportBatch;
+
+              if (row.result_url && isCloudURL(row.result_url)) {
+                batch.pdfUri = row.result_url;
+              } else if (batch.pdfUri) {
+                batch.pdfUri = batch.pdfUri;
+              }
+
+              return batch;
+            }
+            debug('[exportSync.downloadExportBatches] Row missing params:', { rowId: row.id, hasParams: !!row.params });
+            return null;
+          })
+          .filter((batch: ExportBatch | null): batch is ExportBatch => batch !== null);
+
+        debug('[exportSync.downloadExportBatches] Export batches downloaded successfully from Supabase', {
+          count: batches.length,
+          rawCount: data.length,
+        });
+
+        return batches;
+      }
     } catch (error) {
       console.error('[exportSync.downloadExportBatches] Failed to download export batches from Supabase:', error);
       return [];
@@ -880,19 +1518,19 @@ export const exportSync = {
         .maybeSingle();
 
       if (existing) {
-        // Soft delete by setting deleted_at
+        // Soft delete using RPC function to bypass RLS policy issues
         // @ts-ignore
-        const { error } = await supabase
-          .from('export_batches')
-          .update({ deleted_at: new Date().toISOString() })
-          .eq('id', existing.id);
+        const { error } = await supabase.rpc('soft_delete_export_batch', {
+          batch_uuid: existing.id,
+          user_uuid: userId
+        });
 
         if (error) {
           console.error('[exportSync.deleteExportBatch] Error deleting export batch:', error);
           throw error;
         }
 
-        console.log('[exportSync.deleteExportBatch] Export batch deleted successfully from Supabase', {
+        debug('[exportSync.deleteExportBatch] Export batch deleted successfully from Supabase', {
           batchId,
         });
       }
@@ -938,7 +1576,7 @@ export const sync = {
     }
     
     try {
-      console.log('[sync.fullSync] Starting full sync for user:', userId.substring(0, 8) + '...');
+      debug('[sync.fullSync] Starting full sync for user:', userId.substring(0, 8) + '...');
       
       // Check connection first
       const isConnected = await sync.checkConnection();
@@ -972,7 +1610,7 @@ export const sync = {
       let logsSuccess = true;
       try {
         await logsSync.uploadLogs(localLogs, userId);
-        console.log('[sync.fullSync] Uploaded logs:', localLogs.length);
+        debug('[sync.fullSync] Uploaded logs:', localLogs.length);
       } catch (error) {
         console.error('[sync.fullSync] Failed to upload logs:', error);
         logsSuccess = false;
@@ -982,7 +1620,7 @@ export const sync = {
       let shiftsSuccess = true;
       try {
         await shiftsSync.uploadShifts(localShifts, userId);
-        console.log('[sync.fullSync] Uploaded shifts:', localShifts.length);
+        debug('[sync.fullSync] Uploaded shifts:', localShifts.length);
       } catch (error) {
         console.error('[sync.fullSync] Failed to upload shifts:', error);
         shiftsSuccess = false;
@@ -993,7 +1631,7 @@ export const sync = {
       if (localProfile) {
         try {
           await profileSync.uploadProfile(localProfile, userId);
-          console.log('[sync.fullSync] Uploaded profile');
+          debug('[sync.fullSync] Uploaded profile');
         } catch (error) {
           console.error('[sync.fullSync] Failed to upload profile:', error);
           profileSuccess = false;
@@ -1008,7 +1646,7 @@ export const sync = {
           // Check if pdfUri is a local path - if so, upload will happen in uploadExportBatch
           await exportSync.uploadExportBatch(batch, userId);
         }
-        console.log('[sync.fullSync] Uploaded export batches:', localBatches.length);
+        debug('[sync.fullSync] Uploaded export batches:', localBatches.length);
       } catch (error) {
         console.error('[sync.fullSync] Failed to upload export batches:', error);
         exportsSuccess = false;
@@ -1084,7 +1722,7 @@ export const sync = {
           if (batch.pdfUri && isCloudURL(batch.pdfUri)) {
             try {
               await downloadPDFFromStorage(batch.pdfUri, batch.id);
-              console.log('[sync.fullSync] Downloaded PDF to local cache:', batch.id);
+              debug('[sync.fullSync] Downloaded PDF to local cache:', batch.id);
             } catch (error) {
               console.error('[sync.fullSync] Failed to download PDF to cache:', batch.id, error);
               // Non-fatal - continue with other batches
@@ -1099,7 +1737,7 @@ export const sync = {
           await profileStore.loadProfile(userId);
         }
         
-        console.log('[sync.fullSync] Full sync completed successfully');
+        debug('[sync.fullSync] Full sync completed successfully');
       } catch (error) {
         console.error('[sync.fullSync] Failed to download/merge remote data:', error);
       }

@@ -3,6 +3,16 @@ import { Profile } from '../../types';
 
 const PROFILE_KEY_PREFIX = 'overtime_plus_profile';
 const LEGACY_PROFILE_KEY = 'overtime_plus_profile'; // Old key for migration
+const isDev = process.env.NODE_ENV !== 'production';
+
+const maskUserId = (userId?: string | null) =>
+  userId ? `${userId.substring(0, 8)}...` : 'anonymous';
+
+const debug = (...args: any[]) => {
+  if (isDev) {
+    console.log(...args);
+  }
+};
 
 function getProfileKey(userId?: string | null): string {
   if (!userId) {
@@ -16,16 +26,15 @@ export class ProfileStorage {
   async saveProfile(profile: Profile, userId?: string | null): Promise<void> {
     try {
       const profileKey = getProfileKey(userId);
-      console.log('Saving profile to storage:', {
-        userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
+      debug('Saving profile to storage', {
+        userId: maskUserId(userId ?? null),
         profileKey,
         hasEmployeeInitial: !!profile.employeeInitial,
-        employeeInitial: profile.employeeInitial,
-        allFields: Object.keys(profile)
+        fieldCount: Object.keys(profile).length,
       });
       const profileJson = JSON.stringify(profile);
       await SecureStore.setItemAsync(profileKey, profileJson);
-      console.log('Profile saved successfully to storage');
+      debug('Profile saved successfully to storage');
     } catch (error) {
       console.error('Failed to save profile:', error);
       throw new Error('Failed to save profile to secure storage');
@@ -35,9 +44,9 @@ export class ProfileStorage {
   async loadProfile(userId?: string | null): Promise<Profile | null> {
     try {
       const profileKey = getProfileKey(userId);
-      console.log('Loading profile from storage:', { 
-        userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
-        profileKey 
+      debug('Loading profile from storage', {
+        userId: maskUserId(userId ?? null),
+        profileKey,
       });
       const profileJson = await SecureStore.getItemAsync(profileKey);
       if (!profileJson) {
@@ -48,22 +57,19 @@ export class ProfileStorage {
       
       // Migration: Convert old profile format to new format
       if (profile.delegateSignatureUri !== undefined && profile.employeeInitial === undefined) {
-        console.log('Migrating profile from old format...');
-        console.log('Profile before migration:', { fullName: profile.fullName, delegateSignatureUri: profile.delegateSignatureUri });
+        debug('Migrating profile from old format');
         // Generate employee initial from full name
         profile.employeeInitial = this.generateInitials(profile.fullName || '');
-        console.log('Generated employee initial:', profile.employeeInitial);
         // Remove old signature field
         delete profile.delegateSignatureUri;
-        
+
         // Save the migrated profile
         await this.saveProfile(profile as Profile, userId);
-        console.log('Profile migrated successfully');
+        debug('Profile migrated successfully');
       }
-      
+
       // Ensure employee initial is always set
       if (!profile.employeeInitial && profile.fullName) {
-        console.log('Setting missing employee initial from full name:', profile.fullName);
         profile.employeeInitial = this.generateInitials(profile.fullName);
         // Save the updated profile
         await this.saveProfile(profile as Profile, userId);
@@ -71,7 +77,6 @@ export class ProfileStorage {
       
       // Migration: Add concurrent employment default if missing
       if (profile.concurrentEmploymentDefault === undefined) {
-        console.log('Adding missing concurrentEmploymentDefault field...');
         profile.concurrentEmploymentDefault = false;
         // Save the updated profile
         await this.saveProfile(profile as Profile, userId);
@@ -79,7 +84,6 @@ export class ProfileStorage {
       
       // Migration: Add email field if missing
       if (profile.email === undefined) {
-        console.log('Adding missing email field...');
         profile.email = '';
         // Save the updated profile
         await this.saveProfile(profile as Profile, userId);
@@ -87,17 +91,15 @@ export class ProfileStorage {
       
       // Migration: Add isSMO field if missing
       if (profile.isSMO === undefined) {
-        console.log('Adding missing isSMO field...');
         profile.isSMO = false; // Default to non-SMO
         // Save the updated profile
         await this.saveProfile(profile as Profile, userId);
       }
-      
-      console.log('Profile loaded from storage:', {
+
+      debug('Profile loaded from storage', {
         hasEmployeeInitial: !!profile.employeeInitial,
-        employeeInitial: profile.employeeInitial,
         isSMO: profile.isSMO,
-        allFields: Object.keys(profile)
+        fieldCount: Object.keys(profile).length,
       });
       return profile as Profile;
     } catch (error) {
@@ -110,7 +112,7 @@ export class ProfileStorage {
     try {
       const profileKey = getProfileKey(userId);
       await SecureStore.deleteItemAsync(profileKey);
-      console.log('Profile deleted successfully', { profileKey });
+      debug('Profile deleted successfully', { profileKey });
     } catch (error) {
       console.error('Failed to delete profile:', error);
       throw new Error('Failed to delete profile from secure storage');
@@ -132,7 +134,7 @@ export class ProfileStorage {
   async clearLegacyProfile(): Promise<void> {
     try {
       await SecureStore.deleteItemAsync(LEGACY_PROFILE_KEY);
-      console.log('Legacy profile cleared successfully');
+      debug('Legacy profile cleared successfully');
     } catch (error) {
       console.error('Failed to clear legacy profile:', error);
       // Don't throw - this is a cleanup operation

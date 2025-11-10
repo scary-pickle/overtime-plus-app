@@ -7,6 +7,13 @@ import { logsSync, exportSync } from '../supabase';
 import { uploadPDFToStorage, isLocalPath } from '../storage/pdfStorage';
 import { syncQueue } from '../sync/queue';
 
+const isDev = process.env.NODE_ENV !== 'production';
+const debug = (...args: any[]) => {
+  if (isDev) {
+    console.log(...args);
+  }
+};
+
 interface LogsState {
   logs: OvertimeLog[];
   exportBatches: ExportBatch[];
@@ -70,7 +77,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       if (userId) {
         logsSync.downloadLogs(userId).then(remoteLogs => {
           if (remoteLogs.length > 0 || logs.length > 0) {
-            console.log('[logsStore.loadLogs] Syncing logs from Supabase in background', {
+            debug('[logsStore.loadLogs] Syncing logs from Supabase in background', {
               remoteCount: remoteLogs.length,
               localCount: logs.length,
             });
@@ -166,7 +173,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       if (userId) {
         exportSync.downloadExportBatches(userId).then(remoteBatches => {
           if (remoteBatches.length > 0) {
-            console.log('[logsStore.loadExportBatches] Syncing export batches from Supabase in background');
+            debug('[logsStore.loadExportBatches] Syncing export batches from Supabase in background');
             // Get current batches from store (may have been updated since initial load)
             const currentBatches = get().exportBatches;
             const localBatchMap = new Map(currentBatches.map(batch => [batch.id, batch]));
@@ -227,7 +234,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       },
       { total: 0, cloud: 0, local: 0, unknown: 0, localIds: [] as string[] }
     );
-    console.log('[logsStore.auditExportBatchPDFs] Audit summary:', summary);
+    debug('[logsStore.auditExportBatchPDFs] Audit summary:', summary);
     return summary;
   },
 
@@ -235,7 +242,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   uploadMissingBatchPDFs: async (userId?: string | null) => {
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
     if (!finalUserId) {
-      console.log('[logsStore.uploadMissingBatchPDFs] No userId; skipping');
+      debug('[logsStore.uploadMissingBatchPDFs] No userId; skipping');
       return { uploaded: 0, skipped: 0, errors: 0 };
     }
 
@@ -245,14 +252,14 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     let skipped = 0;
     let errors = 0;
 
-    console.log('[logsStore.uploadMissingBatchPDFs] Scanning export batches for local PDFs...', {
+    debug('[logsStore.uploadMissingBatchPDFs] Scanning export batches for local PDFs...', {
       count: exportBatches.length,
     });
 
     for (const batch of exportBatches) {
       if (batch.pdfUri && isLocalPath(batch.pdfUri)) {
         try {
-          console.log('[logsStore.uploadMissingBatchPDFs] Uploading local PDF for batch...', {
+          debug('[logsStore.uploadMissingBatchPDFs] Uploading local PDF for batch...', {
             batchId: batch.id,
           });
           const updated = await exportSync.uploadExportBatch(batch, finalUserId);
@@ -281,7 +288,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
 
     const result = { uploaded, skipped, errors };
-    console.log('[logsStore.uploadMissingBatchPDFs] Completed upload scan:', result);
+    debug('[logsStore.uploadMissingBatchPDFs] Completed upload scan:', result);
     return result;
   },
 
@@ -435,11 +442,11 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       let effectivePdfUri = pdfUri || '';
       if (finalUserId && pdfUri && isLocalPath(pdfUri)) {
         try {
-          console.log('[logsStore.batchExport] Uploading newly generated local PDF to storage before saving batch...');
+          debug('[logsStore.batchExport] Uploading newly generated local PDF to storage before saving batch...');
           const cloudUrl = await uploadPDFToStorage(pdfUri, batchId, finalUserId);
           if (cloudUrl) {
             effectivePdfUri = cloudUrl;
-            console.log('[logsStore.batchExport] New PDF uploaded to storage:', true);
+            debug('[logsStore.batchExport] New PDF uploaded to storage:', true);
           }
         } catch (err) {
           console.error('[logsStore.batchExport] Immediate upload failed, will fall back to background sync:', err);

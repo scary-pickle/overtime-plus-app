@@ -8,10 +8,12 @@ import { database } from '../lib/db/sqlite';
 import { useProfileStore } from '../lib/state/profileStore';
 import { useShiftsStore } from '../lib/state/shiftsStore';
 import { useLogsStore } from '../lib/state/logsStore';
+import { useDeletedItemsStore } from '../lib/state/deletedItemsStore';
 import { notificationManager } from '../lib/notifications';
 import { subscribeToAuthDeepLinks } from '../lib/auth/deeplinks';
 import { useAuthStore } from '../lib/state/authStore';
 import { syncQueue } from '../lib/sync/queue';
+import { purgeLegacyAuthStorage } from '../lib/auth/migrateAuthStorage';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -23,16 +25,29 @@ export default function RootLayout() {
   useEffect(() => {
     (async () => {
       // Initialize database FIRST before checking session
-      // This ensures SQLiteStorageAdapter can access the database
+      // Local tables back offline data; purge any legacy auth tokens from SQLite
       try {
         await database.init();
         console.log('Database initialized');
+        await purgeLegacyAuthStorage();
       } catch (error) {
         console.error('Failed to initialize database:', error);
         return;
       }
       
-      // Now check session (Supabase will be able to read from SQLite)
+      // Now check session (SecureStore-backed adapter restores Supabase session)
+      // CRITICAL: Log database state RIGHT BEFORE checkSession
+      try {
+        const sessionCount = await database.countAuthSessions();
+        const allKeys = await database.getAllAuthSessionKeys();
+        console.log('[authStore.checkSession] 🔍 Database state BEFORE checkSession:', {
+          sessionCount,
+          keys: allKeys
+        });
+      } catch (dbError) {
+        console.error('[authStore.checkSession] Failed to check database state:', dbError);
+      }
+      
       await checkSession();
       
       // Continue with rest of app initialization
@@ -67,6 +82,18 @@ export default function RootLayout() {
           loadLogs(user.id), // Pass userId to load user-specific logs
           loadExportBatches(user.id), // Pass userId to load user-specific export batches
         ]);
+
+        // Auto-cleanup deleted items older than 30 days
+        try {
+          const { cleanupOldItems } = useDeletedItemsStore.getState();
+          const result = await cleanupOldItems(user.id);
+          const total = result.logsDeleted + result.shiftsDeleted + result.batchesDeleted;
+          if (total > 0) {
+            console.log(`[App] Auto-cleaned up ${total} old deleted item(s)`);
+          }
+        } catch (error) {
+          console.error('[App] Failed to cleanup old deleted items:', error);
+        }
       }
 
       console.log('App initialized successfully');
@@ -204,6 +231,12 @@ export default function RootLayout() {
         />
         <Stack.Screen 
           name="onboarding" 
+          options={{ 
+            headerShown: false 
+          }} 
+        />
+        <Stack.Screen 
+          name="recently-deleted" 
           options={{ 
             headerShown: false 
           }} 

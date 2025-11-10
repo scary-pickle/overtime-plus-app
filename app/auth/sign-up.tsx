@@ -4,6 +4,13 @@ import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../../lib/auth/validation';
 
+const isDev = process.env.NODE_ENV !== 'production';
+const debug = (...args: any[]) => {
+  if (isDev) {
+    console.log(...args);
+  }
+};
+
 export default function SignUp() {
   const router = useRouter();
   const { signUp, isLoading, error, clearError } = useAuthStore();
@@ -13,30 +20,30 @@ export default function SignUp() {
   const [localError, setLocalError] = useState<string | null>(null);
 
   const onSubmit = async () => {
-    console.log('[sign-up] submit tapped');
+    debug('[sign-up] submit tapped');
     clearError();
     setLocalError(null);
     const e = email.trim();
     if (!isValidEmail(e)) {
-      console.log('[sign-up] invalid email');
+      debug('[sign-up] invalid email');
       return setLocalError('Enter a valid email');
     }
     if (!isAllowedDomain(e)) {
-      console.log('[sign-up] domain not allowed');
+      debug('[sign-up] domain not allowed');
       return setLocalError('Only @health.qld.gov.au emails are allowed');
     }
     if (password !== confirm) {
-      console.log('[sign-up] password mismatch');
+      debug('[sign-up] password mismatch');
       return setLocalError('Passwords do not match');
     }
     const pw = validatePasswordStrength(password);
     if (!pw.valid) {
-      console.log('[sign-up] weak password', { issues: pw.errors });
+      debug('[sign-up] weak password', { issues: pw.errors });
       return setLocalError(`Password: ${pw.errors.join(', ')}`);
     }
-    console.log('[sign-up] calling store.signUp');
+    debug('[sign-up] calling store.signUp');
     const ok = await signUp(e, password);
-    console.log('[sign-up] store.signUp returned', { ok });
+    debug('[sign-up] store.signUp returned', { ok });
     if (ok) router.replace('/auth/verify-email');
   };
 

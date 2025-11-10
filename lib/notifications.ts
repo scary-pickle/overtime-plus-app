@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { UsualShift } from '../types';
 import { getRosterForDate } from './roster';
+import { formatDateToISO } from './time';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -82,7 +83,7 @@ class NotificationManager {
       for (let i = 0; i < 7; i++) {
         const date = new Date(today);
         date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split('T')[0];
+        const dateStr = formatDateToISO(date);
         
         const roster = getRosterForDate(dateStr, usualShifts);
         if (roster && roster.rosteredFinish) {

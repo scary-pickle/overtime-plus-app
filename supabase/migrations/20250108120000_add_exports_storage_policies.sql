@@ -23,10 +23,12 @@ for insert with check (
 create policy exportsupdateown on storage.objects
 for update using (
   bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+  bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
 );
 
 create policy exportsdeleteown on storage.objects
 for delete using (
   bucket_id = 'exports' and (storage.foldername(name))[1] = auth.uid()::text
 );
-

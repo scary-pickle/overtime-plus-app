@@ -239,22 +239,51 @@ class Database {
       console.error('Migration error (may be fine if table doesn\'t exist yet):', error);
       // Migration error is okay - table might not exist yet or might already be migrated
     }
+
+    // Migration: Add deleted_at column for soft deletes
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE usual_shifts ADD COLUMN deleted_at TEXT;
+      `);
+      console.log('✅ Added deleted_at column to usual_shifts');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE overtime_logs ADD COLUMN deleted_at TEXT;
+      `);
+      console.log('✅ Added deleted_at column to overtime_logs');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE export_batches ADD COLUMN deleted_at TEXT;
+      `);
+      console.log('✅ Added deleted_at column to export_batches');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
   }
 
   // UsualShifts CRUD
   async createUsualShift(shift: UsualShift, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Use INSERT OR REPLACE to handle conflicts (e.g., when syncing a shift that was soft-deleted locally)
     await this.db.runAsync(`
-      INSERT INTO usual_shifts (
+      INSERT OR REPLACE INTO usual_shifts (
         id, label, type, week_index, day_of_week, rostered_start, rostered_finish,
-        meal_break_minutes, active_from, active_to, user_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        meal_break_minutes, active_from, active_to, user_id, created_at, updated_at, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       shift.id, shift.label, shift.type, shift.weekIndex || null, shift.dayOfWeek,
       shift.rosteredStart, shift.rosteredFinish, shift.mealBreakMinutes || 0,
       shift.activeFrom, shift.activeTo || null, userId || null,
-      new Date().toISOString(), new Date().toISOString()
+      new Date().toISOString(), new Date().toISOString(), shift.deletedAt || null
     ]);
   }
 
@@ -262,8 +291,8 @@ class Database {
     if (!this.db) throw new Error('Database not initialized');
 
     const query = userId
-      ? `SELECT * FROM usual_shifts WHERE user_id = ? ORDER BY label, day_of_week`
-      : `SELECT * FROM usual_shifts WHERE user_id IS NULL ORDER BY label, day_of_week`;
+      ? `SELECT * FROM usual_shifts WHERE user_id = ? AND deleted_at IS NULL ORDER BY label, day_of_week`
+      : `SELECT * FROM usual_shifts WHERE user_id IS NULL AND deleted_at IS NULL ORDER BY label, day_of_week`;
     const params = userId ? [userId] : [];
     
     const result = await this.db.getAllAsync(query, params);
@@ -278,7 +307,8 @@ class Database {
       rosteredFinish: row.rostered_finish as string,
       mealBreakMinutes: row.meal_break_minutes as number,
       activeFrom: row.active_from as string,
-      activeTo: row.active_to as string | undefined
+      activeTo: row.active_to as string | undefined,
+      deletedAt: row.deleted_at as string | undefined
     }));
   }
 
@@ -314,10 +344,11 @@ class Database {
   async deleteUsualShift(id: string, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Soft delete - set deleted_at timestamp
     const query = userId
-      ? `DELETE FROM usual_shifts WHERE id = ? AND user_id = ?`
-      : `DELETE FROM usual_shifts WHERE id = ? AND user_id IS NULL`;
-    const params = userId ? [id, userId] : [id];
+      ? `UPDATE usual_shifts SET deleted_at = ? WHERE id = ? AND user_id = ?`
+      : `UPDATE usual_shifts SET deleted_at = ? WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [new Date().toISOString(), id, userId] : [new Date().toISOString(), id];
 
     await this.db.runAsync(query, params);
   }
@@ -326,13 +357,14 @@ class Database {
   async createOvertimeLog(log: OvertimeLog, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Use INSERT OR REPLACE to handle conflicts (e.g., when syncing a log that was soft-deleted locally)
     await this.db.runAsync(`
-      INSERT INTO overtime_logs (
+      INSERT OR REPLACE INTO overtime_logs (
         id, date, rostered_start, rostered_finish, actual_start, actual_finish,
         meal_break_minutes, minutes_overtime, category, comments,
         initials, status, export_batch_id, source, is_active_shift, concurrent_employment,
-        smo_categories, user_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        smo_categories, user_id, created_at, updated_at, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       log.id, log.date, log.rosteredStart || null, log.rosteredFinish || null,
       log.actualStart, log.actualFinish, log.mealBreakMinutes || 0, log.minutesOvertime,
@@ -341,7 +373,7 @@ class Database {
       log.isActiveShift ? 1 : 0, log.concurrentEmployment ? 1 : 0,
       log.smoCategories ? JSON.stringify(log.smoCategories) : null,
       userId || null,
-      log.createdAt, log.updatedAt
+      log.createdAt, log.updatedAt, log.deletedAt || null
     ]);
   }
 
@@ -349,8 +381,8 @@ class Database {
     if (!this.db) throw new Error('Database not initialized');
 
     const query = userId
-      ? `SELECT * FROM overtime_logs WHERE user_id = ? ORDER BY date DESC, created_at DESC`
-      : `SELECT * FROM overtime_logs WHERE user_id IS NULL ORDER BY date DESC, created_at DESC`;
+      ? `SELECT * FROM overtime_logs WHERE user_id = ? AND deleted_at IS NULL ORDER BY date DESC, created_at DESC`
+      : `SELECT * FROM overtime_logs WHERE user_id IS NULL AND deleted_at IS NULL ORDER BY date DESC, created_at DESC`;
     const params = userId ? [userId] : [];
 
     const result = await this.db.getAllAsync(query, params);
@@ -374,7 +406,8 @@ class Database {
       concurrentEmployment: row.concurrent_employment === 1,
       smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
       createdAt: row.created_at as string,
-      updatedAt: row.updated_at as string
+      updatedAt: row.updated_at as string,
+      deletedAt: row.deleted_at as string | undefined
     }));
   }
 
@@ -382,8 +415,8 @@ class Database {
     if (!this.db) throw new Error('Database not initialized');
 
     const query = userId
-      ? `SELECT * FROM overtime_logs WHERE status = ? AND user_id = ? ORDER BY date DESC, created_at DESC`
-      : `SELECT * FROM overtime_logs WHERE status = ? AND user_id IS NULL ORDER BY date DESC, created_at DESC`;
+      ? `SELECT * FROM overtime_logs WHERE status = ? AND user_id = ? AND deleted_at IS NULL ORDER BY date DESC, created_at DESC`
+      : `SELECT * FROM overtime_logs WHERE status = ? AND user_id IS NULL AND deleted_at IS NULL ORDER BY date DESC, created_at DESC`;
     const params = userId ? [status, userId] : [status];
 
     const result = await this.db.getAllAsync(query, params);
@@ -407,7 +440,8 @@ class Database {
       concurrentEmployment: row.concurrent_employment === 1,
       smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
       createdAt: row.created_at as string,
-      updatedAt: row.updated_at as string
+      updatedAt: row.updated_at as string,
+      deletedAt: row.deleted_at as string | undefined
     }));
   }
 
@@ -455,10 +489,11 @@ class Database {
   async deleteOvertimeLog(id: string, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Soft delete - set deleted_at timestamp
     const query = userId
-      ? `DELETE FROM overtime_logs WHERE id = ? AND user_id = ?`
-      : `DELETE FROM overtime_logs WHERE id = ? AND user_id IS NULL`;
-    const params = userId ? [id, userId] : [id];
+      ? `UPDATE overtime_logs SET deleted_at = ? WHERE id = ? AND user_id = ?`
+      : `UPDATE overtime_logs SET deleted_at = ? WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [new Date().toISOString(), id, userId] : [new Date().toISOString(), id];
 
     await this.db.runAsync(query, params);
   }
@@ -467,13 +502,14 @@ class Database {
   async createExportBatch(batch: ExportBatch, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Use INSERT OR REPLACE to handle conflicts (e.g., when syncing a batch that was soft-deleted locally)
     await this.db.runAsync(`
-      INSERT INTO export_batches (
-        id, created_at, pdf_uri, count_logs, total_minutes, submitted_to_email, custom_name, user_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO export_batches (
+        id, created_at, pdf_uri, count_logs, total_minutes, submitted_to_email, custom_name, user_id, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       batch.id, batch.createdAt, batch.pdfUri, batch.countLogs,
-      batch.totalMinutes, batch.submittedToEmail || null, batch.customName || null, userId || null
+      batch.totalMinutes, batch.submittedToEmail || null, batch.customName || null, userId || null, batch.deletedAt || null
     ]);
   }
 
@@ -481,8 +517,8 @@ class Database {
     if (!this.db) throw new Error('Database not initialized');
 
     const query = userId
-      ? `SELECT * FROM export_batches WHERE user_id = ? ORDER BY created_at DESC`
-      : `SELECT * FROM export_batches WHERE user_id IS NULL ORDER BY created_at DESC`;
+      ? `SELECT * FROM export_batches WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC`
+      : `SELECT * FROM export_batches WHERE user_id IS NULL AND deleted_at IS NULL ORDER BY created_at DESC`;
     const params = userId ? [userId] : [];
 
     const result = await this.db.getAllAsync(query, params);
@@ -494,7 +530,8 @@ class Database {
       countLogs: row.count_logs as number,
       totalMinutes: row.total_minutes as number,
       submittedToEmail: row.submitted_to_email as string | undefined,
-      customName: row.custom_name as string | undefined
+      customName: row.custom_name as string | undefined,
+      deletedAt: row.deleted_at as string | undefined
     }));
   }
 
@@ -518,10 +555,11 @@ class Database {
   async deleteExportBatch(id: string, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Soft delete - set deleted_at timestamp
     const query = userId
-      ? `DELETE FROM export_batches WHERE id = ? AND user_id = ?`
-      : `DELETE FROM export_batches WHERE id = ? AND user_id IS NULL`;
-    const params = userId ? [id, userId] : [id];
+      ? `UPDATE export_batches SET deleted_at = ? WHERE id = ? AND user_id = ?`
+      : `UPDATE export_batches SET deleted_at = ? WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [new Date().toISOString(), id, userId] : [new Date().toISOString(), id];
 
     await this.db.runAsync(query, params);
   }
@@ -679,7 +717,26 @@ class Database {
       [key]
     );
     
+    // Log to track unexpected null returns for session keys
+    if (key.includes('auth-token-session-data')) {
+      if (row) {
+        console.log('[Database] getAuthSession FOUND:', key, 'value length:', row.value.length, 'encrypted:', row.encrypted);
+      } else {
+        console.log('[Database] getAuthSession NOT FOUND:', key);
+      }
+    }
+    
     return row || null;
+  }
+
+  async getAllAuthSessionKeys(): Promise<string[]> {
+    if (!this.db) throw new Error('Database not initialized');
+    
+    const rows = await this.db.getAllAsync<{ key: string }>(
+      'SELECT key FROM auth_sessions'
+    );
+    
+    return rows.map(row => row.key);
   }
 
   async setAuthSession(key: string, value: string, encrypted: number = 0): Promise<void> {
@@ -695,7 +752,213 @@ class Database {
   async removeAuthSession(key: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     
+    // Log all removals to track what's deleting sessions
+    console.log('[Database] Removing auth session:', key);
+    
     await this.db.runAsync('DELETE FROM auth_sessions WHERE key = ?', [key]);
+  }
+
+  async clearAuthSessions(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    
+    console.log('[Database] 🧹 CLEARING ALL AUTH SESSIONS');
+    await this.db.execAsync('DELETE FROM auth_sessions');
+  }
+  
+  async countAuthSessions(): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+    
+    const result = await this.db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM auth_sessions'
+    );
+    
+    return result?.count || 0;
+  }
+
+  // Soft delete methods - get deleted items
+  async getDeletedLogs(userId?: string | null): Promise<OvertimeLog[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `SELECT * FROM overtime_logs WHERE user_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`
+      : `SELECT * FROM overtime_logs WHERE user_id IS NULL AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`;
+    const params = userId ? [userId] : [];
+
+    const result = await this.db.getAllAsync(query, params);
+
+    return result.map((row: any) => ({
+      id: row.id as string,
+      date: row.date as string,
+      rosteredStart: row.rostered_start as string | undefined,
+      rosteredFinish: row.rostered_finish as string | undefined,
+      actualStart: row.actual_start as string,
+      actualFinish: row.actual_finish as string,
+      mealBreakMinutes: row.meal_break_minutes as number,
+      minutesOvertime: row.minutes_overtime as number,
+      category: row.category as 'Overtime' | 'Oncall' | 'HP Emergency Clinical on Call' | 'HPDO Priority on Call' | 'Recall Offsite' | 'Recall Onsite' | 'Recall Offsite Normal Duties (QPSOOE award)' | 'Recall Telephone Advice (Medical)' | 'Change shift' | 'Change shift - cancel leave',
+      comments: row.comments as string | undefined,
+      initials: row.initials as string,
+      status: row.status as 'draft' | 'ready' | 'exported',
+      exportBatchId: row.export_batch_id as string | undefined,
+      source: row.source as 'manual' | 'geofence-proposed' | 'imported',
+      isActiveShift: row.is_active_shift === 1,
+      concurrentEmployment: row.concurrent_employment === 1,
+      smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      deletedAt: row.deleted_at as string
+    }));
+  }
+
+  async getDeletedShifts(userId?: string | null): Promise<UsualShift[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `SELECT * FROM usual_shifts WHERE user_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`
+      : `SELECT * FROM usual_shifts WHERE user_id IS NULL AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`;
+    const params = userId ? [userId] : [];
+    
+    const result = await this.db.getAllAsync(query, params);
+
+    return result.map((row: any) => ({
+      id: row.id as string,
+      label: row.label as string,
+      type: row.type as 'weekly' | 'biweekly' | 'custom',
+      weekIndex: row.week_index as 1 | 2 | undefined,
+      dayOfWeek: row.day_of_week as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      rosteredStart: row.rostered_start as string,
+      rosteredFinish: row.rostered_finish as string,
+      mealBreakMinutes: row.meal_break_minutes as number,
+      activeFrom: row.active_from as string,
+      activeTo: row.active_to as string | undefined,
+      deletedAt: row.deleted_at as string
+    }));
+  }
+
+  async getDeletedExportBatches(userId?: string | null): Promise<ExportBatch[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `SELECT * FROM export_batches WHERE user_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`
+      : `SELECT * FROM export_batches WHERE user_id IS NULL AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`;
+    const params = userId ? [userId] : [];
+
+    const result = await this.db.getAllAsync(query, params);
+
+    return result.map((row: any) => ({
+      id: row.id as string,
+      createdAt: row.created_at as string,
+      pdfUri: row.pdf_uri as string,
+      countLogs: row.count_logs as number,
+      totalMinutes: row.total_minutes as number,
+      submittedToEmail: row.submitted_to_email as string | undefined,
+      customName: row.custom_name as string | undefined,
+      deletedAt: row.deleted_at as string
+    }));
+  }
+
+  // Restore deleted items (clear deleted_at)
+  async restoreLog(id: string, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `UPDATE overtime_logs SET deleted_at = NULL WHERE id = ? AND user_id = ?`
+      : `UPDATE overtime_logs SET deleted_at = NULL WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
+  }
+
+  async restoreShift(id: string, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `UPDATE usual_shifts SET deleted_at = NULL WHERE id = ? AND user_id = ?`
+      : `UPDATE usual_shifts SET deleted_at = NULL WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
+  }
+
+  async restoreExportBatch(id: string, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `UPDATE export_batches SET deleted_at = NULL WHERE id = ? AND user_id = ?`
+      : `UPDATE export_batches SET deleted_at = NULL WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
+  }
+
+  // Permanently delete items (hard delete)
+  async permanentlyDeleteLog(id: string, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `DELETE FROM overtime_logs WHERE id = ? AND user_id = ?`
+      : `DELETE FROM overtime_logs WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
+  }
+
+  async permanentlyDeleteShift(id: string, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `DELETE FROM usual_shifts WHERE id = ? AND user_id = ?`
+      : `DELETE FROM usual_shifts WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
+  }
+
+  async permanentlyDeleteExportBatch(id: string, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `DELETE FROM export_batches WHERE id = ? AND user_id = ?`
+      : `DELETE FROM export_batches WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [id, userId] : [id];
+
+    await this.db.runAsync(query, params);
+  }
+
+  // Cleanup deleted items older than 30 days
+  async cleanupOldDeletedItems(userId?: string | null): Promise<{ logsDeleted: number; shiftsDeleted: number; batchesDeleted: number }> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const cutoffDate = thirtyDaysAgo.toISOString();
+
+    // Delete logs older than 30 days
+    const logsQuery = userId
+      ? `DELETE FROM overtime_logs WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?`
+      : `DELETE FROM overtime_logs WHERE user_id IS NULL AND deleted_at IS NOT NULL AND deleted_at < ?`;
+    const logsParams = userId ? [userId, cutoffDate] : [cutoffDate];
+    const logsResult = await this.db.runAsync(logsQuery, logsParams);
+
+    // Delete shifts older than 30 days
+    const shiftsQuery = userId
+      ? `DELETE FROM usual_shifts WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?`
+      : `DELETE FROM usual_shifts WHERE user_id IS NULL AND deleted_at IS NOT NULL AND deleted_at < ?`;
+    const shiftsParams = userId ? [userId, cutoffDate] : [cutoffDate];
+    const shiftsResult = await this.db.runAsync(shiftsQuery, shiftsParams);
+
+    // Delete export batches older than 30 days
+    const batchesQuery = userId
+      ? `DELETE FROM export_batches WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?`
+      : `DELETE FROM export_batches WHERE user_id IS NULL AND deleted_at IS NOT NULL AND deleted_at < ?`;
+    const batchesParams = userId ? [userId, cutoffDate] : [cutoffDate];
+    const batchesResult = await this.db.runAsync(batchesQuery, batchesParams);
+
+    return {
+      logsDeleted: logsResult.changes || 0,
+      shiftsDeleted: shiftsResult.changes || 0,
+      batchesDeleted: batchesResult.changes || 0
+    };
   }
 }
 

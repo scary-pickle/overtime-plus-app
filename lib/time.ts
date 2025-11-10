@@ -182,12 +182,26 @@ export function getTimeInTimezone(timezone: string = 'Australia/Brisbane'): stri
 }
 
 /**
+ * Format a Date object to YYYY-MM-DD string without timezone conversion
+ * This avoids issues where toISOString() converts to UTC and may shift the date
+ */
+export function formatDateToISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Get the previous day's date in ISO format (YYYY-MM-DD)
+ * Uses string manipulation to avoid timezone conversion issues
  */
 export function getPreviousISODate(dateISO: string): string {
-  const d = new Date(dateISO + 'T00:00:00');
+  const [year, month, day] = dateISO.split('-').map(Number);
+  const d = new Date(year, month - 1, day); // month is 0-indexed in JS Date
   d.setDate(d.getDate() - 1);
-  return d.toISOString().split('T')[0];
+  
+  return formatDateToISO(d);
 }
 
 /**
