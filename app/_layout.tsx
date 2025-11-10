@@ -14,6 +14,7 @@ import { subscribeToAuthDeepLinks } from '../lib/auth/deeplinks';
 import { useAuthStore } from '../lib/state/authStore';
 import { syncQueue } from '../lib/sync/queue';
 import { purgeLegacyAuthStorage } from '../lib/auth/migrateAuthStorage';
+import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -96,6 +97,16 @@ export default function RootLayout() {
         } catch (error) {
           console.error('[App] Failed to cleanup old deleted items:', error);
         }
+      }
+
+      // Cleanup old PDF cache files (runs for all users, not just authenticated)
+      try {
+        const deletedCount = await cleanupOldPDFs();
+        if (deletedCount > 0) {
+          console.log(`[App] Cleaned up ${deletedCount} old PDF file(s) from cache`);
+        }
+      } catch (error) {
+        console.error('[App] Failed to cleanup old PDF cache:', error);
       }
 
       console.log('App initialized successfully');

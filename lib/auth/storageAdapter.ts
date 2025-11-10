@@ -198,7 +198,7 @@ export const SecureStoreAdapter = {
       debug('Setting key:', key.substring(0, 20) + '...', 'value length:', value.length);
       await clearChunkedData(key);
 
-      const { payload, compressed } = maybeCompress(key, value);
+      let { payload, compressed } = maybeCompress(key, value);
       
       // Check if we need to chunk based on byte size
       const payloadBytes = new TextEncoder().encode(payload).length;
@@ -212,27 +212,38 @@ export const SecureStoreAdapter = {
         needsChunking 
       });
       
+      // CRITICAL FIX: If compressed data exceeds chunk size, we can't split it
+      // LZString compressed data is a single stream that can't be split
+      // Solution: Don't compress if it would exceed the limit - chunk uncompressed instead
+      if (compressed && needsChunking) {
+        // This is expected behavior for large session data - use debug instead of warn
+        debug('Compressed data exceeds chunk size, storing uncompressed and chunking instead');
+        // Revert to uncompressed data so we can chunk it
+        payload = value;
+        compressed = false;
+        // Recalculate payloadBytes after reverting to uncompressed
+        const newPayloadBytes = new TextEncoder().encode(payload).length;
+        debug('Reverted to uncompressed:', { 
+          originalCompressedBytes: payloadBytes,
+          uncompressedBytes: newPayloadBytes,
+          willChunk: newPayloadBytes > CHUNK_SIZE
+        });
+      }
+      
       let chunks: string[];
-      if (needsChunking) {
-        // Only chunk if we absolutely have to (payload > 1700 bytes)
-        // For compressed data, we can't split it - it must be stored as-is
-        // So if compressed data is too large, we have a problem
-        if (compressed) {
-          console.warn('SecureStoreAdapter.setItem: Compressed data exceeds chunk size, cannot split compressed data');
-          debug('Compressed data too large, cannot chunk');
-          // Try to store anyway - might work if SecureStore allows slightly larger values
-          chunks = [payload];
-        } else {
-          // Uncompressed data can be chunked
-          chunks = splitIntoChunks(payload);
-        }
+      const finalPayloadBytes = new TextEncoder().encode(payload).length;
+      const finalNeedsChunking = finalPayloadBytes > CHUNK_SIZE;
+      
+      if (finalNeedsChunking) {
+        // Uncompressed data can be chunked
+        chunks = splitIntoChunks(payload);
       } else {
         // Data fits in one chunk - store directly without base64 encoding
         // This avoids corruption issues with base64 encoding
         chunks = [payload];
       }
       
-      debug('Storing as chunks:', { chunks: chunks.length, compressed, originalLength: value.length, payloadLength: payload.length, payloadBytes });
+      debug('Storing as chunks:', { chunks: chunks.length, compressed, originalLength: value.length, payloadLength: payload.length, finalPayloadBytes: finalPayloadBytes });
 
       await Promise.all(
         chunks.map((chunk, index) =>

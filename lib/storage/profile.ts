@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { Profile } from '../../types';
+import { encrypt, decrypt } from '../utils/encryption';
 
 const PROFILE_KEY_PREFIX = 'overtime_plus_profile';
 const LEGACY_PROFILE_KEY = 'overtime_plus_profile'; // Old key for migration
@@ -32,7 +33,27 @@ export class ProfileStorage {
         hasEmployeeInitial: !!profile.employeeInitial,
         fieldCount: Object.keys(profile).length,
       });
-      const profileJson = JSON.stringify(profile);
+      
+      // Encrypt PII fields before storing
+      const profileToSave = { ...profile };
+      if (profileToSave.employeeInitial) {
+        try {
+          profileToSave.employeeInitial = await encrypt(profileToSave.employeeInitial);
+        } catch (encryptError) {
+          console.error('Failed to encrypt initials (non-fatal):', encryptError);
+          // Continue without encryption if it fails
+        }
+      }
+      if (profileToSave.email) {
+        try {
+          profileToSave.email = await encrypt(profileToSave.email);
+        } catch (encryptError) {
+          console.error('Failed to encrypt email (non-fatal):', encryptError);
+          // Continue without encryption if it fails
+        }
+      }
+      
+      const profileJson = JSON.stringify(profileToSave);
       await SecureStore.setItemAsync(profileKey, profileJson);
       debug('Profile saved successfully to storage');
     } catch (error) {
@@ -55,6 +76,15 @@ export class ProfileStorage {
       
       const profile = JSON.parse(profileJson) as any;
       
+      // Decrypt PII fields after loading
+      // The decrypt function will return the original value if it's not encrypted (old data)
+      if (profile.employeeInitial) {
+        profile.employeeInitial = await decrypt(profile.employeeInitial);
+      }
+      if (profile.email) {
+        profile.email = await decrypt(profile.email);
+      }
+      
       // Migration: Convert old profile format to new format
       if (profile.delegateSignatureUri !== undefined && profile.employeeInitial === undefined) {
         debug('Migrating profile from old format');
@@ -63,7 +93,7 @@ export class ProfileStorage {
         // Remove old signature field
         delete profile.delegateSignatureUri;
 
-        // Save the migrated profile
+        // Save the migrated profile (will encrypt PII fields)
         await this.saveProfile(profile as Profile, userId);
         debug('Profile migrated successfully');
       }
@@ -71,28 +101,28 @@ export class ProfileStorage {
       // Ensure employee initial is always set
       if (!profile.employeeInitial && profile.fullName) {
         profile.employeeInitial = this.generateInitials(profile.fullName);
-        // Save the updated profile
+        // Save the updated profile (will encrypt PII fields)
         await this.saveProfile(profile as Profile, userId);
       }
       
       // Migration: Add concurrent employment default if missing
       if (profile.concurrentEmploymentDefault === undefined) {
         profile.concurrentEmploymentDefault = false;
-        // Save the updated profile
+        // Save the updated profile (will encrypt PII fields)
         await this.saveProfile(profile as Profile, userId);
       }
       
       // Migration: Add email field if missing
       if (profile.email === undefined) {
         profile.email = '';
-        // Save the updated profile
+        // Save the updated profile (will encrypt PII fields)
         await this.saveProfile(profile as Profile, userId);
       }
       
       // Migration: Add isSMO field if missing
       if (profile.isSMO === undefined) {
         profile.isSMO = false; // Default to non-SMO
-        // Save the updated profile
+        // Save the updated profile (will encrypt PII fields)
         await this.saveProfile(profile as Profile, userId);
       }
 

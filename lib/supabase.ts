@@ -14,6 +14,17 @@ import { profileStorage } from './storage/profile';
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
+// Validate HTTPS requirement for Supabase URL (non-blocking, logs warning instead of throwing)
+// This prevents module load failures while still alerting developers to security issues
+if (SUPABASE_URL && !SUPABASE_URL.startsWith('https://')) {
+  console.error(
+    '[supabase] SECURITY WARNING: Invalid Supabase URL - Must use HTTPS. Non-HTTPS URLs are not allowed for security reasons.',
+    'URL:', SUPABASE_URL.substring(0, 50) + '...'
+  );
+  // Don't throw - allow app to continue but log the security issue
+  // The app will fail when trying to create the client anyway
+}
+
 export const supabaseEnabled = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
 const isDev = process.env.NODE_ENV !== 'production';

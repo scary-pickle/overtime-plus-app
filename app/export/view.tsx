@@ -19,6 +19,7 @@ import { useProfileStore } from '../../lib/state/profileStore';
 import { formatMinutes } from '../../lib/time';
 import { sendAVACEmail } from '../../lib/email/emailService';
 import { downloadPDFFromStorage, isCloudURL, isLocalPath } from '../../lib/storage/pdfStorage';
+import { setClipboardWithAutoClear } from '../../lib/utils/clipboard';
 import InAppPDFViewer from '../../components/InAppPDFViewer';
 
 export default function PDFViewerScreen() {
@@ -35,6 +36,7 @@ export default function PDFViewerScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<'preview' | 'details'>('preview');
   const [localPdfUri, setLocalPdfUri] = useState<string | null>(null);
+  const [emailDetails, setEmailDetails] = useState<{ recipientEmail: string; subject: string; body: string } | null>(null);
 
   useEffect(() => {
     if (batchId) {
@@ -165,16 +167,28 @@ export default function PDFViewerScreen() {
         Alert.alert('Success', 'Email opened in Apple Mail with attachment and all details pre-filled. Please review and send.');
         setIsSubmitting(false);
       } else if (result.success && result.useShareSheet) {
-        // Share sheet method - copy info to clipboard and open share sheet
-        const clipboardText = `To: ${result.recipientEmail}\nSubject: ${result.subject}\n\n${result.body}`;
-        await Clipboard.setStringAsync(clipboardText);
+        // Share sheet method - store email details for manual copy
+        if (result.recipientEmail && result.subject && result.body) {
+          setEmailDetails({
+            recipientEmail: result.recipientEmail,
+            subject: result.subject,
+            body: result.body,
+          });
+        } else {
+          Alert.alert('Error', 'Email details are incomplete. Please try again.');
+          setIsSubmitting(false);
+          return;
+        }
         
-        // Show brief notification then open share sheet
+        // Show alert with option to copy to clipboard
         Alert.alert(
           'Ready to Email',
-          `✓ Email details copied to clipboard\n\nTo: ${result.recipientEmail}\n\nNext: Select your email app (e.g., Outlook), then paste (Cmd+V) the email details.`,
+          `To: ${result.recipientEmail}\n\nSubject: ${result.subject}\n\nUse the "Copy Email Details" button below to copy the email details to your clipboard, then select your email app (e.g., Outlook) and paste (Cmd+V) the details.`,
           [
-            { text: 'Cancel', style: 'cancel', onPress: () => setIsSubmitting(false) },
+            { text: 'Cancel', style: 'cancel', onPress: () => {
+              setIsSubmitting(false);
+              setEmailDetails(null);
+            }},
             {
               text: 'Continue',
               onPress: async () => {
@@ -209,6 +223,20 @@ export default function PDFViewerScreen() {
       console.error('Error submitting AVAC:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
       setIsSubmitting(false);
+    }
+  };
+
+  const handleCopyEmailDetails = async () => {
+    if (!emailDetails) return;
+
+    const clipboardText = `To: ${emailDetails.recipientEmail}\nSubject: ${emailDetails.subject}\n\n${emailDetails.body}`;
+    
+    try {
+      await setClipboardWithAutoClear(clipboardText, 60000); // Auto-clear after 60 seconds
+      Alert.alert('Copied', 'Email details copied to clipboard. They will be automatically cleared in 60 seconds.');
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      Alert.alert('Error', 'Failed to copy email details to clipboard. Please try again.');
     }
   };
 
@@ -355,6 +383,28 @@ export default function PDFViewerScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Email Details Copy Button (shown when email details are available) */}
+        {emailDetails && (
+          <View style={[styles.emailDetailsCard, isDark && styles.darkCard]}>
+            <Text style={[styles.emailDetailsTitle, isDark && styles.darkText]}>
+              Email Details Ready
+            </Text>
+            <Text style={[styles.emailDetailsText, isDark && styles.darkText]}>
+              To: {emailDetails.recipientEmail}
+            </Text>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.copyButton]}
+              onPress={handleCopyEmailDetails}
+            >
+              <Ionicons name="copy-outline" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Copy Email Details</Text>
+            </TouchableOpacity>
+            <Text style={[styles.emailDetailsHint, isDark && styles.darkText]}>
+              Clipboard will be cleared automatically after 60 seconds
+            </Text>
+          </View>
+        )}
 
         {/* Action Buttons */}
         <View style={styles.actions}>
@@ -587,5 +637,36 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     marginBottom: 24,
+  },
+  emailDetailsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  emailDetailsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  emailDetailsText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+  },
+  emailDetailsHint: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  copyButton: {
+    backgroundColor: '#007AFF',
   },
 });
