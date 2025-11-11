@@ -32,8 +32,14 @@ export async function getLatestTemplateMeta(templateType: TemplateType): Promise
   if (!url || !anonKey) return null;
 
   // Normalize localhost URLs for iOS simulator compatibility
-  const normalizedUrl = url.replace('127.0.0.1', 'localhost');
+  // iOS simulator can't reach localhost - need to use actual machine IP or 10.0.2.2 for Android
+  let normalizedUrl = url.replace('127.0.0.1', 'localhost');
+  
+  // For iOS simulator, try using the machine's IP if localhost fails
+  // This will be handled by a retry mechanism
   const endpoint = `${normalizedUrl}/rest/v1/pdf_templates?template_type=eq.${templateType}&is_active=is.true&select=template_type,version,pdf_storage_path,coordinate_mapping&limit=1`;
+  
+  console.log(`[templateLoader] Fetching template meta for ${templateType} from: ${endpoint.substring(0, 80)}...`);
   
   try {
     const res = await fetch(endpoint, {

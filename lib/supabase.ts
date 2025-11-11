@@ -16,11 +16,14 @@ const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 // Validate HTTPS requirement for Supabase URL (non-blocking, logs warning instead of throwing)
 // This prevents module load failures while still alerting developers to security issues
-// Allow localhost/127.0.0.1 for local development
+// Allow localhost/127.0.0.1/local IPs for local development
 const isLocalhost = SUPABASE_URL && (
   SUPABASE_URL.includes('localhost') || 
   SUPABASE_URL.includes('127.0.0.1') ||
-  SUPABASE_URL.includes('0.0.0.0')
+  SUPABASE_URL.includes('0.0.0.0') ||
+  SUPABASE_URL.includes('10.0.0.') || // Local network IPs
+  SUPABASE_URL.includes('192.168.') || // Local network IPs
+  SUPABASE_URL.match(/^http:\/\/10\.\d+\.\d+\.\d+/) // Any 10.x.x.x IP
 );
 
 if (SUPABASE_URL && !SUPABASE_URL.startsWith('https://') && !isLocalhost) {
