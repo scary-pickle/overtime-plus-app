@@ -4,7 +4,7 @@
  * When Supabase credentials are provided, real sync functionality will be enabled
  */
 
-import { Profile, OvertimeLog, ExportBatch, UsualShift } from '../types';
+import { Profile, OvertimeLog, ExportBatch, UsualShift, ShiftTemplate } from '../types';
 import { createClient } from '@supabase/supabase-js';
 import { SecureStoreAdapter } from './auth/storageAdapter';
 import { database } from './db/sqlite';
@@ -1216,6 +1216,305 @@ export const shiftsSync = {
       }
     } catch (error) {
       console.error('[shiftsSync.deleteShift] Failed to delete shift from Supabase:', error);
+      throw error;
+    }
+  },
+};
+
+/**
+ * Shift templates sync functions (for ShiftTemplate)
+ */
+export const shiftTemplatesSync = {
+  async uploadTemplate(template: ShiftTemplate, userId?: string | null): Promise<void> {
+    if (!supabaseEnabled) {
+      return;
+    }
+
+    if (!userId) {
+      debug('[shiftTemplatesSync.uploadTemplate] No userId provided, skipping Supabase sync');
+      return;
+    }
+
+    try {
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug('[shiftTemplatesSync.uploadTemplate] No session available, cannot upload template');
+        throw new Error('No active session - please sign in again');
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Check if template already exists using direct REST API
+      const checkUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${template.id}&notes=eq.shift_template&deleted_at=is.null&select=id&limit=1`;
+      
+      const checkResponse = await fetch(checkUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      let existingId: string | null = null;
+      if (checkResponse.ok) {
+        const existingData = await checkResponse.json();
+        if (Array.isArray(existingData) && existingData.length > 0) {
+          existingId = existingData[0].id;
+        }
+      }
+
+      // Store template in shifts table with notes='shift_template' marker
+      // Use a dummy date for start_at/end_at since templates don't have dates
+      const templateData = {
+        user_id: userId,
+        start_at: new Date().toISOString(), // Dummy date for querying
+        end_at: null,
+        department: null,
+        hospital: null,
+        notes: 'shift_template', // Marker to identify this as a ShiftTemplate
+        extras: template, // Store full ShiftTemplate object in extras JSONB
+        updated_at: new Date().toISOString(),
+        deleted_at: template.deletedAt || null, // Include soft delete timestamp
+      };
+
+      let response: Response;
+      if (existingId) {
+        // Update existing template
+        debug('[shiftTemplatesSync.uploadTemplate] Updating existing template', { existingId, templateId: template.id });
+        const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingId}&select=*`;
+        response = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(templateData),
+        });
+      } else {
+        // Insert new template
+        debug('[shiftTemplatesSync.uploadTemplate] Inserting new template', { templateId: template.id });
+        const insertUrl = `${SUPABASE_URL}/rest/v1/shifts?select=*`;
+        response = await fetch(insertUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(templateData),
+        });
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        console.error('[shiftTemplatesSync.uploadTemplate] Error uploading template:', errorData);
+        throw errorData;
+      }
+
+      debug('[shiftTemplatesSync.uploadTemplate] Template uploaded successfully to Supabase', {
+        templateId: template.id,
+      });
+    } catch (error) {
+      console.error('[shiftTemplatesSync.uploadTemplate] Failed to upload template to Supabase:', error);
+      throw error;
+    }
+  },
+
+  async downloadTemplates(userId?: string | null): Promise<ShiftTemplate[]> {
+    if (!supabaseEnabled) {
+      return [];
+    }
+
+    if (!userId) {
+      debug('[shiftTemplatesSync.downloadTemplates] No userId provided, skipping Supabase sync');
+      return [];
+    }
+
+    try {
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug('[shiftTemplatesSync.downloadTemplates] No session available, cannot download templates');
+        return [];
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Fetch templates from shifts table where notes='shift_template'
+      const url = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&notes=eq.shift_template&deleted_at=is.null&select=*&order=created_at.desc`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[shiftTemplatesSync.downloadTemplates] Error downloading templates:', errorText);
+        return [];
+      }
+
+      const data = await response.json();
+      
+      if (!Array.isArray(data)) {
+        debug('[shiftTemplatesSync.downloadTemplates] Invalid response format, returning empty array');
+        return [];
+      }
+
+      // Extract templates from extras JSONB field
+      const templates: ShiftTemplate[] = data
+        .map((row: any) => {
+          try {
+            const template = row.extras as ShiftTemplate;
+            if (template && template.id && template.label) {
+              return template;
+            }
+            return null;
+          } catch (error) {
+            console.error('[shiftTemplatesSync.downloadTemplates] Error parsing template:', error);
+            return null;
+          }
+        })
+        .filter((template: ShiftTemplate | null): template is ShiftTemplate => template !== null);
+
+      debug('[shiftTemplatesSync.downloadTemplates] Downloaded templates from Supabase', {
+        count: templates.length,
+      });
+
+      return templates;
+    } catch (error) {
+      console.error('[shiftTemplatesSync.downloadTemplates] Failed to download templates from Supabase:', error);
+      return [];
+    }
+  },
+
+  async deleteTemplate(templateId: string, userId?: string | null): Promise<void> {
+    if (!supabaseEnabled) {
+      return;
+    }
+
+    if (!userId) {
+      debug('[shiftTemplatesSync.deleteTemplate] No userId provided, skipping Supabase sync');
+      return;
+    }
+
+    try {
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug('[shiftTemplatesSync.deleteTemplate] No session available, cannot delete template');
+        throw new Error('No active session - please sign in again');
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Find template by extras->>id and notes='shift_template'
+      const findUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${templateId}&notes=eq.shift_template&deleted_at=is.null&select=id&limit=1`;
+      
+      const findResponse = await fetch(findUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!findResponse.ok) {
+        const errorText = await findResponse.text();
+        console.error('[shiftTemplatesSync.deleteTemplate] Error finding template:', errorText);
+        throw new Error('Failed to find template');
+      }
+
+      const findData = await findResponse.json();
+      
+      if (!Array.isArray(findData) || findData.length === 0) {
+        debug('[shiftTemplatesSync.deleteTemplate] Template not found in Supabase', { templateId });
+        return;
+      }
+
+      const supabaseId = findData[0].id;
+
+      // Soft delete by setting deleted_at
+      const deleteUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${supabaseId}`;
+      const deleteResponse = await fetch(deleteUrl, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
+          deleted_at: new Date().toISOString(),
+        }),
+      });
+
+      if (!deleteResponse.ok) {
+        const errorText = await deleteResponse.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        console.error('[shiftTemplatesSync.deleteTemplate] Error deleting template:', errorData);
+        throw errorData;
+      }
+
+      debug('[shiftTemplatesSync.deleteTemplate] Template deleted successfully from Supabase', {
+        templateId,
+      });
+    } catch (error) {
+      console.error('[shiftTemplatesSync.deleteTemplate] Failed to delete template from Supabase:', error);
       throw error;
     }
   },

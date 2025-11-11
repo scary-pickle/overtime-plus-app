@@ -10,12 +10,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
+import { useShiftTemplatesStore } from '../../lib/state/shiftTemplatesStore';
+import { useAuthStore } from '../../lib/state/authStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
 import { getCurrentDate, getCurrentTime } from '../../lib/time';
 import { validateShift } from '../../lib/roster';
-import { UsualShift } from '../../types';
+import { UsualShift, ShiftTemplate } from '../../types';
 
 const SHIFT_TYPES = [
   { value: 'weekly', label: 'Weekly' },
@@ -44,6 +46,8 @@ export default function NewShiftScreen() {
   const isDark = colorScheme === 'dark';
   
   const { addShift } = useShiftsStore();
+  const { templates, loadTemplates, addTemplate } = useShiftTemplatesStore();
+  const { user } = useAuthStore();
   
   const [label, setLabel] = useState('');
   const [type, setType] = useState<'weekly' | 'biweekly' | 'custom'>('weekly');
@@ -56,6 +60,13 @@ export default function NewShiftScreen() {
   const [activeFrom, setActiveFrom] = useState(getCurrentDate());
   const [activeTo, setActiveTo] = useState('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [createdFromTemplate, setCreatedFromTemplate] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Load templates on mount
+    loadTemplates(user?.id);
+  }, [user?.id, loadTemplates]);
 
   useEffect(() => {
     // Set finish time to 8 hours after start time by default
@@ -70,6 +81,25 @@ export default function NewShiftScreen() {
       setRosteredFinish(`${finishHours.toString().padStart(2, '0')}:${finishMins.toString().padStart(2, '0')}`);
     }
   }, [rosteredStart]);
+
+  const handleTemplateSelect = (template: ShiftTemplate) => {
+    setLabel(template.label);
+    setRosteredStart(template.rosteredStart);
+    setRosteredFinish(template.rosteredFinish);
+    setMealBreakMinutes(template.mealBreakMinutes || 0);
+    setCreatedFromTemplate(true);
+    setSelectedTemplateId(template.id);
+  };
+
+  const handleClearTemplate = () => {
+    setCreatedFromTemplate(false);
+    setSelectedTemplateId(null);
+    // Reset form fields to defaults
+    setLabel('');
+    setRosteredStart(getCurrentTime());
+    setRosteredFinish('');
+    setMealBreakMinutes(30);
+  };
 
   const validateForm = () => {
     if (selectedDays.length === 0) {
@@ -103,7 +133,7 @@ export default function NewShiftScreen() {
     return true;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (saveAsTemplate: boolean = false) => {
     console.log('💾 NewShiftScreen: Save button pressed');
     console.log('📝 NewShiftScreen: Form data:', {
       label,
@@ -122,7 +152,35 @@ export default function NewShiftScreen() {
       return;
     }
 
+    // If not created from template and not already saving as template, show prompt
+    if (!createdFromTemplate && !saveAsTemplate && label && rosteredStart && rosteredFinish) {
+      Alert.alert(
+        'Save as Template?',
+        'Would you like to save this shift configuration as a template for quick selection next time?',
+        [
+          { text: 'Save Shift Only', style: 'cancel', onPress: () => handleSave(false) },
+          { text: 'Save Shift & Template', onPress: () => handleSave(true) },
+        ]
+      );
+      return;
+    }
+
     try {
+      // Save as template if requested
+      if (saveAsTemplate && label && rosteredStart && rosteredFinish) {
+        const template: ShiftTemplate = {
+          id: `template_${Date.now()}`,
+          label,
+          rosteredStart,
+          rosteredFinish,
+          mealBreakMinutes: mealBreakMinutes || 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await addTemplate(template, user?.id);
+        console.log('✅ NewShiftScreen: Template saved successfully');
+      }
+
       console.log('🔄 NewShiftScreen: Creating shifts for days:', selectedDays);
       // Create a separate shift for each selected day
       const shiftPromises = selectedDays.map((dayOfWeek, index) => {
@@ -282,7 +340,14 @@ export default function NewShiftScreen() {
           <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
           <TimeInput
             value={rosteredStart}
-            onChange={setRosteredStart}
+            onChange={(value) => {
+              setRosteredStart(value);
+              // Reset template flag if manually edited
+              if (createdFromTemplate) {
+                setCreatedFromTemplate(false);
+                setSelectedTemplateId(null);
+              }
+            }}
             placeholder="Select start time"
             inputId="shift-rostered-start"
           />
@@ -291,7 +356,14 @@ export default function NewShiftScreen() {
           <Text style={[styles.timeLabel, isDark && styles.darkText]}>Finish</Text>
           <TimeInput
             value={rosteredFinish}
-            onChange={setRosteredFinish}
+            onChange={(value) => {
+              setRosteredFinish(value);
+              // Reset template flag if manually edited
+              if (createdFromTemplate) {
+                setCreatedFromTemplate(false);
+                setSelectedTemplateId(null);
+              }
+            }}
             placeholder="Select finish time"
             inputId="shift-rostered-finish"
           />
@@ -327,6 +399,11 @@ export default function NewShiftScreen() {
               onPress={() => {
                 setMealBreakMinutes(minutes);
                 setShowMealBreakPicker(false);
+                // Reset template flag if manually edited
+                if (createdFromTemplate) {
+                  setCreatedFromTemplate(false);
+                  setSelectedTemplateId(null);
+                }
               }}
             >
               <Text style={[
@@ -371,6 +448,68 @@ export default function NewShiftScreen() {
     </View>
   );
 
+  const renderTemplateSelection = () => {
+    if (templates.length === 0) return null;
+
+    return (
+      <View style={[styles.section, isDark && styles.darkCard]}>
+        <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+          Quick Select Template
+        </Text>
+        <Text style={[styles.sectionSubtitle, isDark && styles.darkText]}>
+          Select a template to quickly fill in shift times
+        </Text>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.templateScrollView}
+          contentContainerStyle={styles.templateContainer}
+        >
+          {templates.map((template) => (
+            <TouchableOpacity
+              key={template.id}
+              style={[
+                styles.templateButton,
+                isDark && selectedTemplateId !== template.id && styles.darkTemplateButton,
+                selectedTemplateId === template.id && styles.selectedTemplateButton,
+              ]}
+              onPress={() => handleTemplateSelect(template)}
+            >
+              <Text
+                style={[
+                  styles.templateButtonText,
+                  isDark && selectedTemplateId !== template.id && styles.darkTemplateButtonText,
+                  selectedTemplateId === template.id && styles.selectedTemplateButtonText,
+                ]}
+              >
+                {template.label}
+              </Text>
+              <Text
+                style={[
+                  styles.templateButtonSubtext,
+                  isDark && selectedTemplateId !== template.id && styles.darkTemplateButtonSubtext,
+                  selectedTemplateId === template.id && styles.selectedTemplateButtonSubtext,
+                ]}
+              >
+                {template.rosteredStart} - {template.rosteredFinish}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+        {selectedTemplateId && (
+          <TouchableOpacity
+            style={[styles.clearTemplateButton, isDark && styles.darkClearTemplateButton]}
+            onPress={handleClearTemplate}
+          >
+            <Text style={[styles.clearTemplateButtonText, isDark && styles.darkClearTemplateButtonText]}>
+              Clear Template
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
   const renderLabelInput = () => (
     <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
@@ -388,7 +527,14 @@ export default function NewShiftScreen() {
             'Enter a name for this shift pattern:',
             [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'OK', onPress: (text?: string) => setLabel(text || '') }
+              { text: 'OK', onPress: (text?: string) => {
+                setLabel(text || '');
+                // Reset template flag if manually edited
+                if (createdFromTemplate) {
+                  setCreatedFromTemplate(false);
+                  setSelectedTemplateId(null);
+                }
+              }}
             ],
             'plain-text',
             label
@@ -406,6 +552,9 @@ export default function NewShiftScreen() {
     <SharedTimePickerProvider>
       <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
+        {/* Template Selection */}
+        {renderTemplateSelection()}
+
         {/* Label */}
         {renderLabelInput()}
 
@@ -438,7 +587,7 @@ export default function NewShiftScreen() {
           
           <TouchableOpacity
             style={[styles.button, styles.saveButton]}
-            onPress={handleSave}
+            onPress={() => handleSave(false)}
           >
             <Text style={styles.saveButtonText}>Save Shift</Text>
           </TouchableOpacity>
@@ -730,5 +879,78 @@ const styles = StyleSheet.create({
   },
   darkCancelButtonText: {
     color: '#fff',
+  },
+
+  // Template selection
+  templateScrollView: {
+    marginTop: 8,
+  },
+  templateContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: 12,
+  },
+  templateButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  selectedTemplateButton: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  darkTemplateButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  templateButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  selectedTemplateButtonText: {
+    color: '#fff',
+  },
+  darkTemplateButtonText: {
+    color: '#999',
+  },
+  templateButtonSubtext: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  selectedTemplateButtonSubtext: {
+    color: '#fff',
+  },
+  darkTemplateButtonSubtext: {
+    color: '#999',
+  },
+  clearTemplateButton: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignSelf: 'flex-start',
+  },
+  darkClearTemplateButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  clearTemplateButtonText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  darkClearTemplateButtonText: {
+    color: '#999',
   },
 });

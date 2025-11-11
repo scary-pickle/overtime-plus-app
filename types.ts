@@ -138,3 +138,15 @@ export type LogTemplate = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type ShiftTemplate = {
+  id: string;
+  label: string;          // "Morning Shift", "Evening Shift"
+  rosteredStart: string;  // "08:00"
+  rosteredFinish: string; // "16:00"
+  mealBreakMinutes?: number; // default 0
+  createdAt: string;
+  updatedAt: string;
+  userId?: string | null; // For multi-user support
+  deletedAt?: string;    // ISO timestamp for soft delete
+};

@@ -173,6 +173,15 @@ import { avacCoordinates, fontSizes, fontFamilies, getRowYPosition, getMaxRowsPe
 import { formatMinutes } from '../time';
 // import Base64 from 'react-native-base64';
 
+// ROOT CAUSE FIX: Normalize asset paths before registration
+// This prevents Metro from generating httpServerLocation with ./ prefix
+import { patchAssetSourceResolver } from '../metro/assetPathNormalizer';
+patchAssetSourceResolver();
+
+// Import the template asset at module level to ensure proper bundling
+// Use a relative path that Metro can properly resolve
+const AVAC_TEMPLATE_ASSET = require('../../assets/pdf/AVAC template horizontal.pdf');
+
 /**
  * Copy template to cache directory
  */
@@ -186,17 +195,117 @@ async function copyTemplateToCache(): Promise<void> {
       
       try {
         // Load the template asset using the proper Expo Asset approach
-        const templateAsset = Asset.fromModule(require('../../assets/pdf/AVAC template horizontal.pdf'));
+        const templateAsset = Asset.fromModule(AVAC_TEMPLATE_ASSET);
         console.log('Template asset created:', templateAsset);
         
         // Download the asset if needed
         if (!templateAsset.downloaded) {
           console.log('Downloading template asset...');
-          await templateAsset.downloadAsync();
-          console.log('Template asset download completed');
+          console.log('Template asset URI:', templateAsset.uri);
+          console.log('Template asset hash:', templateAsset.hash);
+          try {
+            // If it's a development server URL, try fetching directly first
+            if (templateAsset.uri && (templateAsset.uri.startsWith('http://') || templateAsset.uri.startsWith('https://'))) {
+              console.log('Attempting direct fetch from development server...');
+              try {
+              // Fix the URL encoding issue - Metro is generating incorrectly encoded paths
+              let fetchUri = templateAsset.uri;
+              
+              // Decode the unstable_path parameter properly
+              if (fetchUri.includes('unstable_path=')) {
+                try {
+                  const url = new URL(fetchUri);
+                  const unstablePath = url.searchParams.get('unstable_path');
+                  
+                  if (unstablePath) {
+                    // Decode the path - handle the case where platform=ios is embedded in the path
+                    let decodedPath = unstablePath;
+                    try {
+                      // First, check if there's a query string embedded in the path
+                      const pathMatch = unstablePath.match(/^([^?]+)(\?.*)?$/);
+                      if (pathMatch) {
+                        decodedPath = decodeURIComponent(pathMatch[1]);
+                        // If there was a query string, we need to handle it separately
+                        if (pathMatch[2]) {
+                          // The query string is already in the URL, so we just need to fix the path
+                          const queryParams = new URLSearchParams(pathMatch[2]);
+                          queryParams.forEach((value, key) => {
+                            url.searchParams.set(key, value);
+                          });
+                        }
+                      } else {
+                        decodedPath = decodeURIComponent(unstablePath);
+                      }
+                    } catch (e) {
+                      // If decoding fails, try to fix it manually
+                      decodedPath = unstablePath.replace(/%2F/g, '/').replace(/^\.%2F/, './');
+                      // Remove any embedded query strings
+                      const queryIndex = decodedPath.indexOf('?');
+                      if (queryIndex > 0) {
+                        decodedPath = decodedPath.substring(0, queryIndex);
+                      }
+                    }
+                    
+                    // Remove leading ./ if present (Metro doesn't handle this well)
+                    if (decodedPath.startsWith('./')) {
+                      decodedPath = decodedPath.substring(2);
+                    }
+                    
+                    // Update the URL with the fixed path
+                    url.searchParams.set('unstable_path', decodedPath);
+                    fetchUri = url.toString();
+                    console.log('Fixed URL encoding, trying:', fetchUri);
+                  }
+                } catch (urlError) {
+                  // If URL parsing fails, try manual fix
+                  if (fetchUri.includes('unstable_path=.%2Fassets%2Fpdf')) {
+                    fetchUri = fetchUri.replace('unstable_path=.%2Fassets%2Fpdf', 'unstable_path=assets/pdf');
+                    console.log('Manually fixed URL encoding, trying:', fetchUri);
+                  }
+                }
+              }
+                
+                const response = await fetch(fetchUri);
+                if (response.ok) {
+                  const blob = await response.blob();
+                  const arrayBuffer = await blob.arrayBuffer();
+                  if (arrayBuffer.byteLength > 10000) {
+                    // Valid PDF - save it directly
+                    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                    const tempPath = `${Paths.cache.uri}/AVAC_Template_Temp_${Date.now()}.pdf`;
+                    await writeAsStringAsync(tempPath, base64, { encoding: 'base64' });
+                    // Copy to final location
+                    await copyAsync({ from: tempPath, to: templatePath });
+                    console.log('Template downloaded successfully via direct fetch');
+                    return; // Success - exit early
+                  } else {
+                    console.warn('Direct fetch returned file too small:', arrayBuffer.byteLength);
+                    // Try to read the response text to see what we got
+                    const text = await response.text();
+                    console.warn('Response text (first 200 chars):', text.substring(0, 200));
+                  }
+                } else {
+                  console.warn('Direct fetch failed with status:', response.status);
+                  const text = await response.text().catch(() => '');
+                  console.warn('Error response:', text.substring(0, 200));
+                }
+              } catch (fetchError) {
+                console.warn('Direct fetch failed, trying Asset.downloadAsync:', fetchError);
+              }
+            }
+            
+            // Fall back to Asset.downloadAsync
+            await templateAsset.downloadAsync();
+            console.log('Template asset download completed');
+          } catch (downloadError) {
+            console.error('Template asset download failed:', downloadError);
+            throw downloadError;
+          }
         }
         
         console.log('Template asset downloaded, localUri:', templateAsset.localUri);
+        console.log('Template asset URI:', templateAsset.uri);
+        console.log('Template asset hash:', templateAsset.hash);
         
         if (templateAsset.localUri) {
           // Validate the downloaded file before copying
@@ -208,6 +317,15 @@ async function copyTemplateToCache(): Promise<void> {
               const MIN_FILE_SIZE = 10000; // 10KB minimum
               if (downloadedFileInfo.size < MIN_FILE_SIZE) {
                 console.warn(`Downloaded template file too small (${downloadedFileInfo.size} bytes), likely corrupted. Skipping copy.`);
+                console.warn('Template asset URI:', templateAsset.uri);
+                console.warn('Template asset hash:', templateAsset.hash);
+                // Try to read the file to see what it contains
+                try {
+                  const fileContent = await readAsStringAsync(templateAsset.localUri, { encoding: 'utf8' });
+                  console.warn('File content (first 200 chars):', fileContent.substring(0, 200));
+                } catch (readError) {
+                  console.warn('Could not read file content:', readError);
+                }
                 throw new Error(`Downloaded file too small: ${downloadedFileInfo.size} bytes`);
               }
               
@@ -258,6 +376,67 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
   try {
     console.log('Attempting to load AVAC template...');
     
+    // Try to read the asset directly from the bundle (bypass Metro)
+    // This works in production builds where assets are bundled
+    // Skip this in development mode to avoid React Native module initialization errors
+    try {
+      // Only try this if we're in production mode (when assets are bundled)
+      // In development mode, this causes errors with PushNotificationIOS initialization
+      if (__DEV__) {
+        // Skip bundle read in development mode to avoid errors
+        throw new Error('Skipping bundle read in development mode');
+      }
+      
+      console.log('Attempting to read asset directly from bundle...');
+      // Use dynamic import to avoid loading react-native modules that might cause errors
+      const reactNative = await import('react-native');
+      if (reactNative && typeof reactNative.resolveAssetSource === 'function') {
+        const assetSource = reactNative.resolveAssetSource(AVAC_TEMPLATE_ASSET);
+        
+        if (assetSource && assetSource.uri) {
+          console.log('Asset source resolved:', assetSource);
+          
+          // If it's a local file path (production build), read it directly
+          if (assetSource.uri.startsWith('file://') || assetSource.uri.startsWith('/')) {
+            console.log('Reading asset from local file path:', assetSource.uri);
+            const base64Data = await readAsStringAsync(assetSource.uri, { encoding: 'base64' });
+            const MIN_BASE64_SIZE = 13000;
+            
+            if (base64Data.length > MIN_BASE64_SIZE) {
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              console.log('AVAC template loaded successfully from bundle, size:', bytes.length);
+              return bytes.buffer;
+            }
+          }
+          // If it's a remote URL, try fetching it
+          else if (assetSource.uri.startsWith('http://') || assetSource.uri.startsWith('https://')) {
+            console.log('Fetching asset from remote URL:', assetSource.uri);
+            const response = await fetch(assetSource.uri);
+            if (response.ok) {
+              const blob = await response.blob();
+              const arrayBuffer = await blob.arrayBuffer();
+              if (arrayBuffer.byteLength > 10000) {
+                const bytes = new Uint8Array(arrayBuffer.byteLength);
+                for (let i = 0; i < arrayBuffer.byteLength; i++) {
+                  bytes[i] = arrayBuffer[i];
+                }
+                console.log('AVAC template loaded successfully from remote URL, size:', bytes.length);
+                return bytes.buffer;
+              }
+            }
+          }
+        }
+      }
+    } catch (resolveError) {
+      // Silently fail - this is expected in development mode
+      // The error is usually "Cannot read property 'default' of undefined" or PushNotificationIOS initialization
+      // which is harmless since we fall back to cache/Asset system
+    }
+    
     // First, check if template exists in cache (fastest path)
     const templatePath = `${Paths.cache.uri}/AVAC_Template_Horizontal.pdf`;
     const cacheFileInfo = await getInfoAsync(templatePath);
@@ -307,11 +486,110 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
     // Try the new AVAC template first using Asset system
     try {
       console.log('Loading AVAC template using Asset system...');
-      const templateAsset = Asset.fromModule(require('../../assets/pdf/AVAC template horizontal.pdf'));
+      const templateAsset = Asset.fromModule(AVAC_TEMPLATE_ASSET);
+      
+      console.log('Template asset URI:', templateAsset.uri);
+      console.log('Template asset hash:', templateAsset.hash);
       
       if (!templateAsset.downloaded) {
         console.log('Downloading template asset...');
-        await templateAsset.downloadAsync();
+        try {
+          // If it's a development server URL, try fetching directly first
+          if (templateAsset.uri && (templateAsset.uri.startsWith('http://') || templateAsset.uri.startsWith('https://'))) {
+            console.log('Attempting direct fetch from development server...');
+            try {
+              // Fix the URL encoding issue - Metro is generating incorrectly encoded paths
+              let fetchUri = templateAsset.uri;
+              
+              // Decode the unstable_path parameter properly
+              if (fetchUri.includes('unstable_path=')) {
+                try {
+                  const url = new URL(fetchUri);
+                  const unstablePath = url.searchParams.get('unstable_path');
+                  
+                  if (unstablePath) {
+                    // Decode the path - handle the case where platform=ios is embedded in the path
+                    let decodedPath = unstablePath;
+                    try {
+                      // First, check if there's a query string embedded in the path
+                      const pathMatch = unstablePath.match(/^([^?]+)(\?.*)?$/);
+                      if (pathMatch) {
+                        decodedPath = decodeURIComponent(pathMatch[1]);
+                        // If there was a query string, we need to handle it separately
+                        if (pathMatch[2]) {
+                          // The query string is already in the URL, so we just need to fix the path
+                          const queryParams = new URLSearchParams(pathMatch[2]);
+                          queryParams.forEach((value, key) => {
+                            url.searchParams.set(key, value);
+                          });
+                        }
+                      } else {
+                        decodedPath = decodeURIComponent(unstablePath);
+                      }
+                    } catch (e) {
+                      // If decoding fails, try to fix it manually
+                      decodedPath = unstablePath.replace(/%2F/g, '/').replace(/^\.%2F/, './');
+                      // Remove any embedded query strings
+                      const queryIndex = decodedPath.indexOf('?');
+                      if (queryIndex > 0) {
+                        decodedPath = decodedPath.substring(0, queryIndex);
+                      }
+                    }
+                    
+                    // Remove leading ./ if present (Metro doesn't handle this well)
+                    if (decodedPath.startsWith('./')) {
+                      decodedPath = decodedPath.substring(2);
+                    }
+                    
+                    // Update the URL with the fixed path
+                    url.searchParams.set('unstable_path', decodedPath);
+                    fetchUri = url.toString();
+                    console.log('Fixed URL encoding, trying:', fetchUri);
+                  }
+                } catch (urlError) {
+                  // If URL parsing fails, try manual fix
+                  if (fetchUri.includes('unstable_path=.%2Fassets%2Fpdf')) {
+                    fetchUri = fetchUri.replace('unstable_path=.%2Fassets%2Fpdf', 'unstable_path=assets/pdf');
+                    console.log('Manually fixed URL encoding, trying:', fetchUri);
+                  }
+                }
+              }
+              
+              const response = await fetch(fetchUri);
+              if (response.ok) {
+                const blob = await response.blob();
+                const arrayBuffer = await blob.arrayBuffer();
+                if (arrayBuffer.byteLength > 10000) {
+                  // Valid PDF - convert to base64 and return
+                  const bytes = new Uint8Array(arrayBuffer.byteLength);
+                  for (let i = 0; i < arrayBuffer.byteLength; i++) {
+                    bytes[i] = arrayBuffer[i];
+                  }
+                  console.log('Template loaded successfully via direct fetch, size:', bytes.length);
+                  return bytes.buffer;
+                } else {
+                  console.warn('Direct fetch returned file too small:', arrayBuffer.byteLength);
+                  // Try to read the response text to see what we got
+                  const text = await response.text();
+                  console.warn('Response text (first 200 chars):', text.substring(0, 200));
+                }
+              } else {
+                console.warn('Direct fetch failed with status:', response.status);
+                const text = await response.text().catch(() => '');
+                console.warn('Error response:', text.substring(0, 200));
+              }
+            } catch (fetchError) {
+              console.warn('Direct fetch failed, trying Asset.downloadAsync:', fetchError);
+            }
+          }
+          
+          // Fall back to Asset.downloadAsync
+          await templateAsset.downloadAsync();
+          console.log('Template asset download completed');
+        } catch (downloadError) {
+          console.error('Template asset download failed:', downloadError);
+          throw downloadError;
+        }
       }
       
       console.log('Template asset downloaded, localUri:', templateAsset.localUri);
@@ -327,6 +605,15 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
             const MIN_FILE_SIZE = 10000; // 10KB minimum
             if (fileInfo.size < MIN_FILE_SIZE) {
               console.warn(`AVAC template file too small (${fileInfo.size} bytes), likely corrupted. Trying fallbacks...`);
+              console.warn('Template asset URI:', templateAsset.uri);
+              console.warn('Template asset hash:', templateAsset.hash);
+              // Try to read the file to see what it contains
+              try {
+                const fileContent = await readAsStringAsync(templateAsset.localUri, { encoding: 'utf8' });
+                console.warn('File content (first 200 chars):', fileContent.substring(0, 200));
+              } catch (readError) {
+                console.warn('Could not read file content:', readError);
+              }
               throw new Error(`File too small: ${fileInfo.size} bytes`);
             }
             console.log(`AVAC template file size OK: ${fileInfo.size} bytes`);
@@ -359,58 +646,84 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
       }
     } catch (assetError) {
       console.log('Asset system loading failed:', assetError);
+      console.error('Asset error details:', {
+        message: assetError instanceof Error ? assetError.message : String(assetError),
+        stack: assetError instanceof Error ? assetError.stack : undefined,
+        assetUri: AVAC_TEMPLATE_ASSET
+      });
     }
     
-    // Try direct file path as fallback
-    const newTemplatePath = 'assets/pdf/AVAC template horizontal.pdf';
-    console.log('Trying direct template path:', newTemplatePath);
+    // Try direct file path as fallback - try multiple path formats
+    const directPaths = [
+      'assets/pdf/AVAC template horizontal.pdf',
+      './assets/pdf/AVAC template horizontal.pdf',
+      '../assets/pdf/AVAC template horizontal.pdf',
+      '../../assets/pdf/AVAC template horizontal.pdf',
+    ];
     
-    try {
-      const base64Data = await readAsStringAsync(newTemplatePath, { encoding: 'base64' });
-      console.log('Direct template data read, length:', base64Data.length);
-      
-      const MIN_BASE64_SIZE = 13000;
-      if (base64Data.length > MIN_BASE64_SIZE) {
-        // Convert base64 to ArrayBuffer
-        const binaryString = atob(base64Data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
+    for (const newTemplatePath of directPaths) {
+      console.log('Trying direct template path:', newTemplatePath);
+      try {
+        const base64Data = await readAsStringAsync(newTemplatePath, { encoding: 'base64' });
+        console.log('Direct template data read, length:', base64Data.length);
         
-        console.log('AVAC template loaded successfully from direct path, size:', bytes.length);
-        return bytes.buffer;
-      } else {
-        console.warn(`Direct AVAC template file too small (${base64Data.length} base64 chars)`);
+        const MIN_BASE64_SIZE = 13000;
+        if (base64Data.length > MIN_BASE64_SIZE) {
+          // Convert base64 to ArrayBuffer
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          console.log('AVAC template loaded successfully from direct path, size:', bytes.length);
+          return bytes.buffer;
+        } else {
+          console.warn(`Direct AVAC template file too small (${base64Data.length} base64 chars)`);
+        }
+      } catch (directError) {
+        console.log('Direct template loading failed for path:', newTemplatePath, directError);
+        // Continue to next path
       }
-    } catch (directError) {
-      console.log('Direct template loading failed:', directError);
     }
     
-    // Try the manually copied template as fallback
-    const manualTemplatePath = 'cache/AVAC_Template_Horizontal.pdf';
-    console.log('Trying manual template path:', manualTemplatePath);
+    // Try the manually copied template as fallback - try multiple cache locations
+    const cachePaths = [
+      'cache/AVAC_Template_Horizontal.pdf',
+      'cache/AVAC template horizontal.pdf',
+      `${Paths.cache.uri}/AVAC_Template_Horizontal.pdf`,
+      `${Paths.cache.uri}/AVAC template horizontal.pdf`,
+    ];
     
-    try {
-      const base64Data = await readAsStringAsync(manualTemplatePath, { encoding: 'base64' });
-      console.log('Manual template data read, length:', base64Data.length);
-      
-      const MIN_BASE64_SIZE = 13000;
-      if (base64Data.length > MIN_BASE64_SIZE) {
-        // Convert base64 to ArrayBuffer
-        const binaryString = atob(base64Data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
+    for (const manualTemplatePath of cachePaths) {
+      console.log('Trying manual template path:', manualTemplatePath);
+      try {
+        const fileInfo = await getInfoAsync(manualTemplatePath);
+        if (fileInfo.exists && fileInfo.size && fileInfo.size >= 10000) {
+          const base64Data = await readAsStringAsync(manualTemplatePath, { encoding: 'base64' });
+          console.log('Manual template data read, length:', base64Data.length);
+          
+          const MIN_BASE64_SIZE = 13000;
+          if (base64Data.length > MIN_BASE64_SIZE) {
+            // Convert base64 to ArrayBuffer
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            console.log('AVAC template loaded successfully from manual path, size:', bytes.length);
+            return bytes.buffer;
+          } else {
+            console.warn(`Manual AVAC template file too small (${base64Data.length} base64 chars)`);
+          }
+        } else {
+          console.log('Manual template path does not exist or is too small:', manualTemplatePath);
         }
-        
-        console.log('AVAC template loaded successfully from manual path, size:', bytes.length);
-        return bytes.buffer;
-      } else {
-        console.warn(`Manual AVAC template file too small (${base64Data.length} base64 chars)`);
+      } catch (manualError) {
+        console.log('Manual template loading failed for path:', manualTemplatePath, manualError);
+        // Continue to next path
       }
-    } catch (manualError) {
-      console.log('Manual template loading failed:', manualError);
     }
     
     // Fallback to cache directory (reuse templatePath from earlier)

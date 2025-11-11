@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { UsualShift, OvertimeLog, ExportBatch, LogTemplate } from '../../types';
+import { UsualShift, OvertimeLog, ExportBatch, LogTemplate, ShiftTemplate } from '../../types';
 
 const DB_NAME = 'overtime_plus.db';
 const DB_VERSION = 1;
@@ -91,6 +91,21 @@ class Database {
       );
     `);
 
+    // Create shift_templates table
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS shift_templates (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        rostered_start TEXT NOT NULL,
+        rostered_finish TEXT NOT NULL,
+        meal_break_minutes INTEGER DEFAULT 0,
+        user_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      );
+    `);
+
     // Create auth_sessions table for Supabase auth session storage
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -109,6 +124,8 @@ class Database {
       CREATE INDEX IF NOT EXISTS idx_usual_shifts_active ON usual_shifts(active_from, active_to);
       CREATE INDEX IF NOT EXISTS idx_usual_shifts_type ON usual_shifts(type, day_of_week);
       CREATE INDEX IF NOT EXISTS idx_log_templates_name ON log_templates(name);
+      CREATE INDEX IF NOT EXISTS idx_shift_templates_user_id ON shift_templates(user_id);
+      CREATE INDEX IF NOT EXISTS idx_shift_templates_label ON shift_templates(label);
     `);
 
     // Run migrations
@@ -664,6 +681,100 @@ class Database {
     await this.db.runAsync(`
       DELETE FROM log_templates WHERE id = ?
     `, [id]);
+  }
+
+  // ShiftTemplates CRUD
+  async createShiftTemplate(template: ShiftTemplate, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      console.log('Creating shift template:', { id: template.id, label: template.label, userId: userId ? `${userId.substring(0, 8)}...` : 'null' });
+      await this.db.runAsync(`
+        INSERT INTO shift_templates (
+          id, label, rostered_start, rostered_finish,
+          meal_break_minutes, user_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        template.id,
+        template.label,
+        template.rosteredStart,
+        template.rosteredFinish,
+        template.mealBreakMinutes || 0,
+        userId || null,
+        template.createdAt,
+        template.updatedAt
+      ]);
+      console.log('✅ Shift template created successfully:', template.id);
+    } catch (error) {
+      console.error('❌ Failed to create shift template:', error);
+      throw error;
+    }
+  }
+
+  async getShiftTemplates(userId?: string | null): Promise<ShiftTemplate[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const query = userId
+        ? `SELECT * FROM shift_templates WHERE user_id = ? AND deleted_at IS NULL ORDER BY label, created_at DESC`
+        : `SELECT * FROM shift_templates WHERE user_id IS NULL AND deleted_at IS NULL ORDER BY label, created_at DESC`;
+      const params = userId ? [userId] : [];
+
+      const result = await this.db.getAllAsync(query, params);
+
+      console.log('Fetched shift templates from database:', result.length);
+
+      return result.map((row: any) => ({
+        id: row.id as string,
+        label: row.label as string,
+        rosteredStart: row.rostered_start as string,
+        rosteredFinish: row.rostered_finish as string,
+        mealBreakMinutes: row.meal_break_minutes as number,
+        createdAt: row.created_at as string,
+        updatedAt: row.updated_at as string,
+        userId: row.user_id as string | null,
+        deletedAt: row.deleted_at as string | undefined
+      }));
+    } catch (error) {
+      console.error('Error fetching shift templates:', error);
+      // If table doesn't exist yet, return empty array
+      if (error instanceof Error && error.message.includes('no such table')) {
+        console.log('shift_templates table does not exist yet, returning empty array');
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async updateShiftTemplate(template: ShiftTemplate, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `UPDATE shift_templates SET
+          label = ?, rostered_start = ?, rostered_finish = ?,
+          meal_break_minutes = ?, updated_at = ?
+        WHERE id = ? AND user_id = ?`
+      : `UPDATE shift_templates SET
+          label = ?, rostered_start = ?, rostered_finish = ?,
+          meal_break_minutes = ?, updated_at = ?
+        WHERE id = ? AND user_id IS NULL`;
+    const params = userId
+      ? [template.label, template.rosteredStart, template.rosteredFinish, template.mealBreakMinutes || 0, new Date().toISOString(), template.id, userId]
+      : [template.label, template.rosteredStart, template.rosteredFinish, template.mealBreakMinutes || 0, new Date().toISOString(), template.id];
+
+    await this.db.runAsync(query, params);
+  }
+
+  async deleteShiftTemplate(id: string, userId?: string | null): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Soft delete
+    const query = userId
+      ? `UPDATE shift_templates SET deleted_at = ? WHERE id = ? AND user_id = ?`
+      : `UPDATE shift_templates SET deleted_at = ? WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [new Date().toISOString(), id, userId] : [new Date().toISOString(), id];
+
+    await this.db.runAsync(query, params);
   }
 
   async close(): Promise<void> {
