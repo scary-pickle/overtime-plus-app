@@ -115,6 +115,15 @@ export default function RootLayout() {
         console.error('[App] Failed to cleanup old PDF cache:', error);
       }
 
+      // Check and refresh OTA templates (runs for all users, not just authenticated)
+      // Templates are public and should be available even without login
+      if (templateOTAEnabled) {
+        console.log('[App] Checking for OTA template updates...');
+        templatesSync.checkAndUpdate().catch((err) => {
+          console.error('[App] Template OTA sync failed:', err);
+        });
+      }
+
       console.log('App initialized successfully');
     } catch (error) {
       console.error('Failed to initialize app:', error);
