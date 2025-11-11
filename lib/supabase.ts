@@ -26,6 +26,7 @@ if (SUPABASE_URL && !SUPABASE_URL.startsWith('https://')) {
 }
 
 export const supabaseEnabled = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+export const templateOTAEnabled = (process.env.EXPO_PUBLIC_TEMPLATE_OTA === 'true');
 
 const isDev = process.env.NODE_ENV !== 'production';
 const debug = (...args: any[]) => {
@@ -2182,6 +2183,25 @@ export function getSupabaseConfig() {
     enabled: supabaseEnabled,
   };
 }
+
+/**
+ * Templates sync (metadata-only) - safe, local-first
+ * Does not mutate production; uses whatever URL/KEY are configured.
+ */
+export const templatesSync = {
+  async checkAndUpdate(): Promise<void> {
+    if (!templateOTAEnabled || !supabaseEnabled) return;
+    try {
+      const { ensureTemplateUpToDate } = await import('./pdf/templateLoader');
+      await Promise.all([
+        ensureTemplateUpToDate('avac_normal'),
+        ensureTemplateUpToDate('avac_smo'),
+      ]);
+    } catch (e) {
+      console.error('[templatesSync.checkAndUpdate] Failed:', e);
+    }
+  },
+};
 
 /**
  * TODO: Phase-2 Implementation Notes

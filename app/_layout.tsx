@@ -13,6 +13,7 @@ import { notificationManager } from '../lib/notifications';
 import { subscribeToAuthDeepLinks } from '../lib/auth/deeplinks';
 import { useAuthStore } from '../lib/state/authStore';
 import { syncQueue } from '../lib/sync/queue';
+import { templatesSync, templateOTAEnabled } from '../lib/supabase';
 import { purgeLegacyAuthStorage } from '../lib/auth/migrateAuthStorage';
 import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
 
@@ -85,6 +86,11 @@ export default function RootLayout() {
           loadLogs(user.id), // Pass userId to load user-specific logs
           loadExportBatches(user.id), // Pass userId to load user-specific export batches
         ]);
+
+        // Check and refresh OTA templates (non-blocking)
+        if (templateOTAEnabled) {
+          templatesSync.checkAndUpdate().catch(() => {});
+        }
 
         // Auto-cleanup deleted items older than 30 days
         try {

@@ -7,6 +7,35 @@ import { Profile, OvertimeLog } from '../../types';
 // Import SMO coordinates from the worksheet
 import smoCoordinates from '../../preview-coordinates-worksheet-smo.json';
 
+// OTA template support (feature-flagged)
+let otaSmoMapping: any | null = null;
+async function tryLoadOTASMOTemplate(): Promise<ArrayBuffer | null> {
+  try {
+    const { isTemplateOTAEnabled, ensureTemplateUpToDate, loadCachedPDFArrayBuffer } = await import('./templateLoader');
+    if (!isTemplateOTAEnabled()) return null;
+    const result = await ensureTemplateUpToDate('avac_smo');
+    otaSmoMapping = result.mapping || null;
+    if (result.pdfPath) {
+      const buf = await loadCachedPDFArrayBuffer(result.pdfPath);
+      if (buf && buf.byteLength > 10000) {
+        console.log('[SMO AVAC] Using OTA template version:', result.version);
+        return buf;
+      }
+    }
+  } catch (e) {
+    console.warn('[SMO AVAC] OTA template load failed (non-fatal):', e);
+  }
+  return null;
+}
+
+function getMaxRowsPerPageResolved(defaultRows: number): number {
+  try {
+    if (otaSmoMapping && typeof otaSmoMapping?.table?.maxRows === 'number') {
+      return otaSmoMapping.table.maxRows;
+    }
+  } catch {}
+  return defaultRows;
+}
 /**
  * Sanitize text for PDF rendering by removing problematic characters
  */
@@ -293,6 +322,12 @@ async function copySMOAVACTemplateToCache(): Promise<void> {
 async function loadSMOAVACTemplate(): Promise<ArrayBuffer> {
   try {
     console.log('Loading SMO AVAC template...');
+
+    // OTA path first if enabled
+    const otaBuf = await tryLoadOTASMOTemplate();
+    if (otaBuf && otaBuf.byteLength > 0) {
+      return otaBuf;
+    }
     
     // First, check if template exists in cache (fastest path)
     const templatePath = `${Paths.cache.uri}/SMO_AVAC_Template.pdf`;

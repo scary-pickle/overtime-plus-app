@@ -182,6 +182,37 @@ patchAssetSourceResolver();
 // Use a relative path that Metro can properly resolve
 const AVAC_TEMPLATE_ASSET = require('../../assets/pdf/AVAC template horizontal.pdf');
 
+// OTA template support (feature-flagged)
+let otaAvacMapping: any | null = null;
+async function tryLoadOTATemplate(): Promise<ArrayBuffer | null> {
+  try {
+    const { isTemplateOTAEnabled, ensureTemplateUpToDate, loadCachedPDFArrayBuffer } = await import('./templateLoader');
+    if (!isTemplateOTAEnabled()) return null;
+    const result = await ensureTemplateUpToDate('avac_normal');
+    otaAvacMapping = result.mapping || null;
+    if (result.pdfPath) {
+      const buf = await loadCachedPDFArrayBuffer(result.pdfPath);
+      if (buf && buf.byteLength > 10000) {
+        console.log('[AVAC] Using OTA template version:', result.version);
+        return buf;
+      }
+    }
+  } catch (e) {
+    console.warn('[AVAC] OTA template load failed (non-fatal):', e);
+  }
+  return null;
+}
+
+function getMaxRowsPerPageResolved(): number {
+  // If OTA mapping supplies an explicit max rows, prefer it; else use legacy helper
+  try {
+    if (otaAvacMapping && typeof otaAvacMapping?.table?.maxRows === 'number') {
+      return otaAvacMapping.table.maxRows;
+    }
+  } catch {}
+  return getMaxRowsPerPage();
+}
+
 /**
  * Copy template to cache directory
  */
@@ -375,6 +406,12 @@ async function copyTemplateToCache(): Promise<void> {
 async function loadAVACTemplate(): Promise<ArrayBuffer> {
   try {
     console.log('Attempting to load AVAC template...');
+
+    // OTA path first if enabled
+    const otaBuf = await tryLoadOTATemplate();
+    if (otaBuf && otaBuf.byteLength > 0) {
+      return otaBuf;
+    }
     
     // Try to read the asset directly from the bundle (bypass Metro)
     // This works in production builds where assets are bundled
@@ -897,7 +934,7 @@ export async function buildAVAC(
     // Table headers are now part of the template, so we skip drawTableHeader
     
     // Draw overtime logs
-    const maxRowsPerPage = getMaxRowsPerPage();
+  const maxRowsPerPage = getMaxRowsPerPageResolved();
     let currentPage = page;
     let currentRow = 0;
     

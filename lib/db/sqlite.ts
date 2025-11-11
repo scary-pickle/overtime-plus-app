@@ -18,6 +18,69 @@ class Database {
     }
   }
 
+  // ---------------- OTA templates cache helpers ----------------
+  async getTemplateVersion(templateType: 'avac_normal' | 'avac_smo'): Promise<string | null> {
+    if (!this.db) throw new Error('Database not initialized');
+    const rows = await this.db.getAllAsync<{ version: string }>(
+      `SELECT version FROM template_versions WHERE template_type = ? LIMIT 1`,
+      [templateType]
+    );
+    return rows?.[0]?.version || null;
+  }
+
+  async setTemplateVersion(templateType: 'avac_normal' | 'avac_smo', version: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    await this.db.runAsync(
+      `
+      INSERT INTO template_versions (template_type, version, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(template_type) DO UPDATE SET
+        version=excluded.version,
+        updated_at=excluded.updated_at
+      `,
+      [templateType, version]
+    );
+  }
+
+  async getTemplateCache(templateType: 'avac_normal' | 'avac_smo'): Promise<{
+    pdfPath: string | null;
+    mappingJson: string | null;
+    version: string | null;
+  }> {
+    if (!this.db) throw new Error('Database not initialized');
+    const rows = await this.db.getAllAsync<{ pdf_path: string | null; mapping_json: string | null; version: string | null }>(
+      `SELECT pdf_path, mapping_json, version FROM template_cache WHERE template_type = ? LIMIT 1`,
+      [templateType]
+    );
+    const row = rows?.[0];
+    return {
+      pdfPath: row?.pdf_path || null,
+      mappingJson: row?.mapping_json || null,
+      version: row?.version || null,
+    };
+  }
+
+  async setTemplateCache(params: {
+    templateType: 'avac_normal' | 'avac_smo';
+    pdfPath?: string | null;
+    mappingJson?: string | null;
+    version?: string | null;
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    const { templateType, pdfPath = null, mappingJson = null, version = null } = params;
+    await this.db.runAsync(
+      `
+      INSERT INTO template_cache (template_type, pdf_path, mapping_json, version, updated_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(template_type) DO UPDATE SET
+        pdf_path=COALESCE(excluded.pdf_path, pdf_path),
+        mapping_json=COALESCE(excluded.mapping_json, mapping_json),
+        version=COALESCE(excluded.version, version),
+        updated_at=excluded.updated_at
+      `,
+      [templateType, pdfPath, mappingJson, version]
+    );
+  }
   private async createTables(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -113,6 +176,25 @@ class Database {
         value TEXT NOT NULL,
         encrypted INTEGER DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    // Cache tables for OTA PDF templates and mappings
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS template_versions (
+        template_type TEXT PRIMARY KEY, -- 'avac_normal' | 'avac_smo'
+        version TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS template_cache (
+        template_type TEXT PRIMARY KEY, -- 'avac_normal' | 'avac_smo'
+        pdf_path TEXT,                  -- cached local file path
+        mapping_json TEXT,              -- JSON string for coordinates
+        version TEXT,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
