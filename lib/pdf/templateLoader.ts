@@ -82,8 +82,42 @@ export async function downloadAndCachePDF(storagePath: string, templateType: Tem
   console.log(`[templateLoader] Downloading PDF from: ${fetchUrl}`);
   const res = await fetch(fetchUrl);
   if (!res.ok) throw new Error(`Failed to fetch template PDF: ${res.status}`);
-  const blob = await res.blob();
-  const arrayBuffer = await blob.arrayBuffer();
+  
+  // React Native compatible: use response.arrayBuffer() directly instead of blob.arrayBuffer()
+  let arrayBuffer: ArrayBuffer;
+  try {
+    // Try response.arrayBuffer() first (React Native compatible)
+    arrayBuffer = await res.arrayBuffer();
+  } catch (arrayBufferError) {
+    // Fallback: try blob() then arrayBuffer() if available
+    try {
+      const blob = await res.blob();
+      if (typeof blob.arrayBuffer === 'function') {
+        arrayBuffer = await blob.arrayBuffer();
+      } else {
+        // React Native blob doesn't have arrayBuffer - use FileReader
+        if (typeof FileReader !== 'undefined') {
+          arrayBuffer = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              if (reader.result instanceof ArrayBuffer) {
+                resolve(reader.result);
+              } else {
+                reject(new Error('FileReader did not return ArrayBuffer'));
+              }
+            };
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(blob);
+          });
+        } else {
+          throw new Error('No compatible method to convert response to ArrayBuffer');
+        }
+      }
+    } catch (blobError) {
+      throw new Error(`Failed to convert response to ArrayBuffer: ${blobError}`);
+    }
+  }
+  
   if (arrayBuffer.byteLength < 10000) throw new Error('PDF too small');
   // Validate PDF header
   const header = new Uint8Array(arrayBuffer.slice(0, 5));
@@ -91,10 +125,14 @@ export async function downloadAndCachePDF(storagePath: string, templateType: Tem
     throw new Error('Invalid PDF header');
   }
 
-  // base64 encode and write to cache
-  const bytes = new Uint8Array(arrayBuffer);
+  // base64 encode and write to cache (React Native compatible)
+  const uint8Array = new Uint8Array(arrayBuffer);
+  const chunkSize = 8192; // Process in chunks to avoid stack overflow
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < uint8Array.length; i += chunkSize) {
+    const chunk = uint8Array.slice(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
   // @ts-ignore
   const base64 = typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
   const targetPath = getCachePdfPath(templateType, version);
