@@ -110,28 +110,62 @@ export async function ensureTemplateUpToDate(templateType: TemplateType): Promis
   version: string | null;
 }> {
   if (!isTemplateOTAEnabled()) {
+    console.log(`[templateLoader] OTA disabled for ${templateType}, skipping`);
     return { pdfPath: null, mapping: null, version: null };
   }
 
+  console.log(`[templateLoader] Checking template ${templateType}...`);
   const meta = await getLatestTemplateMeta(templateType);
+  if (!meta) {
+    console.log(`[templateLoader] No template meta found for ${templateType}, using cached or bundled`);
+    const cached = await database.getTemplateCache(templateType);
+    if (cached.pdfPath && cached.mappingJson) {
+      return {
+        pdfPath: cached.pdfPath,
+        mapping: JSON.parse(cached.mappingJson),
+        version: cached.version,
+      };
+    }
+    return { pdfPath: null, mapping: null, version: null };
+  }
+  
+  console.log(`[templateLoader] Found template ${templateType} v${meta.version} in Supabase`);
   const cached = await database.getTemplateCache(templateType);
 
   // Use cached if versions match
   if (meta && cached.version === meta.version && cached.pdfPath) {
+    console.log(`[templateLoader] Using cached template ${templateType} v${cached.version}`);
     const mapping = cached.mappingJson ? JSON.parse(cached.mappingJson) : (meta.coordinateMapping || null);
     return { pdfPath: cached.pdfPath, mapping, version: cached.version };
   }
 
   // If meta exists and either not cached or version changed, download new PDF and cache mapping
   if (meta) {
-    const pdfPath = await downloadAndCachePDF(meta.pdfStoragePath, templateType, meta.version);
-    const mappingJson = JSON.stringify(meta.coordinateMapping || {});
-    await database.setTemplateCache({
-      templateType,
-      mappingJson,
-      version: meta.version,
-    });
-    return { pdfPath, mapping: meta.coordinateMapping || null, version: meta.version };
+    try {
+      console.log(`[templateLoader] Downloading new template ${templateType} v${meta.version}...`);
+      const pdfPath = await downloadAndCachePDF(meta.pdfStoragePath, templateType, meta.version);
+      const mappingJson = JSON.stringify(meta.coordinateMapping || {});
+      await database.setTemplateCache({
+        templateType,
+        mappingJson,
+        version: meta.version,
+      });
+      console.log(`[templateLoader] Successfully cached template ${templateType} v${meta.version}`);
+      return { pdfPath, mapping: meta.coordinateMapping || null, version: meta.version };
+    } catch (downloadError) {
+      console.error(`[templateLoader] Failed to download template ${templateType}:`, downloadError);
+      // Fall back to cached version if available
+      if (cached.pdfPath && cached.mappingJson) {
+        console.log(`[templateLoader] Falling back to cached template ${templateType}`);
+        return {
+          pdfPath: cached.pdfPath,
+          mapping: JSON.parse(cached.mappingJson),
+          version: cached.version,
+        };
+      }
+      // No cache available - return null to use bundled template
+      return { pdfPath: null, mapping: null, version: null };
+    }
   }
 
   // If no meta available, return whatever cached exists
