@@ -31,24 +31,35 @@ export async function getLatestTemplateMeta(templateType: TemplateType): Promise
   const { url, anonKey } = getSupabaseConfig();
   if (!url || !anonKey) return null;
 
-  const endpoint = `${url}/rest/v1/pdf_templates?template_type=eq.${templateType}&is_active=is.true&select=template_type,version,pdf_storage_path,coordinate_mapping&limit=1`;
-  const res = await fetch(endpoint, {
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  const row = Array.isArray(data) && data[0] ? data[0] : null;
-  if (!row) return null;
-  return {
-    templateType,
-    version: row.version,
-    pdfStoragePath: row.pdf_storage_path,
-    coordinateMapping: row.coordinate_mapping,
-  };
+  // Normalize localhost URLs for iOS simulator compatibility
+  const normalizedUrl = url.replace('127.0.0.1', 'localhost');
+  const endpoint = `${normalizedUrl}/rest/v1/pdf_templates?template_type=eq.${templateType}&is_active=is.true&select=template_type,version,pdf_storage_path,coordinate_mapping&limit=1`;
+  
+  try {
+    const res = await fetch(endpoint, {
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!res.ok) {
+      console.error(`[templateLoader] Failed to fetch template meta: ${res.status} ${res.statusText}`);
+      return null;
+    }
+    const data = await res.json();
+    const row = Array.isArray(data) && data[0] ? data[0] : null;
+    if (!row) return null;
+    return {
+      templateType,
+      version: row.version,
+      pdfStoragePath: row.pdf_storage_path,
+      coordinateMapping: row.coordinate_mapping,
+    };
+  } catch (error) {
+    console.error(`[templateLoader] Error fetching template meta for ${templateType}:`, error);
+    return null;
+  }
 }
 
 // Minimal storage downloader using existing storage utilities when possible
@@ -57,8 +68,12 @@ export async function downloadAndCachePDF(storagePath: string, templateType: Tem
   if (!url || !anonKey) throw new Error('Supabase not configured');
 
   // Try to get a public URL (assuming public bucket for local dev)
+  // Normalize localhost URLs for iOS simulator compatibility
+  const normalizedUrl = url.replace('127.0.0.1', 'localhost');
   const isHttp = storagePath.startsWith('http://') || storagePath.startsWith('https://');
-  const fetchUrl = isHttp ? storagePath : `${url}/storage/v1/object/public/${storagePath}`;
+  const fetchUrl = isHttp ? storagePath : `${normalizedUrl}/storage/v1/object/public/${storagePath}`;
+  
+  console.log(`[templateLoader] Downloading PDF from: ${fetchUrl}`);
   const res = await fetch(fetchUrl);
   if (!res.ok) throw new Error(`Failed to fetch template PDF: ${res.status}`);
   const blob = await res.blob();
