@@ -1,6 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
-
 import { database } from '../db/sqlite';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('purgeLegacyAuthStorage');
 
 const LEGACY_SECURE_STORE_KEYS = [
   'supabase.auth.token',
@@ -20,7 +22,7 @@ export async function purgeLegacyAuthStorage(): Promise<void> {
     // This was deleting the migration marker and causing infinite migration loops.
     // await database.clearAuthSessions().catch(() => {});
     
-    console.log('[purgeLegacyAuthStorage] Cleaning up legacy SecureStore keys only (preserving SQLite sessions)');
+    debug.debug('Cleaning up legacy SecureStore keys only (preserving SQLite sessions)');
 
     // Best-effort cleanup for known SecureStore keys (limited by SecureStore API)
     const keysToDelete = [...LEGACY_SECURE_STORE_KEYS];
@@ -37,7 +39,7 @@ export async function purgeLegacyAuthStorage(): Promise<void> {
       }
     }
   } catch (error) {
-    console.warn('[purgeLegacyAuthStorage] Failed to purge legacy auth storage', error);
+    debug.warn('Failed to purge legacy auth storage', error);
   }
 }
 

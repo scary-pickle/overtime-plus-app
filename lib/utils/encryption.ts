@@ -12,6 +12,9 @@
 
 import * as SecureStore from 'expo-secure-store';
 import base64 from 'react-native-base64';
+import { createScopedLogger } from './logger';
+
+const debug = createScopedLogger('encryption');
 
 const ENCRYPTION_KEY_STORE_KEY = 'pii_encryption_key';
 const KEY_LENGTH = 32; // 256 bits
@@ -43,7 +46,7 @@ async function getEncryptionKey(): Promise<string> {
     
     return key;
   } catch (error) {
-    console.error('[encryption] Failed to get encryption key:', error);
+    debug.error('Failed to get encryption key:', error);
     throw new Error('Failed to access encryption key');
   }
 }
@@ -85,7 +88,7 @@ export async function encrypt(plaintext: string): Promise<string> {
     // Encode to base64 for storage
     return base64.encode(encrypted);
   } catch (error) {
-    console.error('[encryption] Encryption failed:', error);
+    debug.error('Encryption failed:', error);
     throw new Error('Failed to encrypt data');
   }
 }
@@ -138,7 +141,7 @@ export async function decrypt(ciphertext: string): Promise<string> {
   } catch (error) {
     // If decryption fails, it might be corrupted encrypted data or old unencrypted data
     // Return original value to avoid breaking the app
-    console.warn('[encryption] Decryption failed, returning original value (may be unencrypted old data):', error);
+    debug.warn('Decryption failed, returning original value (may be unencrypted old data):', error);
     return ciphertext;
   }
 }

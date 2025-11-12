@@ -102,7 +102,12 @@ export function getDisabledCapabilities(): string[] {
  */
 export function enableCapabilityForTesting(capability: keyof Capabilities): void {
   if (__DEV__) {
-    console.warn(`Enabling ${capability} for testing - this may not work in Expo Go`);
+    // Note: This is a dev-only function, but we'll use logger for consistency
+    if (__DEV__) {
+      const { createScopedLogger } = require('./utils/logger');
+      const debug = createScopedLogger('capabilities');
+      debug.warn(`Enabling ${capability} for testing - this may not work in Expo Go`);
+    }
     (capabilities as any)[capability] = true;
   }
 }

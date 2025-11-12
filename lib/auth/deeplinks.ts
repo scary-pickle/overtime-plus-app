@@ -1,5 +1,8 @@
 import * as Linking from 'expo-linking';
 import { supabase } from '../supabase';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('deeplinks');
 
 function hasAuthParams(url: string): boolean {
   try {
@@ -29,12 +32,12 @@ export async function exchangeSessionFromUrl(url: string): Promise<boolean> {
     // @ts-ignore - supabase client has full auth API
     const { data, error } = await (supabase as any).auth.exchangeCodeForSession(url);
     if (error) {
-      console.warn('exchangeCodeForSession error', error.message);
+      debug.warn('exchangeCodeForSession error', error.message);
       return false;
     }
     return !!data?.session;
   } catch (error) {
-    console.warn('exchangeCodeForSession failed', error);
+    debug.warn('exchangeCodeForSession failed', error);
     return false;
   }
 }

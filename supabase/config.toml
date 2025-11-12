@@ -1,0 +1,43 @@
+# A string used to distinguish different Supabase projects on the same host.
+project_id = "Overtime"
+
+[api]
+enabled = true
+port = 54330
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54331
+major_version = 15
+
+[studio]
+enabled = true
+port = 54332
+api_url = "http://127.0.0.1"
+
+[inbucket]
+enabled = true
+port = 54333
+smtp_port = 54334
+pop3_port = 54335
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["https://127.0.0.1:3000"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+[analytics]
+enabled = false

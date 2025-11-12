@@ -1,8 +1,10 @@
 import * as SQLite from 'expo-sqlite';
 import { UsualShift, OvertimeLog, ExportBatch, LogTemplate, ShiftTemplate } from '../../types';
+import { createScopedLogger } from '../utils/logger';
 
 const DB_NAME = 'overtime_plus.db';
 const DB_VERSION = 1;
+const debug = createScopedLogger('Database');
 
 class Database {
   private db: SQLite.SQLiteDatabase | null = null;
@@ -11,9 +13,9 @@ class Database {
     try {
       this.db = await SQLite.openDatabaseAsync(DB_NAME);
       await this.createTables();
-      console.log('Database initialized successfully');
+      debug.debug('Database initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize database:', error);
+      debug.error('Failed to initialize database:', error);
       throw error;
     }
   }
@@ -231,7 +233,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE usual_shifts ADD COLUMN user_id TEXT;
       `);
-      console.log('✅ Added user_id column to usual_shifts');
+      debug.debug('✅ Added user_id column to usual_shifts');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -240,7 +242,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE overtime_logs ADD COLUMN user_id TEXT;
       `);
-      console.log('✅ Added user_id column to overtime_logs');
+      debug.debug('✅ Added user_id column to overtime_logs');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -249,7 +251,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE export_batches ADD COLUMN user_id TEXT;
       `);
-      console.log('✅ Added user_id column to export_batches');
+      debug.debug('✅ Added user_id column to export_batches');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -770,7 +772,7 @@ class Database {
     if (!this.db) throw new Error('Database not initialized');
 
     try {
-      console.log('Creating shift template:', { id: template.id, label: template.label, userId: userId ? `${userId.substring(0, 8)}...` : 'null' });
+      debug.debug('Creating shift template:', { id: template.id, label: template.label, userId: userId ? `${userId.substring(0, 8)}...` : 'null' });
       await this.db.runAsync(`
         INSERT INTO shift_templates (
           id, label, rostered_start, rostered_finish,
@@ -870,11 +872,11 @@ class Database {
   async clearLegacyData(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     
-    console.log('Clearing legacy data (without user_id)...');
+    debug.debug('Clearing legacy data (without user_id)...');
     await this.db.execAsync('DELETE FROM overtime_logs WHERE user_id IS NULL');
     await this.db.execAsync('DELETE FROM usual_shifts WHERE user_id IS NULL');
     await this.db.execAsync('DELETE FROM export_batches WHERE user_id IS NULL');
-    console.log('✅ Legacy data cleared');
+    debug.debug('✅ Legacy data cleared');
   }
 
   // Clear all data methods for testing
@@ -910,12 +912,16 @@ class Database {
       [key]
     );
     
-    // Log to track unexpected null returns for session keys
+    // Log to track unexpected null returns for session keys (only in dev, with masking)
     if (key.includes('auth-token-session-data')) {
       if (row) {
-        console.log('[Database] getAuthSession FOUND:', key, 'value length:', row.value.length, 'encrypted:', row.encrypted);
+        debug.debug('getAuthSession FOUND:', {
+          key: key.substring(0, 50) + '...', // Only partial key
+          valueLength: row.value.length,
+          encrypted: row.encrypted
+        });
       } else {
-        console.log('[Database] getAuthSession NOT FOUND:', key);
+        debug.debug('getAuthSession NOT FOUND:', key.substring(0, 50) + '...');
       }
     }
     
@@ -945,8 +951,8 @@ class Database {
   async removeAuthSession(key: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     
-    // Log all removals to track what's deleting sessions
-    console.log('[Database] Removing auth session:', key);
+    // Log all removals to track what's deleting sessions (only in dev, with masking)
+    debug.debug('Removing auth session:', key.substring(0, 50) + '...');
     
     await this.db.runAsync('DELETE FROM auth_sessions WHERE key = ?', [key]);
   }
@@ -954,7 +960,7 @@ class Database {
   async clearAuthSessions(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     
-    console.log('[Database] 🧹 CLEARING ALL AUTH SESSIONS');
+    debug.debug('🧹 CLEARING ALL AUTH SESSIONS');
     await this.db.execAsync('DELETE FROM auth_sessions');
   }
   

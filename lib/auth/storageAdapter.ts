@@ -1,5 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 import * as LZString from 'lz-string';
+import { createScopedLogger } from '../utils/logger';
+
+const logger = createScopedLogger('SecureStoreAdapter');
 
 type ChunkedMeta = {
   version: 1;
@@ -41,7 +44,7 @@ async function readMeta(key: string): Promise<ChunkedMeta | null> {
       compressed: Boolean(parsed.compressed),
     };
   } catch (error) {
-    console.warn('SecureStoreAdapter.readMeta failed; treating metadata as absent', error);
+    logger.warn('readMeta failed; treating metadata as absent', error);
     return null;
   }
 }
@@ -87,7 +90,7 @@ function maybeCompress(key: string, value: string): { payload: string; compresse
       return { payload: compressed, compressed: true };
     }
   } catch (error) {
-    console.warn('SecureStoreAdapter.setItem: compression failed, storing uncompressed payload', error);
+    logger.warn('setItem: compression failed, storing uncompressed payload', error);
   }
   return { payload: value, compressed: false };
 }
@@ -99,7 +102,7 @@ export const SecureStoreAdapter = {
     const isDev = process.env.NODE_ENV !== 'production';
     const debug = (...args: any[]) => {
       if (isDev && isSupabaseSessionKey(key)) {
-        console.log('[SecureStoreAdapter.getItem]', ...args);
+        logger.debug('[SecureStoreAdapter] getItem', ...args);
       }
     };
     
@@ -115,7 +118,7 @@ export const SecureStoreAdapter = {
         );
 
         if (chunkReads.some(chunk => chunk == null)) {
-          console.warn('SecureStoreAdapter.getItem: detected incomplete chunk data; clearing stored chunks');
+          logger.warn('getItem: detected incomplete chunk data; clearing stored chunks');
           await clearChunkedData(key, meta);
           return null;
         }
@@ -132,7 +135,7 @@ export const SecureStoreAdapter = {
             // Decompress the LZString compressed data directly
             const decompressed = LZString.decompress(joinedData);
             if (!decompressed) {
-              console.warn('SecureStoreAdapter.getItem: decompression returned null');
+              logger.warn('getItem: decompression returned null');
               debug('Decompression returned null');
               await clearChunkedData(key, meta);
               return null;
@@ -140,7 +143,7 @@ export const SecureStoreAdapter = {
             debug('Decompressed successfully, length:', decompressed.length);
             return decompressed;
           } catch (decompressError) {
-            console.warn('SecureStoreAdapter.getItem: decompression failed', decompressError);
+            logger.warn('getItem: decompression failed', decompressError);
             debug('Decompression error:', decompressError);
             await clearChunkedData(key, meta);
             return null;
@@ -172,7 +175,7 @@ export const SecureStoreAdapter = {
           debug('Successfully decompressed legacy value, length:', decompressed.length);
           return decompressed;
         } catch (error) {
-          console.warn('SecureStoreAdapter.getItem: legacy decompression failed; clearing value', error);
+          logger.warn('getItem: legacy decompression failed; clearing value', error);
           await SecureStore.deleteItemAsync(key, SECURE_STORE_OPTIONS);
           return null;
         }
@@ -181,7 +184,7 @@ export const SecureStoreAdapter = {
       debug('Returning legacy value as-is');
       return legacyValue;
     } catch (error) {
-      console.warn('SecureStoreAdapter.getItem failed', error);
+      logger.warn('getItem failed', error);
       return null;
     }
   },
@@ -190,7 +193,7 @@ export const SecureStoreAdapter = {
     const isDev = process.env.NODE_ENV !== 'production';
     const debug = (...args: any[]) => {
       if (isDev && isSupabaseSessionKey(key)) {
-        console.log('[SecureStoreAdapter.setItem]', ...args);
+        logger.debug('[SecureStoreAdapter] setItem', ...args);
       }
     };
     
@@ -261,7 +264,7 @@ export const SecureStoreAdapter = {
       await SecureStore.deleteItemAsync(key, SECURE_STORE_OPTIONS);
       debug('Successfully stored chunked data');
     } catch (error) {
-      console.warn('SecureStoreAdapter.setItem failed', error);
+      logger.warn('setItem failed', error);
       // Attempt best-effort cleanup to avoid partial state
       await clearChunkedData(key);
       throw error;
@@ -272,7 +275,7 @@ export const SecureStoreAdapter = {
     try {
       await clearChunkedData(key);
     } catch (error) {
-      console.warn('SecureStoreAdapter.removeItem failed', error);
+      logger.warn('removeItem failed', error);
     }
   },
 };

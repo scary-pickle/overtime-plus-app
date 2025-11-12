@@ -3,6 +3,9 @@ import { Platform } from 'react-native';
 import { UsualShift } from '../types';
 import { getRosterForDate } from './roster';
 import { formatDateToISO } from './time';
+import { createScopedLogger } from './utils/logger';
+
+const debug = createScopedLogger('notifications');
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -44,7 +47,7 @@ class NotificationManager {
       }
       
       if (finalStatus !== 'granted') {
-        console.warn('Notification permissions not granted');
+        debug.warn('Notification permissions not granted');
         return false;
       }
       
@@ -61,7 +64,7 @@ class NotificationManager {
       
       return true;
     } catch (error) {
-      console.error('Failed to request notification permissions:', error);
+      debug.error('Failed to request notification permissions:', error);
       return false;
     }
   }
@@ -120,9 +123,9 @@ class NotificationManager {
         await Notifications.scheduleNotificationAsync(notification);
       }
       
-      console.log(`Scheduled ${notifications.length} overtime notifications`);
+      debug.debug(`Scheduled ${notifications.length} overtime notifications`);
     } catch (error) {
-      console.error('Failed to schedule notifications:', error);
+      debug.error('Failed to schedule notifications:', error);
     }
   }
 
@@ -157,9 +160,9 @@ class NotificationManager {
         }
       });
       
-      console.log(`Scheduled snooze notification for ${snoozeMinutes} minutes`);
+      debug.debug(`Scheduled snooze notification for ${snoozeMinutes} minutes`);
     } catch (error) {
-      console.error('Failed to schedule snooze notification:', error);
+      debug.error('Failed to schedule snooze notification:', error);
     }
   }
 
@@ -179,9 +182,9 @@ class NotificationManager {
         await Notifications.cancelScheduledNotificationAsync(notification.identifier);
       }
       
-      console.log(`Cancelled ${overtimeNotifications.length} overtime notifications`);
+      debug.debug(`Cancelled ${overtimeNotifications.length} overtime notifications`);
     } catch (error) {
-      console.error('Failed to cancel notifications:', error);
+      debug.error('Failed to cancel notifications:', error);
     }
   }
 
@@ -192,9 +195,9 @@ class NotificationManager {
     try {
       const notificationId = `overtime_${date}`;
       await Notifications.cancelScheduledNotificationAsync(notificationId);
-      console.log(`Cancelled notification for ${date}`);
+      debug.debug(`Cancelled notification for ${date}`);
     } catch (error) {
-      console.error('Failed to cancel notification for date:', error);
+      debug.error('Failed to cancel notification for date:', error);
     }
   }
 
@@ -205,7 +208,7 @@ class NotificationManager {
     try {
       return await Notifications.getAllScheduledNotificationsAsync();
     } catch (error) {
-      console.error('Failed to get scheduled notifications:', error);
+      debug.error('Failed to get scheduled notifications:', error);
       return [];
     }
   }
@@ -248,7 +251,7 @@ class NotificationManager {
     
     if (data?.type === 'shift_end_reminder' || data?.type === 'shift_end_snooze') {
       // This will be handled by the app's notification listener
-      console.log('Notification tapped:', data);
+      debug.debug('Notification tapped:', data);
     }
   }
 }

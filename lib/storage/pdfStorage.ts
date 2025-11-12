@@ -6,6 +6,9 @@
 import { supabase, supabaseEnabled, getSupabaseConfig } from '../supabase';
 import { Paths } from 'expo-file-system';
 import { readAsStringAsync, writeAsStringAsync, getInfoAsync, uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('pdfStorage');
 
 const EXPORTS_BUCKET = 'exports';
 const isDevLoggingEnabled = process.env.NODE_ENV !== 'production';
@@ -85,7 +88,7 @@ export async function uploadPDFToStorage(
     });
 
     if (result.status !== 200 && result.status !== 201) {
-      console.error('[pdfStorage.uploadPDFToStorage] Upload failed', {
+      debug.error('Upload failed', {
         status: result.status,
         body: result.body?.slice(0, 200),
       });
@@ -113,12 +116,12 @@ export async function uploadPDFToStorage(
       }
     } catch (cacheError) {
       // Non-fatal - cache error shouldn't prevent upload
-      console.warn('[pdfStorage.uploadPDFToStorage] Failed to cache PDF locally (non-fatal):', cacheError);
+      debug.warn('Failed to cache PDF locally (non-fatal):', cacheError);
     }
 
     return `storage://${EXPORTS_BUCKET}/${storagePath}`;
   } catch (error) {
-    console.error('[pdfStorage.uploadPDFToStorage] Failed to upload PDF to Supabase Storage:', error);
+    debug.error('Failed to upload PDF to Supabase Storage:', error);
     throw error;
   }
 }
@@ -157,7 +160,7 @@ export async function downloadPDFFromStorage(
     } catch (cacheCheckError) {
       // Cache doesn't exist, continue with download
       if (isDevLoggingEnabled) {
-        console.warn('[pdfStorage.downloadPDFFromStorage] Cache miss for PDF', cacheCheckError);
+        debug.warn('Cache miss for PDF', cacheCheckError);
       }
     }
 
@@ -240,7 +243,7 @@ export async function downloadPDFFromStorage(
       // Expected in React Native: Supabase SDK .download() doesn't return standard Blob
       // Fall back to signed URL method which works reliably
       if (isDevLoggingEnabled) {
-        console.warn('[pdfStorage.downloadPDFFromStorage] Falling back to signed URL method:', sdkError);
+        debug.warn('Falling back to signed URL method:', sdkError);
       }
       // Fallback: Try signed URL (works better for private buckets)
       // @ts-ignore
@@ -333,14 +336,14 @@ export async function downloadPDFFromStorage(
       
         await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
         if (isDevLoggingEnabled) {
-          console.log('[pdfStorage.downloadPDFFromStorage] Saved PDF to cache', finalLocalCachePath);
+          debug.debug('Saved PDF to cache', finalLocalCachePath);
         }
         return finalLocalCachePath;
       }
 
       throw new Error('Storage download returned no data');
   } catch (error) {
-    console.error('[pdfStorage.downloadPDFFromStorage] ❌ Failed to download PDF from storage:', error);
+    debug.error('Failed to download PDF from storage:', error);
     throw error;
   }
 }
@@ -367,12 +370,12 @@ export async function deletePDFFromStorage(
       .remove([storagePath]);
 
     if (error) {
-      console.error('[pdfStorage.deletePDFFromStorage] Error deleting PDF:', error);
+      debug.error('Error deleting PDF:', error);
       throw error;
     }
 
   } catch (error) {
-    console.error('[pdfStorage.deletePDFFromStorage] Failed to delete PDF from storage:', error);
+    debug.error('Failed to delete PDF from storage:', error);
     throw error;
   }
 }
@@ -402,7 +405,7 @@ export async function getSignedURL(
       .createSignedUrl(storagePath, expiresIn);
 
     if (error) {
-      console.error('[pdfStorage.getSignedURL] Error creating signed URL:', error);
+      debug.error('Error creating signed URL:', error);
       throw error;
     }
 
@@ -412,7 +415,7 @@ export async function getSignedURL(
 
     return data.signedUrl;
   } catch (error) {
-    console.error('[pdfStorage.getSignedURL] Failed to create signed URL:', error);
+    debug.error('Failed to create signed URL:', error);
     throw error;
   }
 }
@@ -472,7 +475,7 @@ export async function clearCachedPDF(batchId: string): Promise<boolean> {
     const cacheDir = Paths?.cache?.uri;
     if (!cacheDir) {
       if (isDevLoggingEnabled) {
-        console.log('[pdfStorage.clearCachedPDF] Cache directory not available');
+        debug.debug('Cache directory not available');
       }
       return false;
     }
@@ -485,21 +488,21 @@ export async function clearCachedPDF(batchId: string): Promise<boolean> {
       if (cacheInfo.exists) {
         await deleteAsync(localCachePath, { idempotent: true });
         if (isDevLoggingEnabled) {
-          console.log('[pdfStorage.clearCachedPDF] Cached PDF deleted', localCachePath);
+          debug.debug('Cached PDF deleted', localCachePath);
         }
         return true;
       } else {
         if (isDevLoggingEnabled) {
-          console.log('[pdfStorage.clearCachedPDF] Cached PDF not found', localCachePath);
+          debug.debug('Cached PDF not found', localCachePath);
         }
         return false;
       }
     } catch (error) {
-      console.error('[pdfStorage.clearCachedPDF] Error clearing cached PDF:', error);
+      debug.error('Error clearing cached PDF:', error);
       return false;
     }
   } catch (error) {
-    console.error('[pdfStorage.clearCachedPDF] Failed to clear cached PDF:', error);
+    debug.error('Failed to clear cached PDF:', error);
     return false;
   }
 }

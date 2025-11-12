@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from '../supabase';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('onboardingStore');
 
 const ONBOARDING_STATUS_KEY = 'overtime_plus_onboarding_complete';
 
@@ -31,16 +34,16 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
         ? `${ONBOARDING_STATUS_KEY}_${userId}`
         : ONBOARDING_STATUS_KEY;
       
-      console.log('[onboardingStore.checkOnboardingStatus] Checking status', {
+      debug.debug('Checking status', {
         userId: userId?.substring(0, 8),
         storageKey,
       });
       
       const localStatus = await SecureStore.getItemAsync(storageKey);
-      console.log('[onboardingStore.checkOnboardingStatus] Local storage status:', localStatus);
+      debug.debug('Local storage status:', localStatus);
       
       if (localStatus === 'true') {
-        console.log('[onboardingStore.checkOnboardingStatus] Found completed in local storage');
+        debug.debug('Found completed in local storage');
         set({ hasCompletedOnboarding: true, isLoading: false });
         return true;
       }
@@ -48,13 +51,13 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       // If we have a userId, also check Supabase user metadata AND profile
       if (userId) {
         try {
-          console.log('[onboardingStore.checkOnboardingStatus] Checking Supabase metadata');
+          debug.debug('Checking Supabase metadata');
           
           // First ensure we have a session
           // @ts-ignore
           let sessionResult = await (supabase as any).auth.getSession();
           if (sessionResult?.error || !sessionResult?.data?.session) {
-            console.log('[onboardingStore.checkOnboardingStatus] No session available, skipping Supabase check');
+            debug.debug('No session available, skipping Supabase check');
             // Continue with local storage check only
           } else {
             // @ts-ignore
@@ -63,7 +66,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
               const metadata = data.user.user_metadata || {};
               const hasCompleted = metadata.hasCompletedOnboarding === true;
               
-              console.log('[onboardingStore.checkOnboardingStatus] Supabase metadata:', {
+              debug.debug('Supabase metadata:', {
                 hasCompleted,
                 metadata: Object.keys(metadata),
                 userMetadata: metadata,
@@ -71,7 +74,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
               
               if (hasCompleted) {
                 // Sync to local storage
-                console.log('[onboardingStore.checkOnboardingStatus] Found completed in Supabase, syncing to local');
+                debug.debug('Found completed in Supabase, syncing to local');
                 await SecureStore.setItemAsync(storageKey, 'true');
                 set({ hasCompletedOnboarding: true, isLoading: false });
                 return true;
@@ -81,14 +84,14 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
               // This helps users who lost onboarding status due to migration/storage clear
               // The profiles table stores profile data in metadata JSONB, so just check if a row exists
               try {
-                console.log('[onboardingStore.checkOnboardingStatus] Checking for existing profile in Supabase');
+                debug.debug('Checking for existing profile in Supabase');
                 const { data: profileData, error: profileError } = await (supabase as any)
                   .from('profiles')
                   .select('user_id, display_name, email')
                   .eq('user_id', userId)
                   .single();
                 
-                console.log('[onboardingStore.checkOnboardingStatus] Profile query result:', {
+                debug.debug('Profile query result:', {
                   hasData: !!profileData,
                   hasError: !!profileError,
                   errorMessage: profileError?.message,
@@ -99,7 +102,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                 if (!profileError && profileData) {
                   // If a profile row exists, the user has completed onboarding
                   const hasCompleteProfile = true;
-                  console.log('[onboardingStore.checkOnboardingStatus] Profile check:', {
+                  debug.debug('Profile check:', {
                     hasProfile: true,
                     hasCompleteProfile: true,
                     displayName: profileData.display_name,
@@ -107,7 +110,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                   });
                   
                   if (hasCompleteProfile) {
-                    console.log('[onboardingStore.checkOnboardingStatus] ✅ Complete profile found - marking onboarding as complete');
+                    debug.debug('✅ Complete profile found - marking onboarding as complete');
                     // Mark onboarding as complete both locally and in Supabase
                     await SecureStore.setItemAsync(storageKey, 'true');
                     
@@ -117,39 +120,39 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                       await (supabase as any).auth.updateUser({
                         data: { hasCompletedOnboarding: true }
                       });
-                      console.log('[onboardingStore.checkOnboardingStatus] Updated Supabase metadata with onboarding flag');
+                      debug.debug('Updated Supabase metadata with onboarding flag');
                     } catch (updateError) {
-                      console.log('[onboardingStore.checkOnboardingStatus] Failed to update Supabase metadata:', updateError);
+                      debug.debug('Failed to update Supabase metadata:', updateError);
                       // Non-fatal - local storage is sufficient
                     }
                     
                     set({ hasCompletedOnboarding: true, isLoading: false });
                     return true;
                   } else {
-                    console.log('[onboardingStore.checkOnboardingStatus] Profile exists but is incomplete');
+                    debug.debug('Profile exists but is incomplete');
                   }
                 } else {
-                  console.log('[onboardingStore.checkOnboardingStatus] No profile found or query error');
+                  debug.debug('No profile found or query error');
                 }
               } catch (profileCheckError) {
-                console.log('[onboardingStore.checkOnboardingStatus] Error checking profile:', profileCheckError);
+                debug.debug('Error checking profile:', profileCheckError);
                 // Continue with regular flow
               }
             } else if (error) {
-              console.log('[onboardingStore.checkOnboardingStatus] Error getting user:', error);
+              debug.debug('Error getting user:', error);
             }
           }
         } catch (e) {
-          console.log('[onboardingStore.checkOnboardingStatus] Error checking Supabase onboarding status:', e);
+          debug.debug('Error checking Supabase onboarding status:', e);
           // Continue with local storage check
         }
       }
 
-      console.log('[onboardingStore.checkOnboardingStatus] Onboarding not completed');
+      debug.debug('Onboarding not completed');
       set({ hasCompletedOnboarding: false, isLoading: false });
       return false;
     } catch (error) {
-      console.error('[onboardingStore.checkOnboardingStatus] Error checking onboarding status:', error);
+      debug.error('Error checking onboarding status:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to check onboarding status' 
@@ -165,25 +168,25 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
         ? `${ONBOARDING_STATUS_KEY}_${userId}`
         : ONBOARDING_STATUS_KEY;
 
-      console.log('[onboardingStore.completeOnboarding] Completing onboarding', {
+      debug.debug('Completing onboarding', {
         userId: userId?.substring(0, 8),
         storageKey,
       });
 
       // Save to local storage
       await SecureStore.setItemAsync(storageKey, 'true');
-      console.log('[onboardingStore.completeOnboarding] Saved to local storage');
+      debug.debug('Saved to local storage');
 
       // If we have a userId, also save to Supabase user metadata
       if (userId) {
         try {
-          console.log('[onboardingStore.completeOnboarding] Updating Supabase metadata');
+          debug.debug('Updating Supabase metadata');
           
           // First ensure we have a session
           // @ts-ignore
           let sessionResult = await (supabase as any).auth.getSession();
           if (sessionResult?.error || !sessionResult?.data?.session) {
-            console.log('[onboardingStore.completeOnboarding] No session available, skipping Supabase update');
+            debug.debug('No session available, skipping Supabase update');
             // Don't throw - local storage is sufficient
           } else {
             // @ts-ignore
@@ -191,22 +194,22 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
               data: { hasCompletedOnboarding: true }
             });
             if (error) {
-              console.log('[onboardingStore.completeOnboarding] Error updating Supabase onboarding status:', error);
+              debug.debug('Error updating Supabase onboarding status:', error);
               // Don't throw - local storage is sufficient
             } else {
-              console.log('[onboardingStore.completeOnboarding] Successfully updated Supabase metadata');
+              debug.debug('Successfully updated Supabase metadata');
             }
           }
         } catch (e) {
-          console.log('[onboardingStore.completeOnboarding] Error updating Supabase onboarding status:', e);
+          debug.debug('Error updating Supabase onboarding status:', e);
           // Don't throw - local storage is sufficient
         }
       }
 
-      console.log('[onboardingStore.completeOnboarding] Setting hasCompletedOnboarding to true');
+      debug.debug('Setting hasCompletedOnboarding to true');
       set({ hasCompletedOnboarding: true, isLoading: false });
     } catch (error) {
-      console.error('[onboardingStore.completeOnboarding] Error completing onboarding:', error);
+      debug.error('Error completing onboarding:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to complete onboarding' 
@@ -233,18 +236,18 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
             data: { hasCompletedOnboarding: false }
           });
           if (error) {
-            console.log('Error resetting Supabase onboarding status:', error);
+            debug.debug('Error resetting Supabase onboarding status:', error);
             // Don't throw - local storage is sufficient
           }
         } catch (e) {
-          console.log('Error resetting Supabase onboarding status:', e);
+          debug.debug('Error resetting Supabase onboarding status:', e);
           // Don't throw - local storage is sufficient
         }
       }
 
       set({ hasCompletedOnboarding: false, isLoading: false });
     } catch (error) {
-      console.error('Error resetting onboarding:', error);
+      debug.error('Error resetting onboarding:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to reset onboarding' 

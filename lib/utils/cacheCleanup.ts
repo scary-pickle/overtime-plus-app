@@ -7,15 +7,10 @@
 
 import * as FileSystem from 'expo-file-system';
 import { Paths } from 'expo-file-system';
+import { createScopedLogger } from './logger';
 
 const PDF_CACHE_TTL_DAYS = 30; // Delete PDFs older than 30 days
-const isDev = process.env.NODE_ENV !== 'production';
-
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log('[cacheCleanup]', ...args);
-  }
-};
+const debug = createScopedLogger('cacheCleanup');
 
 /**
  * Clean up cached PDFs older than the TTL
@@ -25,18 +20,18 @@ export async function cleanupOldPDFs(): Promise<number> {
   try {
     const cacheDir = Paths?.cache?.uri;
     if (!cacheDir) {
-      debug('Cache directory not available');
+      debug.debug('Cache directory not available');
       return 0;
     }
 
-    debug('Starting PDF cache cleanup...');
+    debug.debug('Starting PDF cache cleanup...');
     
     // Get all files in cache directory
     const { getInfoAsync, readDirectoryAsync } = await import('expo-file-system/legacy');
     const cacheInfo = await getInfoAsync(cacheDir);
     
     if (!cacheInfo.exists || !cacheInfo.isDirectory) {
-      debug('Cache directory does not exist or is not a directory');
+      debug.debug('Cache directory does not exist or is not a directory');
       return 0;
     }
 
@@ -44,11 +39,11 @@ export async function cleanupOldPDFs(): Promise<number> {
     const pdfFiles = files.filter(file => file.endsWith('.pdf'));
     
     if (pdfFiles.length === 0) {
-      debug('No PDF files found in cache');
+      debug.debug('No PDF files found in cache');
       return 0;
     }
 
-    debug(`Found ${pdfFiles.length} PDF file(s) in cache`);
+    debug.debug(`Found ${pdfFiles.length} PDF file(s) in cache`);
 
     const now = Date.now();
     const ttlMs = PDF_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000; // Convert days to milliseconds
@@ -69,21 +64,21 @@ export async function cleanupOldPDFs(): Promise<number> {
             // File is older than TTL, delete it
             await FileSystem.deleteAsync(filePath, { idempotent: true });
             deletedCount++;
-            debug(`Deleted old PDF: ${pdfFile} (age: ${Math.floor(fileAge / (24 * 60 * 60 * 1000))} days)`);
+            debug.debug(`Deleted old PDF: ${pdfFile} (age: ${Math.floor(fileAge / (24 * 60 * 60 * 1000))} days)`);
           } else {
-            debug(`Keeping PDF: ${pdfFile} (age: ${Math.floor(fileAge / (24 * 60 * 60 * 1000))} days)`);
+            debug.debug(`Keeping PDF: ${pdfFile} (age: ${Math.floor(fileAge / (24 * 60 * 60 * 1000))} days)`);
           }
         }
       } catch (fileError) {
         // Non-fatal - continue with other files
-        console.warn(`[cacheCleanup] Failed to process PDF file ${pdfFile}:`, fileError);
+        debug.warn(`Failed to process PDF file ${pdfFile}:`, fileError);
       }
     }
 
-    debug(`PDF cache cleanup complete. Deleted ${deletedCount} file(s)`);
+    debug.debug(`PDF cache cleanup complete. Deleted ${deletedCount} file(s)`);
     return deletedCount;
   } catch (error) {
-    console.error('[cacheCleanup] Failed to cleanup PDF cache:', error);
+    debug.error('Failed to cleanup PDF cache:', error);
     return 0;
   }
 }

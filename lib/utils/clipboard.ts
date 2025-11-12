@@ -4,6 +4,9 @@
  */
 
 import * as Clipboard from 'expo-clipboard';
+import { createScopedLogger } from './logger';
+
+const debug = createScopedLogger('clipboard');
 
 let clearClipboardTimeout: NodeJS.Timeout | null = null;
 
@@ -33,7 +36,7 @@ export async function setClipboardWithAutoClear(
       clearClipboardTimeout = null;
     } catch (error) {
       // Non-fatal - just log it
-      console.warn('[clipboard] Failed to clear clipboard:', error);
+      debug.warn('Failed to clear clipboard:', error);
     }
   }, delayMs);
 }

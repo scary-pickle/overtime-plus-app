@@ -1,19 +1,14 @@
 import * as SecureStore from 'expo-secure-store';
 import { Profile } from '../../types';
 import { encrypt, decrypt } from '../utils/encryption';
+import { createScopedLogger, maskUserId as maskUserIdUtil } from '../utils/logger';
 
 const PROFILE_KEY_PREFIX = 'overtime_plus_profile';
 const LEGACY_PROFILE_KEY = 'overtime_plus_profile'; // Old key for migration
-const isDev = process.env.NODE_ENV !== 'production';
 
+const debug = createScopedLogger('profileStorage');
 const maskUserId = (userId?: string | null) =>
-  userId ? `${userId.substring(0, 8)}...` : 'anonymous';
-
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log(...args);
-  }
-};
+  userId ? maskUserIdUtil(userId) || 'anonymous' : 'anonymous';
 
 function getProfileKey(userId?: string | null): string {
   if (!userId) {
@@ -27,7 +22,7 @@ export class ProfileStorage {
   async saveProfile(profile: Profile, userId?: string | null): Promise<void> {
     try {
       const profileKey = getProfileKey(userId);
-      debug('Saving profile to storage', {
+      debug.debug('Saving profile to storage', {
         userId: maskUserId(userId ?? null),
         profileKey,
         hasEmployeeInitial: !!profile.employeeInitial,
@@ -40,7 +35,7 @@ export class ProfileStorage {
         try {
           profileToSave.employeeInitial = await encrypt(profileToSave.employeeInitial);
         } catch (encryptError) {
-          console.error('Failed to encrypt initials (non-fatal):', encryptError);
+          debug.error('Failed to encrypt initials (non-fatal):', encryptError);
           // Continue without encryption if it fails
         }
       }
@@ -48,16 +43,16 @@ export class ProfileStorage {
         try {
           profileToSave.email = await encrypt(profileToSave.email);
         } catch (encryptError) {
-          console.error('Failed to encrypt email (non-fatal):', encryptError);
+          debug.error('Failed to encrypt email (non-fatal):', encryptError);
           // Continue without encryption if it fails
         }
       }
       
       const profileJson = JSON.stringify(profileToSave);
       await SecureStore.setItemAsync(profileKey, profileJson);
-      debug('Profile saved successfully to storage');
+      debug.debug('Profile saved successfully to storage');
     } catch (error) {
-      console.error('Failed to save profile:', error);
+      debug.error('Failed to save profile:', error);
       throw new Error('Failed to save profile to secure storage');
     }
   }
@@ -65,7 +60,7 @@ export class ProfileStorage {
   async loadProfile(userId?: string | null): Promise<Profile | null> {
     try {
       const profileKey = getProfileKey(userId);
-      debug('Loading profile from storage', {
+      debug.debug('Loading profile from storage', {
         userId: maskUserId(userId ?? null),
         profileKey,
       });
@@ -87,7 +82,7 @@ export class ProfileStorage {
       
       // Migration: Convert old profile format to new format
       if (profile.delegateSignatureUri !== undefined && profile.employeeInitial === undefined) {
-        debug('Migrating profile from old format');
+        debug.debug('Migrating profile from old format');
         // Generate employee initial from full name
         profile.employeeInitial = this.generateInitials(profile.fullName || '');
         // Remove old signature field
@@ -95,7 +90,7 @@ export class ProfileStorage {
 
         // Save the migrated profile (will encrypt PII fields)
         await this.saveProfile(profile as Profile, userId);
-        debug('Profile migrated successfully');
+        debug.debug('Profile migrated successfully');
       }
 
       // Ensure employee initial is always set
@@ -126,14 +121,14 @@ export class ProfileStorage {
         await this.saveProfile(profile as Profile, userId);
       }
 
-      debug('Profile loaded from storage', {
+      debug.debug('Profile loaded from storage', {
         hasEmployeeInitial: !!profile.employeeInitial,
         isSMO: profile.isSMO,
         fieldCount: Object.keys(profile).length,
       });
       return profile as Profile;
     } catch (error) {
-      console.error('Failed to load profile:', error);
+      debug.error('Failed to load profile:', error);
       return null;
     }
   }
@@ -142,9 +137,9 @@ export class ProfileStorage {
     try {
       const profileKey = getProfileKey(userId);
       await SecureStore.deleteItemAsync(profileKey);
-      debug('Profile deleted successfully', { profileKey });
+      debug.debug('Profile deleted successfully', { profileKey });
     } catch (error) {
-      console.error('Failed to delete profile:', error);
+      debug.error('Failed to delete profile:', error);
       throw new Error('Failed to delete profile from secure storage');
     }
   }
@@ -155,7 +150,7 @@ export class ProfileStorage {
       const profileJson = await SecureStore.getItemAsync(profileKey);
       return profileJson !== null;
     } catch (error) {
-      console.error('Failed to check profile existence:', error);
+      debug.error('Failed to check profile existence:', error);
       return false;
     }
   }
@@ -164,9 +159,9 @@ export class ProfileStorage {
   async clearLegacyProfile(): Promise<void> {
     try {
       await SecureStore.deleteItemAsync(LEGACY_PROFILE_KEY);
-      debug('Legacy profile cleared successfully');
+      debug.debug('Legacy profile cleared successfully');
     } catch (error) {
-      console.error('Failed to clear legacy profile:', error);
+      debug.error('Failed to clear legacy profile:', error);
       // Don't throw - this is a cleanup operation
     }
   }

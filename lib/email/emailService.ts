@@ -3,6 +3,9 @@ import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 import { Profile, ExportBatch } from '../../types';
 import { getDelegateForDepartment } from '../data/hospitalDepartments';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('emailService');
 
 /**
  * Default email template with variables
@@ -50,7 +53,7 @@ export async function getRecipientForDepartment(hospital: string, department: st
     
     return null;
   } catch (error) {
-    console.error('Error fetching recipient:', error);
+    debug.error('Error fetching recipient:', error);
     return null;
   }
 }
@@ -156,7 +159,7 @@ export async function sendAVACEmailViaMailto(profile: Profile, exportBatch?: Exp
     };
     
   } catch (error) {
-    console.error('Error opening email app:', error);
+    debug.error('Error opening email app:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'An unexpected error occurred'
@@ -227,7 +230,7 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
     };
     
   } catch (error) {
-    console.error('Error sending AVAC email:', error);
+    debug.error('Error sending AVAC email:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'An unexpected error occurred'
@@ -283,7 +286,7 @@ export async function getAVACRecipientInfo(profile: Profile, exportBatch?: Expor
       body
     };
   } catch (error) {
-    console.error('Error getting recipient info:', error);
+    debug.error('Error getting recipient info:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'An unexpected error occurred'

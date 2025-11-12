@@ -3,12 +3,9 @@ import { ShiftTemplate } from '../../types';
 import { database } from '../db/sqlite';
 import { useAuthStore } from './authStore';
 import { shiftTemplatesSync } from '../supabase';
+import { createScopedLogger } from '../utils/logger';
 
-const devLog = (...args: any[]) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(...args);
-  }
-};
+const devLog = createScopedLogger('shiftTemplatesStore');
 
 interface ShiftTemplatesState {
   templates: ShiftTemplate[];
@@ -74,7 +71,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
                   // Local is newer - use local and upload it
                   mergedTemplates.push(localTemplate);
                   shiftTemplatesSync.uploadTemplate(localTemplate, userId).catch(err => {
-                    console.error('[shiftTemplatesStore.loadTemplates] Failed to upload newer local template:', err);
+                    devLog.error('Failed to upload newer local template:', err);
                     // Add to sync queue for retry
                     const { syncQueue } = require('../sync/queue');
                     syncQueue.add({
@@ -88,14 +85,14 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
                   // Remote is newer - use remote and save it locally
                   mergedTemplates.push(remoteTemplate);
                   database.updateShiftTemplate(remoteTemplate, userId).catch(err => {
-                    console.error('[shiftTemplatesStore.loadTemplates] Failed to save merged template:', err);
+                    devLog.error('Failed to save merged template:', err);
                   });
                 }
               } else if (localTemplate) {
                 // Only local - add it and upload if not already synced
                 mergedTemplates.push(localTemplate);
                 shiftTemplatesSync.uploadTemplate(localTemplate, userId).catch(err => {
-                  console.error('[shiftTemplatesStore.loadTemplates] Failed to upload local-only template:', err);
+                  devLog.error('Failed to upload local-only template:', err);
                   // Add to sync queue for retry
                   const { syncQueue } = require('../sync/queue');
                   syncQueue.add({
@@ -109,7 +106,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
                 // Only remote - add it and save locally
                 mergedTemplates.push(remoteTemplate);
                 database.createShiftTemplate(remoteTemplate, userId).catch(err => {
-                  console.error('[shiftTemplatesStore.loadTemplates] Failed to save remote-only template:', err);
+                  devLog.error('Failed to save remote-only template:', err);
                 });
               }
             }
@@ -118,11 +115,11 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
             set({ templates: mergedTemplates });
           }
         }).catch(err => {
-          console.error('[shiftTemplatesStore.loadTemplates] Background sync failed (non-fatal):', err);
+          devLog.error('Background sync failed (non-fatal):', err);
         });
       }
     } catch (error) {
-      console.error('❌ ShiftTemplatesStore: Failed to load templates:', error);
+      devLog.error('Failed to load templates:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to load templates' 
@@ -154,7 +151,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
         shiftTemplatesSync.uploadTemplate(template, finalUserId).catch(err => {
-          console.error('[shiftTemplatesStore.addTemplate] Background sync failed (non-fatal):', err);
+          devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -166,7 +163,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
         });
       }
     } catch (error) {
-      console.error('❌ ShiftTemplatesStore: Failed to add template:', error);
+      devLog.error('Failed to add template:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to add template' 
@@ -198,7 +195,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
         shiftTemplatesSync.uploadTemplate(template, finalUserId).catch(err => {
-          console.error('[shiftTemplatesStore.updateTemplate] Background sync failed (non-fatal):', err);
+          devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -210,7 +207,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
         });
       }
     } catch (error) {
-      console.error('❌ ShiftTemplatesStore: Failed to update template:', error);
+      devLog.error('Failed to update template:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to update template' 
@@ -238,7 +235,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
       // Sync delete to Supabase in background (non-blocking)
       if (finalUserId) {
         shiftTemplatesSync.deleteTemplate(id, finalUserId).catch(err => {
-          console.error('[shiftTemplatesStore.deleteTemplate] Background sync failed (non-fatal):', err);
+          devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -250,7 +247,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
         });
       }
     } catch (error) {
-      console.error('❌ ShiftTemplatesStore: Failed to delete template:', error);
+      devLog.error('Failed to delete template:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to delete template' 

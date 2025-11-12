@@ -1,6 +1,9 @@
 import { Platform } from 'react-native';
 import { database } from '../db/sqlite';
 import { getWidgetShiftStatus } from './widgetDataProvider';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('widgetStatusUpdater');
 
 /**
  * Widget status updater for React Native code
@@ -48,10 +51,10 @@ export async function updateWidgetStatus(): Promise<void> {
       }
     } catch (e) {
       // AsyncStorage might not be installed - that's okay for now
-      console.log('AsyncStorage not available, widget status update skipped');
+      debug.debug('AsyncStorage not available, widget status update skipped');
     }
     
-    console.log('Widget status updated:', status);
+    debug.debug('Widget status updated:', status);
     
     // Trigger native widget update
     // For Android, we need to send a broadcast
@@ -60,7 +63,7 @@ export async function updateWidgetStatus(): Promise<void> {
       // For now, widgets will update on their refresh cycle
     }
   } catch (error) {
-    console.error('Error updating widget status:', error);
+    debug.error('Error updating widget status:', error);
   }
 }
 

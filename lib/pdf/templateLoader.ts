@@ -2,6 +2,9 @@ import { Paths } from 'expo-file-system';
 import { readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
 import { supabaseEnabled, getSupabaseConfig } from '../supabase';
 import { database } from '../db/sqlite';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('templateLoader');
 
 // Feature flag: enable OTA template flow only when true
 const OTA_ENABLED = process.env.EXPO_PUBLIC_TEMPLATE_OTA === 'true';
@@ -39,7 +42,7 @@ export async function getLatestTemplateMeta(templateType: TemplateType): Promise
   // This will be handled by a retry mechanism
   const endpoint = `${normalizedUrl}/rest/v1/pdf_templates?template_type=eq.${templateType}&is_active=is.true&select=template_type,version,pdf_storage_path,coordinate_mapping&limit=1`;
   
-  console.log(`[templateLoader] Fetching template meta for ${templateType} from: ${endpoint.substring(0, 80)}...`);
+  debug.debug(`Fetching template meta for ${templateType} from: ${endpoint.substring(0, 80)}...`);
   
   try {
     const res = await fetch(endpoint, {
@@ -50,7 +53,7 @@ export async function getLatestTemplateMeta(templateType: TemplateType): Promise
       },
     });
     if (!res.ok) {
-      console.error(`[templateLoader] Failed to fetch template meta: ${res.status} ${res.statusText}`);
+      debug.error(`Failed to fetch template meta: ${res.status} ${res.statusText}`);
       return null;
     }
     const data = await res.json();
@@ -63,7 +66,7 @@ export async function getLatestTemplateMeta(templateType: TemplateType): Promise
       coordinateMapping: row.coordinate_mapping,
     };
   } catch (error) {
-    console.error(`[templateLoader] Error fetching template meta for ${templateType}:`, error);
+    debug.error(`Error fetching template meta for ${templateType}:`, error);
     return null;
   }
 }
@@ -79,7 +82,7 @@ export async function downloadAndCachePDF(storagePath: string, templateType: Tem
   const isHttp = storagePath.startsWith('http://') || storagePath.startsWith('https://');
   const fetchUrl = isHttp ? storagePath : `${normalizedUrl}/storage/v1/object/public/${storagePath}`;
   
-  console.log(`[templateLoader] Downloading PDF from: ${fetchUrl}`);
+  debug.debug(`Downloading PDF from: ${fetchUrl}`);
   const res = await fetch(fetchUrl);
   if (!res.ok) throw new Error(`Failed to fetch template PDF: ${res.status}`);
   
@@ -148,14 +151,14 @@ export async function ensureTemplateUpToDate(templateType: TemplateType): Promis
   version: string | null;
 }> {
   if (!isTemplateOTAEnabled()) {
-    console.log(`[templateLoader] OTA disabled for ${templateType}, skipping`);
+    debug.debug(`OTA disabled for ${templateType}, skipping`);
     return { pdfPath: null, mapping: null, version: null };
   }
 
-  console.log(`[templateLoader] Checking template ${templateType}...`);
+  debug.debug(`Checking template ${templateType}...`);
   const meta = await getLatestTemplateMeta(templateType);
   if (!meta) {
-    console.log(`[templateLoader] No template meta found for ${templateType}, using cached or bundled`);
+    debug.debug(`No template meta found for ${templateType}, using cached or bundled`);
     const cached = await database.getTemplateCache(templateType);
     if (cached.pdfPath && cached.mappingJson) {
       return {
@@ -167,12 +170,12 @@ export async function ensureTemplateUpToDate(templateType: TemplateType): Promis
     return { pdfPath: null, mapping: null, version: null };
   }
   
-  console.log(`[templateLoader] Found template ${templateType} v${meta.version} in Supabase`);
+  debug.debug(`Found template ${templateType} v${meta.version} in Supabase`);
   const cached = await database.getTemplateCache(templateType);
 
   // Use cached if versions match
   if (meta && cached.version === meta.version && cached.pdfPath) {
-    console.log(`[templateLoader] Using cached template ${templateType} v${cached.version}`);
+    debug.debug(`Using cached template ${templateType} v${cached.version}`);
     const mapping = cached.mappingJson ? JSON.parse(cached.mappingJson) : (meta.coordinateMapping || null);
     return { pdfPath: cached.pdfPath, mapping, version: cached.version };
   }
@@ -180,7 +183,7 @@ export async function ensureTemplateUpToDate(templateType: TemplateType): Promis
   // If meta exists and either not cached or version changed, download new PDF and cache mapping
   if (meta) {
     try {
-      console.log(`[templateLoader] Downloading new template ${templateType} v${meta.version}...`);
+      debug.debug(`Downloading new template ${templateType} v${meta.version}...`);
       const pdfPath = await downloadAndCachePDF(meta.pdfStoragePath, templateType, meta.version);
       const mappingJson = JSON.stringify(meta.coordinateMapping || {});
       await database.setTemplateCache({
@@ -188,13 +191,13 @@ export async function ensureTemplateUpToDate(templateType: TemplateType): Promis
         mappingJson,
         version: meta.version,
       });
-      console.log(`[templateLoader] Successfully cached template ${templateType} v${meta.version}`);
+      debug.debug(`Successfully cached template ${templateType} v${meta.version}`);
       return { pdfPath, mapping: meta.coordinateMapping || null, version: meta.version };
     } catch (downloadError) {
-      console.error(`[templateLoader] Failed to download template ${templateType}:`, downloadError);
+      debug.error(`Failed to download template ${templateType}:`, downloadError);
       // Fall back to cached version if available
       if (cached.pdfPath && cached.mappingJson) {
-        console.log(`[templateLoader] Falling back to cached template ${templateType}`);
+        debug.debug(`Falling back to cached template ${templateType}`);
         return {
           pdfPath: cached.pdfPath,
           mapping: JSON.parse(cached.mappingJson),

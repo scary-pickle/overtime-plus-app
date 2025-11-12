@@ -1,17 +1,13 @@
 import { database } from '../db/sqlite';
 import * as SecureStore from 'expo-secure-store';
 import base64 from 'react-native-base64';
+import { createScopedLogger } from '../utils/logger';
 
 const ENCRYPTION_KEY_STORE_KEY = 'overtime_auth_encryption_key';
 const ENCRYPTION_THRESHOLD = 1500; // Encrypt values larger than this
 const SECURE_STORE_OPTIONS = { keychainService: 'overtime-securestore' };
 
-const isDev = process.env.NODE_ENV !== 'production';
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log('[SQLiteStorageAdapter]', ...args);
-  }
-};
+const debug = createScopedLogger('SQLiteStorageAdapter');
 
 // Simple XOR encryption for SQLite storage
 // Encryption key is stored in SecureStore (hardware-backed)
@@ -23,11 +19,11 @@ async function getEncryptionKey(): Promise<string> {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
       key = Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
       await SecureStore.setItemAsync(ENCRYPTION_KEY_STORE_KEY, key, SECURE_STORE_OPTIONS);
-      debug('Generated new encryption key');
+      debug.debug('Generated new encryption key');
     }
     return key;
   } catch (error) {
-    console.error('[SQLiteStorageAdapter] Failed to get encryption key:', error);
+    debug.error('Failed to get encryption key:', error);
     throw error;
   }
 }
@@ -105,7 +101,7 @@ async function cleanupCorruptedSessions(): Promise<void> {
     // Wait for database to be ready
     const dbReady = await waitForDatabase();
     if (!dbReady) {
-      console.warn('[SQLiteStorageAdapter] Database not ready, skipping corrupted session cleanup');
+      debug.warn('Database not ready, skipping corrupted session cleanup');
       hasCleanedCorruptedSessions = true;
       return;
     }
@@ -113,13 +109,13 @@ async function cleanupCorruptedSessions(): Promise<void> {
     // Check if we've already run this migration
     const migrationRow = await database.getAuthSession(MIGRATION_KEY);
     if (migrationRow && migrationRow.value === MIGRATION_VERSION) {
-      debug('Migration already completed:', MIGRATION_VERSION);
+      debug.debug('Migration already completed:', MIGRATION_VERSION);
       hasCleanedCorruptedSessions = true;
       return;
     }
     
-    console.log('[SQLiteStorageAdapter] 🔧 Running one-time migration to fix compression bug...');
-    console.log('[SQLiteStorageAdapter] 🧹 Clearing ALL auth sessions (you will need to sign in again)');
+    debug.debug('🔧 Running one-time migration to fix compression bug...');
+    debug.debug('🧹 Clearing ALL auth sessions (you will need to sign in again)');
     
     // CRITICAL FIX: Mark migration as complete BEFORE clearing
     // This prevents the migration from running again after clearing!
@@ -134,12 +130,12 @@ async function cleanupCorruptedSessions(): Promise<void> {
       }
     }
     
-    console.log('[SQLiteStorageAdapter] ✅ Migration complete - all sessions cleared');
-    console.log('[SQLiteStorageAdapter] ℹ️ You can now sign in and sessions will persist correctly');
+    debug.debug('✅ Migration complete - all sessions cleared');
+    debug.debug('ℹ️ You can now sign in and sessions will persist correctly');
     
     hasCleanedCorruptedSessions = true;
   } catch (error) {
-    console.warn('[SQLiteStorageAdapter] Failed to run migration:', error);
+    debug.warn('Failed to run migration:', error);
     // Don't throw - this is best-effort cleanup
     hasCleanedCorruptedSessions = true; // Don't retry
   }
@@ -149,7 +145,7 @@ async function withWriteLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   // Wait for any existing write to complete
   const existingLock = writeLocks.get(key);
   if (existingLock) {
-    debug('Waiting for existing write lock on key:', key);
+    debug.debug('Waiting for existing write lock on key:', key);
     try {
       await existingLock;
     } catch (e) {
@@ -188,24 +184,24 @@ async function waitForDatabase(maxWaitMs: number = 10000): Promise<boolean> {
   
   // Check if already initialized
   if (database['db']) {
-    debug('Database already initialized');
+    debug.debug('Database already initialized');
     return true;
   }
   
-  debug('Waiting for database initialization...');
+  debug.debug('Waiting for database initialization...');
   
   while (!database['db']) {
     attempts++;
     const elapsed = Date.now() - startTime;
     
     if (elapsed > maxWaitMs) {
-      console.error('[SQLiteStorageAdapter] Timeout waiting for database initialization after', elapsed, 'ms and', attempts, 'attempts');
+      debug.error('Timeout waiting for database initialization after', elapsed, 'ms and', attempts, 'attempts');
       return false;
     }
     
     // Log progress every second
     if (attempts % 20 === 0) {
-      debug('Still waiting for database...', elapsed, 'ms elapsed,', attempts, 'attempts');
+      debug.debug('Still waiting for database...', elapsed, 'ms elapsed,', attempts, 'attempts');
     }
     
     // Wait a bit and check again
@@ -213,7 +209,7 @@ async function waitForDatabase(maxWaitMs: number = 10000): Promise<boolean> {
   }
   
   const totalTime = Date.now() - startTime;
-  debug('Database ready after', totalTime, 'ms and', attempts, 'attempts');
+  debug.debug('Database ready after', totalTime, 'ms and', attempts, 'attempts');
   return true;
 }
 
@@ -227,13 +223,13 @@ export const SQLiteStorageAdapter = {
       const storageKey = getActualStorageKey(key);
       
       // Log full key to understand what's being accessed
-      debug('Getting item:', key, storageKey !== key ? `(mapped to: ${storageKey})` : '');
+      debug.debug('Getting item:', key, storageKey !== key ? `(mapped to: ${storageKey})` : '');
       
       // Wait for database to be initialized (with timeout)
       // This is critical for session restoration on app start
       const dbReady = await waitForDatabase();
       if (!dbReady) {
-        debug('Database not ready after timeout, returning null');
+        debug.debug('Database not ready after timeout, returning null');
         return null;
       }
       
@@ -243,13 +239,13 @@ export const SQLiteStorageAdapter = {
         row = await database.getAuthSession(storageKey);
       } catch (dbError: any) {
         if (dbError?.message?.includes('not initialized')) {
-          debug('Database not initialized (unexpected), returning null');
+          debug.debug('Database not initialized (unexpected), returning null');
           return null;
         }
         throw dbError; // Re-throw if it's a different error
       }
       if (!row) {
-        debug('No value found for key');
+        debug.debug('No value found for key');
         return null;
       }
 
@@ -262,14 +258,13 @@ export const SQLiteStorageAdapter = {
           const encryptionKey = await getEncryptionKey();
           // Convert base64 string to Uint8Array (binary-safe)
           const encryptedBytes = base64ToUint8Array(value);
-          debug('Converted from base64, encrypted bytes:', encryptedBytes.length);
+          debug.debug('Converted from base64, encrypted bytes:', encryptedBytes.length);
           
           // XOR decrypt (returns the original string)
           value = xorDecrypt(encryptedBytes, encryptionKey);
-          debug('Decrypted, length:', value.length);
+          debug.debug('Decrypted, length:', value.length);
         } catch (decryptError) {
-          console.warn('[SQLiteStorageAdapter] Failed to decrypt value:', decryptError);
-          debug('Decryption error:', decryptError);
+          debug.warn('Failed to decrypt value:', decryptError);
           return null;
         }
       }
@@ -279,41 +274,41 @@ export const SQLiteStorageAdapter = {
       if (isSupabaseSessionKey(key)) {
         if (key.includes('auth-token') && !key.includes('code-verifier') && !key.includes('-user')) {
           if (value.length < 1000) {
-            console.error('[SQLiteStorageAdapter] 🚨 CORRUPTED SESSION DETECTED!');
-            console.error('[SQLiteStorageAdapter]   Key:', key);
-            console.error('[SQLiteStorageAdapter]   Size:', value.length);
-            console.error('[SQLiteStorageAdapter]   A valid session should be at least 2000 characters!');
+            debug.error('🚨 CORRUPTED SESSION DETECTED!', {
+              key: key.substring(0, 50) + '...', // Only log partial key
+              size: value.length,
+              message: 'A valid session should be at least 2000 characters!'
+            });
             return null;
           }
           
           // CRITICAL: Validate that decrypted session is valid JSON
           try {
             const parsed = JSON.parse(value);
-            console.log('[SQLiteStorageAdapter] ✅ Session JSON is valid:', {
+            debug.debug('✅ Session JSON is valid:', {
               hasAccessToken: !!parsed.access_token,
               hasRefreshToken: !!parsed.refresh_token,
               hasUser: !!parsed.user,
-              accessTokenLength: parsed.access_token?.length || 0,
-              firstChars: value.substring(0, 80)
+              accessTokenLength: parsed.access_token?.length || 0
+              // DO NOT log token content - it's sensitive
             });
           } catch (jsonError: any) {
-            console.error('[SQLiteStorageAdapter] 🚨 INVALID SESSION JSON!');
-            console.error('[SQLiteStorageAdapter]   Key:', key);
-            console.error('[SQLiteStorageAdapter]   Length:', value.length);
-            console.error('[SQLiteStorageAdapter]   Error:', jsonError.message);
-            console.error('[SQLiteStorageAdapter]   First 100 chars:', value.substring(0, 100));
-            console.error('[SQLiteStorageAdapter]   Last 100 chars:', value.substring(value.length - 100));
+            debug.error('🚨 INVALID SESSION JSON!', {
+              key: key.substring(0, 50) + '...', // Only log partial key
+              length: value.length,
+              error: jsonError.message
+              // DO NOT log token content - it's sensitive
+            });
             // Return null so Supabase knows the session is invalid
             return null;
           }
         }
       }
 
-      debug('Returning value as-is, length:', value.length);
+      debug.debug('Returning value as-is, length:', value.length);
       return value;
     } catch (error) {
-      console.warn('[SQLiteStorageAdapter] getItem failed:', error);
-      debug('Error:', error);
+      debug.warn('getItem failed:', error);
       return null;
     }
   },
@@ -325,21 +320,22 @@ export const SQLiteStorageAdapter = {
     return withWriteLock(storageKey, async () => {
       try {
         // Log full key to understand what's being stored
-        debug('Setting item:', key, storageKey !== key ? `(mapped to: ${storageKey})` : '', 'value length:', value.length);
+        debug.debug('Setting item:', key, storageKey !== key ? `(mapped to: ${storageKey})` : '', 'value length:', value.length);
         
-        // ALWAYS log auth-token writes with stack trace to find the corruption source
+        // Log auth-token writes for debugging (only in dev, with masking)
         if (key.includes('auth-token') && !key.includes('code-verifier') && !key.includes('-user')) {
-          console.log('[SQLiteStorageAdapter] ⚠️ WRITING TO AUTH TOKEN KEY');
-          console.log('[SQLiteStorageAdapter]   Original key:', key);
-          console.log('[SQLiteStorageAdapter]   Storage key:', storageKey);
-          console.log('[SQLiteStorageAdapter]   Value length:', value.length);
-          console.log('[SQLiteStorageAdapter]   First 50 chars:', value.substring(0, 50));
+          debug.debug('⚠️ WRITING TO AUTH TOKEN KEY', {
+            originalKey: key.substring(0, 50) + '...', // Only partial key
+            storageKey: storageKey.substring(0, 50) + '...',
+            valueLength: value.length
+            // DO NOT log token content - it's sensitive
+          });
         }
         
         // Wait for database to be initialized (with timeout)
         const dbReady = await waitForDatabase();
         if (!dbReady) {
-          debug('Database not ready after timeout, cannot store value');
+          debug.debug('Database not ready after timeout, cannot store value');
           // Don't throw - Supabase will retry when database is ready
           return;
         }
@@ -362,46 +358,46 @@ export const SQLiteStorageAdapter = {
             // Convert to base64 for safe TEXT storage in SQLite
             payload = uint8ArrayToBase64(encryptedBytes);
             encrypted = 1;
-            debug('Encrypted value (binary-safe):', { 
+            debug.debug('Encrypted value (binary-safe):', { 
               originalLength: payloadBytes, 
               encryptedBytes: encryptedBytes.length,
               base64Length: payload.length
             });
           } catch (encryptError) {
-            console.warn('[SQLiteStorageAdapter] Encryption failed:', encryptError);
+            debug.warn('Encryption failed:', encryptError);
             // Continue with unencrypted value
           }
         }
 
         await database.setAuthSession(storageKey, payload, encrypted);
-        debug('Successfully stored in SQLite');
+        debug.debug('Successfully stored in SQLite');
         
         // CRITICAL: Verify the write was successful for session keys
         if (key.includes('auth-token') && !key.includes('code-verifier') && !key.includes('-user')) {
           const verification = await database.getAuthSession(storageKey);
           if (verification && verification.value) {
-            console.log('[SQLiteStorageAdapter] ✅ WRITE VERIFIED - stored value length:', verification.value.length);
+            debug.debug('✅ WRITE VERIFIED - stored value length:', verification.value.length);
             if (verification.value.length < 300) {
-              console.error('[SQLiteStorageAdapter] 🚨 WRITE CORRUPTION DETECTED!');
-              console.error('[SQLiteStorageAdapter]   Expected encrypted length:', payload.length);
-              console.error('[SQLiteStorageAdapter]   Actual stored length:', verification.value.length);
-              console.error('[SQLiteStorageAdapter]   THIS IS THE SOURCE OF CORRUPTION!');
+              debug.error('🚨 WRITE CORRUPTION DETECTED!', {
+                expectedEncryptedLength: payload.length,
+                actualStoredLength: verification.value.length,
+                message: 'THIS IS THE SOURCE OF CORRUPTION!'
+              });
             }
           } else {
-            console.error('[SQLiteStorageAdapter] ❌ WRITE VERIFICATION FAILED - value not found!');
+            debug.error('❌ WRITE VERIFICATION FAILED - value not found!');
           }
         }
       } catch (dbError: any) {
         if (dbError?.message?.includes('not initialized')) {
-          debug('Database not initialized (unexpected), cannot store value');
+          debug.debug('Database not initialized (unexpected), cannot store value');
           // Don't throw - Supabase will retry when database is ready
           return;
         }
         throw dbError; // Re-throw if it's a different error
       }
       } catch (error) {
-        console.error('[SQLiteStorageAdapter] setItem failed:', error);
-        debug('Error:', error);
+        debug.error('setItem failed:', error);
         throw error;
       }
     }); // End of withWriteLock
@@ -413,19 +409,18 @@ export const SQLiteStorageAdapter = {
       const storageKey = getActualStorageKey(key);
       
       // Log full key to understand what Supabase is removing
-      debug('Removing item:', key, storageKey !== key ? `(mapped to: ${storageKey})` : '');
+      debug.debug('Removing item:', key, storageKey !== key ? `(mapped to: ${storageKey})` : '');
       
       // Check if this is the main session key (contains 'auth-token')
       const isMainSessionKey = key.includes('auth-token') && !key.includes('code-verifier') && !key.includes('-user');
       if (isMainSessionKey) {
-        console.log('[SQLiteStorageAdapter] ℹ️ Removing main session key:', key, '→', storageKey);
+        debug.debug('ℹ️ Removing main session key:', key.substring(0, 50) + '...', '→', storageKey.substring(0, 50) + '...');
       }
       
       await database.removeAuthSession(storageKey);
-      debug('Successfully removed from SQLite');
+      debug.debug('Successfully removed from SQLite');
     } catch (error) {
-      console.warn('[SQLiteStorageAdapter] removeItem failed:', error);
-      debug('Error:', error);
+      debug.warn('removeItem failed:', error);
     }
   },
 };

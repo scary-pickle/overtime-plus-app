@@ -382,28 +382,13 @@ export default function HomeScreen() {
   const pendingCount = draftLogs.length + readyLogs.length;
 
   if (!hasProfile) {
+    // Show welcome screen while profile loads
     return (
-      <ScrollView 
-        style={[styles.container, isDark && styles.darkContainer]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={isDark ? '#fff' : '#007AFF'}
-            colors={['#007AFF']}
-          />
-        }
-        contentContainerStyle={styles.emptyContainer}
-      >
-        <EmptyState
-          title="Welcome to Overtime+"
-          description="Set up your profile to start tracking overtime and generate AVAC forms."
-          actionText="Set Up Profile"
-          onAction={() => router.push('/(tabs)/profile')}
-          icon="👋"
-        />
-      </ScrollView>
+      <View style={[styles.welcomeContainer, isDark && styles.darkWelcomeContainer]}>
+        <Text style={[styles.welcomeText, isDark && styles.darkWelcomeText]}>
+          Welcome to Overtime+
+        </Text>
+      </View>
     );
   }
 
@@ -914,5 +899,22 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#4CAF50',
     marginLeft: 8,
+  },
+  welcomeContainer: {
+    flex: 1,
+    backgroundColor: '#007AFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  darkWelcomeContainer: {
+    backgroundColor: '#007AFF',
+  },
+  welcomeText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  darkWelcomeText: {
+    color: '#fff',
   },
 });

@@ -2,12 +2,9 @@ import { create } from 'zustand';
 import { Profile } from '../../types';
 import { profileStorage } from '../storage/profile';
 import { profileSync } from '../supabase';
+import { createScopedLogger } from '../utils/logger';
 
-const devLog = (...args: any[]) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(...args);
-  }
-};
+const devLog = createScopedLogger('profileStore');
 
 interface ProfileState {
   profile: Profile | null;
@@ -56,7 +53,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
             if (localProfile) {
               // Both exist - prefer remote for now (could compare timestamps from Supabase metadata)
               profile = supabaseProfile;
-              devLog('Profile loaded from Supabase, saving to local storage');
+              devLog.debug('Profile loaded from Supabase, saving to local storage');
               await profileStorage.saveProfile(supabaseProfile, userId);
             } else {
               // Only remote
@@ -68,7 +65,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
             profile = localProfile;
           }
         } catch (syncError) {
-          console.error('Failed to load profile from Supabase (non-fatal):', syncError);
+          devLog.error('Failed to load profile from Supabase (non-fatal):', syncError);
           // Fall back to local
           if (localProfile) {
             profile = localProfile;
@@ -83,7 +80,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       if (profile && userId && localProfile) {
         // Upload local profile if it exists (background sync)
         profileSync.uploadProfile(profile, userId).catch(syncError => {
-          console.error('Failed to sync local profile to Supabase (non-fatal):', syncError);
+          devLog.error('Failed to sync local profile to Supabase (non-fatal):', syncError);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -95,25 +92,25 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         });
       }
       
-      devLog('Profile loaded from storage:', { 
+      devLog.debug('Profile loaded from storage:', { 
         userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous',
         hasProfile: profile !== null 
       });
       if (profile) {
-        devLog('Profile completeness check:', profileStorage.isProfileComplete(profile));
-        devLog('Profile fields:', Object.keys(profile));
+        devLog.debug('Profile completeness check:', profileStorage.isProfileComplete(profile));
+        devLog.debug('Profile fields:', Object.keys(profile));
       }
       set({ 
         profile, 
         isLoading: false,
         error: null 
       });
-      devLog('Profile store state after load:', { 
+      devLog.debug('Profile store state after load:', { 
         hasProfile: profile !== null, 
         isComplete: profile ? profileStorage.isProfileComplete(profile) : false 
       });
     } catch (error) {
-      console.error('Error loading profile:', error);
+      devLog.error('Error loading profile:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to load profile' 
@@ -126,15 +123,15 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       // Save to local storage first
       await profileStorage.saveProfile(profile, userId);
-      devLog('Profile saved to storage, updating store state');
+      devLog.debug('Profile saved to storage, updating store state');
       
       // Sync to Supabase (don't fail if this fails - local save is primary)
       if (userId) {
         try {
           await profileSync.uploadProfile(profile, userId);
-          devLog('Profile synced to Supabase successfully');
+          devLog.debug('Profile synced to Supabase successfully');
         } catch (syncError) {
-          console.error('Failed to sync profile to Supabase (non-fatal):', syncError);
+          devLog.error('Failed to sync profile to Supabase (non-fatal):', syncError);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -151,12 +148,12 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         isLoading: false,
         error: null 
       });
-      devLog('Profile store state updated:', { 
+      devLog.debug('Profile store state updated:', { 
         hasProfile: profile !== null, 
         isComplete: profile ? profileStorage.isProfileComplete(profile) : false 
       });
     } catch (error) {
-      console.error('Error saving profile:', error);
+      devLog.error('Error saving profile:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to save profile' 
@@ -185,7 +182,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       await profileStorage.clearLegacyProfile();
     } catch (error) {
-      console.error('Error clearing legacy profile:', error);
+      devLog.error('Error clearing legacy profile:', error);
     }
   },
 
@@ -195,7 +192,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   get initials() {
     const { profile } = get();
     const initials = profile?.employeeInitial || '';
-    devLog('ProfileStore initials getter:', { 
+    devLog.debug('ProfileStore initials getter:', { 
       hasProfile: !!profile, 
       employeeInitial: profile?.employeeInitial,
       initials 
@@ -206,14 +203,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   get isComplete() {
     const { profile } = get();
     const result = profile ? profileStorage.isProfileComplete(profile) : false;
-    devLog('isComplete getter called:', { profile: !!profile, result });
+    devLog.debug('isComplete getter called:', { profile: !!profile, result });
     return result;
   },
 
   get hasProfile() {
     const { profile } = get();
     const result = profile !== null;
-    devLog('hasProfile getter called:', { profile: !!profile, result });
+    devLog.debug('hasProfile getter called:', { profile: !!profile, result });
     return result;
   }
 }));

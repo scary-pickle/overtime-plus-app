@@ -4,23 +4,10 @@ import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../auth
 import { toFriendlyAuthMessage } from '../auth/errors';
 import { useOnboardingStore } from './onboardingStore';
 import * as SecureStore from 'expo-secure-store';
+import { createScopedLogger, maskEmail, maskUserId } from '../utils/logger';
 
 const CURRENT_USER_ID_KEY = 'overtime_plus_current_user_id';
-const isDev = process.env.NODE_ENV !== 'production';
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log(...args);
-  }
-};
-
-const maskEmail = (email?: string | null) => {
-  if (!email) return undefined;
-  const [local, domain] = email.split('@');
-  if (!domain || !local) return '***';
-  return `${local[0]}***@${domain}`;
-};
-
-const maskUserId = (id?: string | null) => (id ? `${id.substring(0, 8)}...` : undefined);
+const debug = createScopedLogger('authStore');
 
 interface AuthState {
   user: any | null;
@@ -57,7 +44,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   checkSession: async () => {
     set({ isLoading: true, error: null });
     try {
-      debug('[authStore.checkSession] Getting session from Supabase...');
+      debug.debug('Getting session from Supabase...');
       
       // Supabase automatically restores session from storage when client is initialized
       // However, this happens asynchronously, so we may need to wait a bit
@@ -74,7 +61,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         session = result?.data?.session ?? null;
         user = session?.user ?? null;
         
-        debug('[authStore.checkSession] getSession attempt ' + attempt + ':', {
+        debug.debug('getSession attempt ' + attempt + ':', {
           hasData: !!result?.data,
           hasSession: !!session,
           hasUser: !!user,
@@ -83,7 +70,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
         
         if (session && user) {
-          debug('[authStore.checkSession] Session found on attempt ' + attempt);
+          debug.debug('Session found on attempt ' + attempt);
           break;
         }
         
@@ -97,13 +84,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       // If we have a session, verify the user still exists in Supabase
       if (session && user) {
-        debug('[authStore.checkSession] Verifying user still exists...', { userId: maskUserId(user.id) });
+        debug.debug('Verifying user still exists...', { userId: maskUserId(user.id) });
         try {
           // Verify the user still exists by calling getUser() - this will fail if user was deleted
           // @ts-ignore
           const { data: userData, error: userError } = await (supabase as any).auth.getUser();
           if (userError) {
-            debug('[authStore.checkSession] User validation failed - user may have been deleted:', userError);
+            debug.error('User validation failed - user may have been deleted:', userError);
             // User was likely deleted or session is invalid - clear it
             await (supabase as any).auth.signOut();
             set({
@@ -113,12 +100,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               hasCompletedOnboarding: false,
               isLoading: false,
             });
-            debug('[authStore.checkSession] Session cleared due to invalid user');
+            debug.debug('Session cleared due to invalid user');
             return;
           }
-          debug('[authStore.checkSession] User verified successfully');
+          debug.debug('User verified successfully');
         } catch (verifyError) {
-          debug('[authStore.checkSession] Error verifying user:', verifyError);
+          debug.error('Error verifying user:', verifyError);
           // If verification fails, clear the session to be safe
           await (supabase as any).auth.signOut();
           set({
@@ -128,7 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             hasCompletedOnboarding: false,
             isLoading: false,
           });
-          debug('[authStore.checkSession] Session cleared due to verification error');
+          debug.debug('Session cleared due to verification error');
           return;
         }
       }
@@ -144,7 +131,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await SecureStore.deleteItemAsync(CURRENT_USER_ID_KEY);
       }
 
-      debug('[authStore.checkSession] Setting state:', {
+      debug.debug('Setting state:', {
         hasSession: !!session,
         hasUser: !!user,
         userId: maskUserId(user?.id),
@@ -160,9 +147,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
       
-      debug('[authStore.checkSession] State set complete');
+      debug.debug('State set complete');
     } catch (e) {
-      debug('[authStore.checkSession] Error getting session:', e);
+      debug.error('Error getting session:', e);
       // Clear session on error
       await (supabase as any).auth.signOut();
       set({
@@ -178,15 +165,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signIn: async (email: string, password: string) => {
     const emailMasked = email.replace(/(^.).+(@.*$)/, '$1***$2');
-    debug('[authStore.signIn] ===== SIGN IN START =====');
-    debug('[authStore.signIn] signing in', { emailMasked, passwordLength: password.length });
+    debug.debug('===== SIGN IN START =====');
+    debug.debug('signing in', { emailMasked, passwordLength: password.length });
     set({ isLoading: true, error: null });
-    debug('[authStore.signIn] set isLoading to true');
+    debug.debug('set isLoading to true');
     try {
-      debug('[authStore.signIn] calling supabase.auth.signInWithPassword');
+      debug.debug('calling supabase.auth.signInWithPassword');
       // @ts-ignore
       const { data, error } = await (supabase as any).auth.signInWithPassword({ email, password });
-      debug('[authStore.signIn] signInWithPassword response', {
+      debug.debug('signInWithPassword response', {
         hasData: !!data,
         hasSession: !!data?.session,
         hasUser: !!data?.user,
@@ -197,24 +184,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       if (error) {
         const msg = (error.message || '').toLowerCase();
-        debug('[authStore.signIn] error received', { message: msg, fullMessage: error.message });
+        debug.error('error received', { message: msg, fullMessage: error.message });
         if (msg.includes('email not confirmed') || msg.includes('confirm your email') || msg.includes('email not verified')) {
-          debug('[authStore.signIn] email not confirmed - redirecting to verify');
+          debug.debug('email not confirmed - redirecting to verify');
           set({
             isLoading: false,
             error: toFriendlyAuthMessage(error.message),
             pendingEmail: email,
             emailVerified: false,
           });
-          debug('[authStore.signIn] ===== SIGN IN - NEEDS VERIFICATION =====');
+          debug.debug('===== SIGN IN - NEEDS VERIFICATION =====');
           return 'verify';
         }
-        debug('[authStore.signIn] throwing error', { message: error.message });
+        debug.error('throwing error', { message: error.message });
         throw error;
       }
-      const session = data?.session ?? null;
-      const user = session?.user ?? null;
-      debug('[authStore.signIn] success - extracting session/user', {
+      let session = data?.session ?? null;
+      let user = session?.user ?? null;
+      debug.debug('success - extracting session/user', {
         hasSession: !!session,
         hasUser: !!user,
         userId: maskUserId(user?.id),
@@ -222,6 +209,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         emailConfirmedAt: user?.email_confirmed_at,
         emailVerified: !!user?.email_confirmed_at,
       });
+      
+      // Explicitly set session on Supabase client to ensure it's available for subsequent requests
+      // This is important for session persistence across app restarts
+      if (session) {
+        try {
+          debug.debug('Setting session on Supabase client after sign-in');
+          // @ts-ignore
+          const { data: setData, error: setError } = await (supabase as any).auth.setSession({
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+          });
+          if (setError) {
+            debug.warn('Error setting session after sign-in (non-fatal):', setError);
+          } else if (setData?.session) {
+            debug.debug('Session set on client successfully');
+            // Use the session returned from setSession as it may have updated tokens
+            session = setData.session;
+            user = session?.user ?? null;
+          }
+        } catch (setSessionError) {
+          debug.warn('Exception setting session after sign-in (non-fatal):', setSessionError);
+          // Continue anyway - the session should still be stored by the storage adapter
+        }
+      }
+      
       // Check onboarding status
       const onboardingStore = useOnboardingStore.getState();
       await onboardingStore.checkOnboardingStatus(user?.id);
@@ -240,11 +252,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         hasCompletedOnboarding: onboardingStore.hasCompletedOnboarding,
         isLoading: false,
       });
-      debug('[authStore.signIn] ===== SIGN IN COMPLETE - SUCCESS =====');
+      debug.debug('===== SIGN IN COMPLETE - SUCCESS =====');
       return 'success';
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sign in failed';
-      debug('[authStore.signIn] ===== SIGN IN FAILED =====', {
+      debug.error('===== SIGN IN FAILED =====', {
         message: msg,
         error: e,
         errorString: String(e),
@@ -257,29 +269,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signUp: async (email: string, password: string) => {
-    debug('[authStore.signUp] invoked', { emailMasked: email.replace(/(^.).+(@.*$)/, '$1***$2') });
+    debug.debug('invoked', { emailMasked: email.replace(/(^.).+(@.*$)/, '$1***$2') });
     set({ isLoading: true, error: null });
     try {
       if (!isValidEmail(email)) {
-        debug('[authStore.signUp] invalid email format');
+        debug.error('invalid email format');
         throw new Error('Invalid email format');
       }
       if (!isAllowedDomain(email)) {
-        debug('[authStore.signUp] domain not allowed');
+        debug.error('domain not allowed');
         throw new Error('Email domain not allowed');
       }
       const pw = validatePasswordStrength(password);
       if (!pw.valid) {
-        debug('[authStore.signUp] password weak', { issues: pw.errors });
+        debug.error('password weak', { issues: pw.errors });
         throw new Error(`Password requirements: ${pw.errors.join(', ')}`);
       }
       // Use normal signUp flow - it will send "Confirm sign up" email template (configured to show OTP code)
-      debug('[authStore.signUp] calling supabase.auth.signUp');
+      debug.debug('calling supabase.auth.signUp');
       
       // Validate Supabase URL format before making request
       const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
       if (!supabaseUrl || !supabaseUrl.startsWith('http')) {
-        debug('[authStore.signUp] Invalid Supabase URL:', supabaseUrl);
+        debug.error('Invalid Supabase URL:', supabaseUrl);
         throw new Error('Supabase URL is not configured correctly. Please check your environment variables.');
       }
       
@@ -292,7 +304,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         },
       });
       if (error) {
-        debug('[authStore.signUp] supabase error', { 
+        debug.error('supabase error', { 
           code: (error as any)?.code, 
           message: error.message,
           status: (error as any)?.status,
@@ -307,7 +319,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         
         throw error;
       }
-      debug('[authStore.signUp] signup response', { hasUser: !!data?.user, hasSession: !!data?.session });
+      debug.debug('signup response', { hasUser: !!data?.user, hasSession: !!data?.session });
       // User created, confirmation email sent (configured to show OTP code in template)
       set({
         pendingEmail: email,
@@ -317,11 +329,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: data?.user ?? null,
         session: null,
       });
-      debug('[authStore.signUp] completed OK');
+      debug.debug('completed OK');
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sign up failed';
-      debug('[authStore.signUp] failed', { message: msg });
+      debug.error('failed', { message: msg });
       set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
       return false;
     }
@@ -329,7 +341,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   requestEmailOtp: async (email: string, shouldCreateUser = false) => {
     const emailMasked = email.replace(/(^.).+(@.*$)/, '$1***$2');
-    debug('[authStore.requestEmailOtp] sending OTP', { emailMasked, shouldCreateUser });
+    debug.debug('sending OTP', { emailMasked, shouldCreateUser });
     set({ isLoading: true, error: null });
     try {
       // @ts-ignore
@@ -340,7 +352,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           emailRedirectTo: undefined, // Don't send redirect links, only OTP codes
         },
       });
-      debug('[authStore.requestEmailOtp] response', { 
+      debug.debug('response', { 
         hasData: !!data, 
         hasError: !!error,
         errorCode: (error as any)?.code,
@@ -348,19 +360,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         dataKeys: data ? Object.keys(data) : [],
       });
       if (error) {
-        debug('[authStore.requestEmailOtp] error details', { 
+        debug.error('error details', { 
           code: (error as any)?.code,
           message: error.message,
           status: (error as any)?.status,
         });
         throw error;
       }
-      debug('[authStore.requestEmailOtp] OTP sent successfully');
+      debug.debug('OTP sent successfully');
       set({ pendingEmail: email, isLoading: false });
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to send code';
-      debug('[authStore.requestEmailOtp] failed', { 
+      debug.error('failed', { 
         message: msg,
         error: e,
         errorString: String(e),
@@ -372,14 +384,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   verifyEmailOtp: async (email: string, token: string) => {
     const emailMasked = email.replace(/(^.).+(@.*$)/, '$1***$2');
-    debug('[authStore.verifyEmailOtp] ===== VERIFY OTP START =====');
-    debug('[authStore.verifyEmailOtp] verifying', { 
+    debug.debug('===== VERIFY OTP START =====');
+    debug.debug('verifying', { 
       emailMasked, 
       email: maskEmail(email), 
       tokenLength: token.length,
       token: token.length > 0 ? '***' : 'empty',
     });
-    debug('[authStore.verifyEmailOtp] current state before verification', {
+    debug.debug('current state before verification', {
       pendingEmail: get().pendingEmail,
       pendingPassword: !!get().pendingPassword,
       hasUser: !!get().user,
@@ -387,22 +399,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       emailVerified: get().emailVerified,
     });
     set({ isLoading: true, error: null });
-    debug('[authStore.verifyEmailOtp] set isLoading to true');
+    debug.debug('set isLoading to true');
     try {
       const attemptTypes: Array<'email' | 'signup'> = ['email', 'signup'];
       let session: any = null;
       let lastError: Error | null = null;
-      debug('[authStore.verifyEmailOtp] starting verification attempts', { attemptTypes });
+      debug.debug('starting verification attempts', { attemptTypes });
       for (const type of attemptTypes) {
-        debug('[authStore.verifyEmailOtp] ===== Attempting verification with type:', type, '=====');
-        debug('[authStore.verifyEmailOtp] calling supabase.auth.verifyOtp', { 
+        debug.debug('===== Attempting verification with type:', type, '=====');
+        debug.debug('calling supabase.auth.verifyOtp', { 
           email: maskEmail(email), 
           tokenLength: token.length,
           type,
         });
         // @ts-ignore
         const { data, error } = await (supabase as any).auth.verifyOtp({ email, token, type });
-        debug('[authStore.verifyEmailOtp] verifyOtp response received', {
+        debug.debug('verifyOtp response received', {
           type,
           hasData: !!data,
           hasSession: !!data?.session,
@@ -417,10 +429,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           userKeys: data?.user ? Object.keys(data.user) : [],
         });
         if (!error && (data?.session || data?.user)) {
-          debug('[authStore.verifyEmailOtp] SUCCESS with type', type);
+          debug.debug('SUCCESS with type', type);
           session = data?.session ?? null;
           lastError = null;
-          debug('[authStore.verifyEmailOtp] session extracted', {
+          debug.debug('session extracted', {
             hasSession: !!session,
             sessionKeys: session ? Object.keys(session) : [],
             userId: maskUserId(session?.user?.id),
@@ -428,17 +440,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           });
           // Set session immediately after verification to ensure it's available for subsequent requests
           if (session) {
-            debug('[authStore.verifyEmailOtp] Setting session on Supabase client immediately after verification');
+            debug.debug('Setting session on Supabase client immediately after verification');
             // @ts-ignore
             const { data: setData, error: setError } = await (supabase as any).auth.setSession({
               access_token: session.access_token,
               refresh_token: session.refresh_token,
             });
             if (setError) {
-              debug('[authStore.verifyEmailOtp] Error setting session:', setError);
+              debug.error('Error setting session:', setError);
             } else if (setData?.session) {
               session = setData.session;
-              debug('[authStore.verifyEmailOtp] Session set on client successfully');
+              debug.debug('Session set on client successfully');
               // Wait for session to propagate (SecureStore operations are async)
               await new Promise(resolve => setTimeout(resolve, 200));
               
@@ -448,13 +460,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 // @ts-ignore
                 const verifyResult = await (supabase as any).auth.getSession();
                 if (verifyResult?.error) {
-                  debug('[authStore.verifyEmailOtp] Session verification error (attempt ' + attempt + '):', verifyResult.error);
+                  debug.error('Session verification error (attempt ' + attempt + '):', verifyResult.error);
                 } else if (verifyResult?.data?.session) {
                   sessionVerified = true;
-                  debug('[authStore.verifyEmailOtp] Session verified (attempt ' + attempt + ')');
+                  debug.debug('Session verified (attempt ' + attempt + ')');
                   break;
                 } else {
-                  debug('[authStore.verifyEmailOtp] Session not yet available in getSession (attempt ' + attempt + ')');
+                  debug.debug('Session not yet available in getSession (attempt ' + attempt + ')');
                 }
                 
                 if (attempt < 3) {
@@ -463,17 +475,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               }
               
               if (!sessionVerified) {
-                debug('[authStore.verifyEmailOtp] WARNING: Session not verified via getSession, but setSession succeeded - proceeding anyway');
+                debug.warn('WARNING: Session not verified via getSession, but setSession succeeded - proceeding anyway');
               }
             } else {
-              debug('[authStore.verifyEmailOtp] setSession did not return a session; continuing with verifyOtp session');
+              debug.debug('setSession did not return a session; continuing with verifyOtp session');
             }
           }
           break;
         }
         if (error) {
           lastError = error;
-          debug('[authStore.verifyEmailOtp] FAILED with type', type, { 
+          debug.error('FAILED with type', type, { 
             message: error.message,
             code: (error as any)?.code,
             status: (error as any)?.status,
@@ -483,49 +495,49 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           });
         }
       }
-      debug('[authStore.verifyEmailOtp] after loop', {
+      debug.debug('after loop', {
         hasSession: !!session,
         hasLastError: !!lastError,
         lastErrorMessage: lastError?.message,
       });
       if (!session) {
-        debug('[authStore.verifyEmailOtp] no session from verifyOtp, trying getSession fallback');
+        debug.debug('no session from verifyOtp, trying getSession fallback');
         // Ensure we have an active session in case verifyOtp returned only a user object
         // @ts-ignore
         const { data: fallbackSession, error: fallbackError } = await (supabase as any).auth.getSession();
-        debug('[authStore.verifyEmailOtp] getSession fallback result', {
+        debug.debug('getSession fallback result', {
           hasSession: !!fallbackSession?.session,
           hasError: !!fallbackError,
           errorMessage: fallbackError?.message,
         });
         if (fallbackSession?.session) {
           session = fallbackSession.session;
-          debug('[authStore.verifyEmailOtp] using fallback session', {
+          debug.debug('using fallback session', {
             hasSession: !!session,
             userId: session?.user?.id,
           });
         } else if (fallbackError) {
           lastError = fallbackError;
-          debug('[authStore.verifyEmailOtp] fallback getSession error', {
+          debug.error('fallback getSession error', {
             message: fallbackError.message,
             code: (fallbackError as any)?.code,
           });
         }
       }
       if (!session) {
-        debug('[authStore.verifyEmailOtp] NO SESSION FOUND - throwing error');
+        debug.error('NO SESSION FOUND - throwing error');
         if (lastError) {
-          debug('[authStore.verifyEmailOtp] throwing lastError', {
+          debug.error('throwing lastError', {
             message: lastError.message,
             code: (lastError as any)?.code,
             name: lastError.name,
           });
           throw lastError;
         }
-        debug('[authStore.verifyEmailOtp] throwing generic error');
+        debug.error('throwing generic error');
         throw new Error('Verification failed. Try again.');
       }
-      debug('[authStore.verifyEmailOtp] session found, checking pending password', {
+      debug.debug('session found, checking pending password', {
         hasPendingPassword: !!get().pendingPassword,
         hasSessionUser: !!session.user,
       });
@@ -533,41 +545,41 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // If user was created via signUp with password, it's already set, so skip
       const pendingPassword = get().pendingPassword;
       if (pendingPassword && session.user) {
-        debug('[authStore.verifyEmailOtp] attempting to apply pending password');
+        debug.debug('attempting to apply pending password');
         // Check if user already has a password set (if they do, skip update)
         // We can't easily check this, so we'll try to update and ignore "same password" errors
         try {
-          debug('[authStore.verifyEmailOtp] calling updateUser with password');
+          debug.debug('calling updateUser with password');
           // @ts-ignore
           const { error } = await (supabase as any).auth.updateUser({ password: pendingPassword });
           if (error && !error.message.includes('same password')) {
-            debug('[authStore.verifyEmailOtp] password update error (non-fatal)', { 
+            debug.warn('password update error (non-fatal)', { 
               message: error.message,
               code: (error as any)?.code,
             });
             // Don't throw - password might already be set, verification succeeded
           } else {
-            debug('[authStore.verifyEmailOtp] password update successful or same password');
+            debug.debug('password update successful or same password');
           }
         } catch (e) {
           // Ignore password update errors - verification already succeeded
-          debug('[authStore.verifyEmailOtp] password update failed (non-fatal)', {
+          debug.warn('password update failed (non-fatal)', {
             error: e,
             errorString: String(e),
           });
         }
       }
-      debug('[authStore.verifyEmailOtp] fetching fresh session to ensure flags are updated');
+      debug.debug('fetching fresh session to ensure flags are updated');
       // Fetch fresh session/user to ensure flags are updated
       // The session should already be set from the verification step above
       // @ts-ignore
       let latestData = await (supabase as any).auth.getSession();
       let latest = latestData?.data;
       if (latestData?.error || !latest?.session) {
-        debug('[authStore.verifyEmailOtp] Error getting session after verification, retrying setSession:', latestData?.error);
+        debug.error('Error getting session after verification, retrying setSession:', latestData?.error);
         // If getSession fails or returns no session, try setting the session again
         if (session) {
-          debug('[authStore.verifyEmailOtp] Retrying setSession due to getSession error');
+          debug.debug('Retrying setSession due to getSession error');
           // @ts-ignore
           const { data: retrySet } = await (supabase as any).auth.setSession({
             access_token: session.access_token,
@@ -583,7 +595,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
      }
       const finalSession = latest?.session ?? session;
       const finalUser = finalSession?.user ?? null;
-      debug('[authStore.verifyEmailOtp] final session/user state', {
+      debug.debug('final session/user state', {
         hasFinalSession: !!finalSession,
         hasFinalUser: !!finalUser,
         userId: maskUserId(finalUser?.id),
@@ -600,7 +612,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await SecureStore.setItemAsync(CURRENT_USER_ID_KEY, finalUser.id);
       }
 
-      debug('[authStore.verifyEmailOtp] updating store state');
+      debug.debug('updating store state');
       set({
         session: finalSession,
         user: finalUser,
@@ -610,7 +622,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         hasCompletedOnboarding: onboardingStore.hasCompletedOnboarding,
         isLoading: false,
       });
-      debug('[authStore.verifyEmailOtp] ===== VERIFICATION COMPLETE - SUCCESS =====', { 
+      debug.debug('===== VERIFICATION COMPLETE - SUCCESS =====', { 
         hasUser: !!finalUser,
         emailVerified: true,
         hasCompletedOnboarding: onboardingStore.hasCompletedOnboarding,
@@ -618,7 +630,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return 'success';
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to verify code';
-      debug('[authStore.verifyEmailOtp] ===== VERIFICATION FAILED =====', { 
+      debug.error('===== VERIFICATION FAILED =====', { 
         message: msg,
         error: e,
         errorString: String(e),
@@ -627,7 +639,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         errorStack: e instanceof Error ? e.stack : undefined,
       });
       set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
-      debug('[authStore.verifyEmailOtp] set isLoading to false and error to:', toFriendlyAuthMessage(msg));
+      debug.debug('set isLoading to false and error to:', toFriendlyAuthMessage(msg));
       return 'error';
     }
   },

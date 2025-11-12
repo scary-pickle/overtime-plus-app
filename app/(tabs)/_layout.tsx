@@ -2,19 +2,24 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { useColorScheme } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useProfileStore } from '../../lib/state/profileStore';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const profile = useProfileStore((state) => state.profile);
+  const hasProfile = !!profile;
 
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: isDark ? '#666' : '#999',
-        tabBarStyle: {
+        tabBarStyle: hasProfile ? {
           backgroundColor: isDark ? '#1c1c1e' : '#fff',
           borderTopColor: isDark ? '#333' : '#e0e0e0',
+        } : {
+          display: 'none',
         },
         headerStyle: {
           backgroundColor: isDark ? '#1c1c1e' : '#fff',

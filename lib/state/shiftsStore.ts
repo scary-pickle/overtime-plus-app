@@ -5,12 +5,9 @@ import { getRosterForDate } from '../roster';
 import { formatDateToISO } from '../time';
 import { useAuthStore } from './authStore';
 import { shiftsSync } from '../supabase';
+import { createScopedLogger } from '../utils/logger';
 
-const devLog = (...args: any[]) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(...args);
-  }
-};
+const devLog = createScopedLogger('shiftsStore');
 
 interface ShiftsState {
   shifts: UsualShift[];
@@ -81,7 +78,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
                   // Local is newer - use local and upload it
                   mergedShifts.push(localShift);
                   shiftsSync.uploadShift(localShift, userId).catch(err => {
-                    console.error('[shiftsStore.loadShifts] Failed to upload newer local shift:', err);
+                    devLog.error('Failed to upload newer local shift:', err);
                     // Add to sync queue for retry
                     const { syncQueue } = require('../sync/queue');
                     syncQueue.add({
@@ -95,14 +92,14 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
                   // Remote is newer - use remote and save it locally
                   mergedShifts.push(remoteShift);
                   database.updateUsualShift(remoteShift, userId).catch(err => {
-                    console.error('[shiftsStore.loadShifts] Failed to save merged shift:', err);
+                    devLog.error('Failed to save merged shift:', err);
                   });
                 }
               } else if (localShift) {
                 // Only local - add it and upload if not already synced
                 mergedShifts.push(localShift);
                 shiftsSync.uploadShift(localShift, userId).catch(err => {
-                  console.error('[shiftsStore.loadShifts] Failed to upload local-only shift:', err);
+                  devLog.error('Failed to upload local-only shift:', err);
                   // Add to sync queue for retry
                   const { syncQueue } = require('../sync/queue');
                   syncQueue.add({
@@ -116,7 +113,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
                 // Only remote - add it and save locally
                 mergedShifts.push(remoteShift);
                 database.createUsualShift(remoteShift, userId).catch(err => {
-                  console.error('[shiftsStore.loadShifts] Failed to save remote-only shift:', err);
+                  devLog.error('Failed to save remote-only shift:', err);
                 });
               }
             }
@@ -125,11 +122,11 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
             set({ shifts: mergedShifts });
           }
         }).catch(err => {
-          console.error('[shiftsStore.loadShifts] Background sync failed (non-fatal):', err);
+          devLog.error('Background sync failed (non-fatal):', err);
         });
       }
     } catch (error) {
-      console.error('❌ ShiftsStore: Failed to load shifts:', error);
+      devLog.error('Failed to load shifts:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to load shifts' 
@@ -163,7 +160,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
         shiftsSync.uploadShift(shift, finalUserId).catch(err => {
-          console.error('[shiftsStore.addShift] Background sync failed (non-fatal):', err);
+          devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -175,7 +172,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         });
       }
     } catch (error) {
-      console.error('❌ ShiftsStore: Failed to add shift:', error);
+      devLog.error('Failed to add shift:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to add shift' 
@@ -209,7 +206,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
         shiftsSync.uploadShift(shift, finalUserId).catch(err => {
-          console.error('[shiftsStore.updateShift] Background sync failed (non-fatal):', err);
+          devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -221,7 +218,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         });
       }
     } catch (error) {
-      console.error('❌ ShiftsStore: Failed to update shift:', error);
+      devLog.error('Failed to update shift:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to update shift' 
@@ -249,7 +246,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       // Sync delete to Supabase in background (non-blocking)
       if (finalUserId) {
         shiftsSync.deleteShift(id, finalUserId).catch(err => {
-          console.error('[shiftsStore.deleteShift] Background sync failed (non-fatal):', err);
+          devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -261,7 +258,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
         });
       }
     } catch (error) {
-      console.error('❌ ShiftsStore: Failed to delete shift:', error);
+      devLog.error('Failed to delete shift:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to delete shift' 

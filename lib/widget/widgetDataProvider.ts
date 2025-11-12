@@ -1,6 +1,9 @@
 import { database } from '../db/sqlite';
 import { OvertimeLog } from '../../types';
 import * as SecureStore from 'expo-secure-store';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('widgetDataProvider');
 
 /**
  * Widget data provider for native widgets to access shift status
@@ -18,7 +21,7 @@ async function getCurrentUserId(): Promise<string | null> {
     const userId = await SecureStore.getItemAsync(CURRENT_USER_ID_KEY);
     return userId;
   } catch (error) {
-    console.error('Error getting current user ID:', error);
+    debug.error('Error getting current user ID:', error);
     return null;
   }
 }
@@ -66,7 +69,7 @@ export async function getWidgetShiftStatus(): Promise<WidgetShiftStatus> {
       activeShiftDate: activeShift.date,
     };
   } catch (error) {
-    console.error('Error getting widget shift status:', error);
+    debug.error('Error getting widget shift status:', error);
     return {
       hasActiveShift: false,
       isActive: false,
@@ -89,7 +92,7 @@ export async function getActiveShiftDetails(): Promise<OvertimeLog | null> {
     );
     return activeShift || null;
   } catch (error) {
-    console.error('Error getting active shift details:', error);
+    debug.error('Error getting active shift details:', error);
     return null;
   }
 }

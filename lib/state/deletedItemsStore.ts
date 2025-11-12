@@ -3,6 +3,9 @@ import { OvertimeLog, UsualShift, ExportBatch } from '../../types';
 import { database } from '../db/sqlite';
 import { useAuthStore } from './authStore';
 import { logsSync, shiftsSync, exportSync } from '../supabase';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('deletedItemsStore');
 
 interface DeletedItemsState {
   deletedLogs: OvertimeLog[];
@@ -78,7 +81,7 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
       if (finalUserId && restoredLog) {
         const logWithoutDeletedAt = { ...restoredLog, deletedAt: undefined };
         logsSync.uploadLog(logWithoutDeletedAt, finalUserId).catch(err => {
-          console.error('[deletedItemsStore.restoreLog] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
         });
       }
       
@@ -114,7 +117,7 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
       if (finalUserId && restoredShift) {
         const shiftWithoutDeletedAt = { ...restoredShift, deletedAt: undefined };
         shiftsSync.uploadShift(shiftWithoutDeletedAt, finalUserId).catch(err => {
-          console.error('[deletedItemsStore.restoreShift] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
         });
       }
       
@@ -150,7 +153,7 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
       if (finalUserId && restoredBatch) {
         const batchWithoutDeletedAt = { ...restoredBatch, deletedAt: undefined };
         exportSync.uploadExportBatch(batchWithoutDeletedAt, finalUserId).catch(err => {
-          console.error('[deletedItemsStore.restoreBatch] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
         });
       }
       

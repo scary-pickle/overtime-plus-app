@@ -4,6 +4,9 @@
  */
 
 import * as SecureStore from 'expo-secure-store';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('SyncQueue');
 
 const SYNC_QUEUE_KEY = 'overtime_plus_sync_queue';
 const MAX_RETRIES = 3;
@@ -30,7 +33,7 @@ class SyncQueue {
       const queueJson = await SecureStore.getItemAsync(SYNC_QUEUE_KEY);
       if (queueJson) {
         this.queue = JSON.parse(queueJson);
-        console.log('[SyncQueue] Loaded queue:', this.queue.length, 'operations');
+        debug.debug('Loaded queue:', this.queue.length, 'operations');
         
         // Process queue if there are pending operations
         if (this.queue.length > 0) {
@@ -38,7 +41,7 @@ class SyncQueue {
         }
       }
     } catch (error) {
-      console.error('[SyncQueue] Failed to load queue:', error);
+      debug.error('Failed to load queue:', error);
       this.queue = [];
     }
   }
@@ -53,7 +56,7 @@ class SyncQueue {
 
     this.queue.push(syncOp);
     await this.persist();
-    console.log('[SyncQueue] Added operation to queue:', syncOp.id, syncOp.type, syncOp.operation);
+    debug.debug('Added operation to queue:', syncOp.id, syncOp.type, syncOp.operation);
     
     // Trigger processing if not already processing
     if (!this.isProcessing) {
@@ -80,7 +83,7 @@ class SyncQueue {
     try {
       await SecureStore.setItemAsync(SYNC_QUEUE_KEY, JSON.stringify(this.queue));
     } catch (error) {
-      console.error('[SyncQueue] Failed to persist queue:', error);
+      debug.error('Failed to persist queue:', error);
     }
   }
 
@@ -90,7 +93,7 @@ class SyncQueue {
     }
 
     this.isProcessing = true;
-    console.log('[SyncQueue] Processing queue:', this.queue.length, 'operations');
+    debug.debug('Processing queue:', this.queue.length, 'operations');
 
     // Process operations one at a time
     for (const operation of [...this.queue]) {
@@ -98,14 +101,14 @@ class SyncQueue {
         await this.processOperation(operation);
         await this.remove(operation.id);
       } catch (error) {
-        console.error('[SyncQueue] Failed to process operation:', operation.id, error);
+        debug.error('Failed to process operation:', operation.id, error);
         
         // Increment retry count
         operation.retryCount += 1;
         operation.lastAttemptAt = new Date().toISOString();
 
         if (operation.retryCount >= MAX_RETRIES) {
-          console.error('[SyncQueue] Max retries reached, removing operation:', operation.id);
+          debug.error('Max retries reached, removing operation:', operation.id);
           await this.remove(operation.id);
         } else {
           // Update queue with new retry count
@@ -199,7 +202,7 @@ class SyncQueue {
         break;
     }
 
-    console.log('[SyncQueue] Successfully processed operation:', operation.id);
+    debug.debug('Successfully processed operation:', operation.id);
   }
 
   getQueueLength(): number {

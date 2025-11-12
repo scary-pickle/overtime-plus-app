@@ -6,13 +6,9 @@ import { useAuthStore } from './authStore';
 import { logsSync, exportSync } from '../supabase';
 import { uploadPDFToStorage, isLocalPath } from '../storage/pdfStorage';
 import { syncQueue } from '../sync/queue';
+import { createScopedLogger } from '../utils/logger';
 
-const isDev = process.env.NODE_ENV !== 'production';
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log(...args);
-  }
-};
+const debug = createScopedLogger('logsStore');
 
 interface LogsState {
   logs: OvertimeLog[];
@@ -77,7 +73,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       if (userId) {
         logsSync.downloadLogs(userId).then(remoteLogs => {
           if (remoteLogs.length > 0 || logs.length > 0) {
-            debug('[logsStore.loadLogs] Syncing logs from Supabase in background', {
+            debug.debug('Syncing logs from Supabase in background', {
               remoteCount: remoteLogs.length,
               localCount: logs.length,
             });
@@ -103,7 +99,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
                   // Local is newer - use local and upload it
                   mergedLogs.push(localLog);
                   logsSync.uploadLog(localLog, userId).catch(err => {
-                    console.error('[logsStore.loadLogs] Failed to upload newer local log:', err);
+                    debug.error('Failed to upload newer local log:', err);
                     // Add to sync queue for retry
                     const { syncQueue } = require('../sync/queue');
                     syncQueue.add({
@@ -117,14 +113,14 @@ export const useLogsStore = create<LogsState>((set, get) => ({
                   // Remote is newer - use remote and save it locally
                   mergedLogs.push(remoteLog);
                   database.updateOvertimeLog(remoteLog, userId).catch(err => {
-                    console.error('[logsStore.loadLogs] Failed to save merged log:', err);
+                    debug.error('Failed to save merged log:', err);
                   });
                 }
               } else if (localLog) {
                 // Only local - add it and upload if not already synced
                 mergedLogs.push(localLog);
                 logsSync.uploadLog(localLog, userId).catch(err => {
-                  console.error('[logsStore.loadLogs] Failed to upload local-only log:', err);
+                  debug.error('Failed to upload local-only log:', err);
                   // Add to sync queue for retry
                   const { syncQueue } = require('../sync/queue');
                   syncQueue.add({
@@ -138,7 +134,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
                 // Only remote - add it and save locally
                 mergedLogs.push(remoteLog);
                 database.createOvertimeLog(remoteLog, userId).catch(err => {
-                  console.error('[logsStore.loadLogs] Failed to save remote-only log:', err);
+                  debug.error('Failed to save remote-only log:', err);
                 });
               }
             }
@@ -147,7 +143,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
             set({ logs: mergedLogs });
           }
         }).catch(err => {
-          console.error('[logsStore.loadLogs] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
         });
       }
     } catch (error) {
@@ -173,7 +169,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       if (userId) {
         exportSync.downloadExportBatches(userId).then(remoteBatches => {
           if (remoteBatches.length > 0) {
-            debug('[logsStore.loadExportBatches] Syncing export batches from Supabase in background');
+            debug.debug('Syncing export batches from Supabase in background');
             // Get current batches from store (may have been updated since initial load)
             const currentBatches = get().exportBatches;
             const localBatchMap = new Map(currentBatches.map(batch => [batch.id, batch]));
@@ -206,7 +202,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
             set({ exportBatches: mergedBatches });
           }
         }).catch(err => {
-          console.error('[logsStore.loadExportBatches] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
         });
       }
     } catch (error) {
@@ -234,7 +230,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       },
       { total: 0, cloud: 0, local: 0, unknown: 0, localIds: [] as string[] }
     );
-    debug('[logsStore.auditExportBatchPDFs] Audit summary:', summary);
+    debug.debug('Audit summary:', summary);
     return summary;
   },
 
@@ -242,7 +238,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   uploadMissingBatchPDFs: async (userId?: string | null) => {
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
     if (!finalUserId) {
-      debug('[logsStore.uploadMissingBatchPDFs] No userId; skipping');
+      debug.debug('No userId; skipping');
       return { uploaded: 0, skipped: 0, errors: 0 };
     }
 
@@ -252,14 +248,14 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     let skipped = 0;
     let errors = 0;
 
-    debug('[logsStore.uploadMissingBatchPDFs] Scanning export batches for local PDFs...', {
+    debug.debug('Scanning export batches for local PDFs...', {
       count: exportBatches.length,
     });
 
     for (const batch of exportBatches) {
       if (batch.pdfUri && isLocalPath(batch.pdfUri)) {
         try {
-          debug('[logsStore.uploadMissingBatchPDFs] Uploading local PDF for batch...', {
+          debug.debug('Uploading local PDF for batch...', {
             batchId: batch.id,
           });
           const updated = await exportSync.uploadExportBatch(batch, finalUserId);
@@ -272,7 +268,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
           }
           uploaded += 1;
         } catch (e) {
-          console.error('[logsStore.uploadMissingBatchPDFs] Failed to upload PDF for batch:', batch.id, e);
+          debug.error('Failed to upload PDF for batch:', batch.id, e);
           errors += 1;
           // Queue retry
           syncQueue.add({
@@ -288,7 +284,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     }
 
     const result = { uploaded, skipped, errors };
-    debug('[logsStore.uploadMissingBatchPDFs] Completed upload scan:', result);
+    debug.debug('Completed upload scan:', result);
     return result;
   },
 
@@ -310,7 +306,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
         logsSync.uploadLog(log, finalUserId).catch(err => {
-          console.error('[logsStore.addLog] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -348,7 +344,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
         logsSync.uploadLog(log, finalUserId).catch(err => {
-          console.error('[logsStore.updateLog] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -386,7 +382,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Sync delete to Supabase in background (non-blocking)
       if (finalUserId) {
         logsSync.deleteLog(id, finalUserId).catch(err => {
-          console.error('[logsStore.deleteLog] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
           syncQueue.add({
@@ -442,14 +438,14 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       let effectivePdfUri = pdfUri || '';
       if (finalUserId && pdfUri && isLocalPath(pdfUri)) {
         try {
-          debug('[logsStore.batchExport] Uploading newly generated local PDF to storage before saving batch...');
+          debug.debug('Uploading newly generated local PDF to storage before saving batch...');
           const cloudUrl = await uploadPDFToStorage(pdfUri, batchId, finalUserId);
           if (cloudUrl) {
             effectivePdfUri = cloudUrl;
-            debug('[logsStore.batchExport] New PDF uploaded to storage:', true);
+            debug.debug('New PDF uploaded to storage:', true);
           }
         } catch (err) {
-          console.error('[logsStore.batchExport] Immediate upload failed, will fall back to background sync:', err);
+          debug.error('Immediate upload failed, will fall back to background sync:', err);
           // Leave effectivePdfUri as local path; background sync will handle upload later
         }
       }
@@ -483,7 +479,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
           // Sync updated log to Supabase in background
           if (finalUserId) {
             logsSync.uploadLog(log, finalUserId).catch(err => {
-              console.error('[logsStore.batchExport] Background sync failed (non-fatal):', err);
+              debug.error('Background sync failed (non-fatal):', err);
             });
           }
         }
@@ -520,7 +516,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
               }
             })
             .catch(err => {
-              console.error('[logsStore.batchExport] Background sync failed (non-fatal):', err);
+              debug.error('Background sync failed (non-fatal):', err);
               // Add PDF upload to sync queue for retry
               syncQueue.add({
                 type: 'pdfUpload',
@@ -532,7 +528,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         } else {
           // PDF is already in cloud storage, just upload batch metadata (no PDF upload needed)
           exportSync.uploadExportBatch(batch, finalUserId).catch(err => {
-            console.error('[logsStore.batchExport] Background metadata sync failed (non-fatal):', err);
+            debug.error('Background metadata sync failed (non-fatal):', err);
           });
         }
       }
@@ -566,7 +562,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
         exportSync.uploadExportBatch(batch, finalUserId).catch(err => {
-          console.error('[logsStore.updateExportBatch] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
         });
       }
     } catch (error) {
@@ -596,7 +592,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Sync delete to Supabase in background (non-blocking)
       if (finalUserId) {
         exportSync.deleteExportBatch(id, finalUserId).catch(err => {
-          console.error('[logsStore.deleteExportBatch] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
         });
       }
     } catch (error) {
@@ -637,7 +633,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
         exportSync.uploadExportBatch(updatedBatch, finalUserId).catch(err => {
-          console.error('[logsStore.markBatchAsSubmitted] Background sync failed (non-fatal):', err);
+          debug.error('Background sync failed (non-fatal):', err);
         });
       }
     } catch (error) {
@@ -667,7 +663,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
           // Sync to Supabase in background
           if (finalUserId) {
             logsSync.uploadLog(log, finalUserId).catch(err => {
-              console.error('[logsStore.resetLogsToReady] Background sync failed (non-fatal):', err);
+              debug.error('Background sync failed (non-fatal):', err);
             });
           }
         }

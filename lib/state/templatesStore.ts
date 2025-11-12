@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { LogTemplate, OvertimeLog } from '../../types';
 import { database } from '../db/sqlite';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('templatesStore');
 
 interface TemplatesState {
   templates: LogTemplate[];
@@ -24,14 +27,14 @@ export const useTemplatesStore = create<TemplatesState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const templates = await database.getLogTemplates();
-      console.log('Loaded templates:', templates.length);
+      debug.debug('Loaded templates:', templates.length);
       set({ 
         templates, 
         isLoading: false,
         error: null 
       });
     } catch (error) {
-      console.error('Failed to load templates:', error);
+      debug.error('Failed to load templates:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to load templates' 
@@ -52,7 +55,7 @@ export const useTemplatesStore = create<TemplatesState>((set, get) => ({
         error: null 
       });
     } catch (error) {
-      console.error('Failed to add template:', error);
+      debug.error('Failed to add template:', error);
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to add template' 

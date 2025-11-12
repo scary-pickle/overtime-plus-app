@@ -9,6 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import { SecureStoreAdapter } from './auth/storageAdapter';
 import { database } from './db/sqlite';
 import { profileStorage } from './storage/profile';
+import { createScopedLogger, maskUserId, maskEmail, maskName } from './utils/logger';
 
 // Check for Supabase configuration
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -27,47 +28,22 @@ const isLocalhost = SUPABASE_URL && (
 );
 
 if (SUPABASE_URL && !SUPABASE_URL.startsWith('https://') && !isLocalhost) {
-  console.error(
-    '[supabase] SECURITY WARNING: Invalid Supabase URL - Must use HTTPS. Non-HTTPS URLs are not allowed for security reasons.',
+  debug.error(
+    'SECURITY WARNING: Invalid Supabase URL - Must use HTTPS. Non-HTTPS URLs are not allowed for security reasons.',
     'URL:', SUPABASE_URL.substring(0, 50) + '...'
   );
   // Don't throw - allow app to continue but log the security issue
   // The app will fail when trying to create the client anyway
 } else if (isLocalhost) {
-  console.log('[supabase] Using local Supabase instance (HTTP allowed for localhost)');
+  debug.debug('Using local Supabase instance (HTTP allowed for localhost)');
 }
 
 export const supabaseEnabled = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 export const templateOTAEnabled = (process.env.EXPO_PUBLIC_TEMPLATE_OTA === 'true');
 
-const isDev = process.env.NODE_ENV !== 'production';
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log(...args);
-  }
-};
+const debug = createScopedLogger('supabase');
 
-const maskUserId = (value?: string | null) =>
-  value ? `${value.substring(0, 8)}...` : undefined;
-
-const maskEmail = (email?: string | null) => {
-  if (!email) return undefined;
-  const [local, domain] = email.split('@');
-  if (!domain || !local) return '***';
-  return `${local[0]}***@${domain}`;
-};
-
-const maskName = (name?: string | null) => {
-  if (!name) return undefined;
-  return name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(part => `${part[0]}***`)
-    .join(' ');
-};
-
-debug('Supabase enabled:', supabaseEnabled);
+debug.debug('Supabase enabled:', supabaseEnabled);
 
 // Stub interfaces for when Supabase is not configured
 interface SupabaseClient {
@@ -89,39 +65,39 @@ interface SupabaseClient {
 const createStubClient = (): SupabaseClient => ({
   auth: {
     signIn: async () => {
-      debug('Stub: signIn called');
+      debug.debug('Stub: signIn called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     signUp: async () => {
-      debug('Stub: signUp called');
+      debug.debug('Stub: signUp called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     signInWithPassword: async () => {
-      debug('Stub: signInWithPassword called');
+      debug.debug('Stub: signInWithPassword called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     signInWithOtp: async () => {
-      debug('Stub: signInWithOtp called');
+      debug.debug('Stub: signInWithOtp called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     signOut: async () => {
-      debug('Stub: signOut called');
+      debug.debug('Stub: signOut called');
       return { error: null };
     },
     getSession: async () => {
-      debug('Stub: getSession called');
+      debug.debug('Stub: getSession called');
       return { data: { session: null }, error: null };
     },
     verifyOtp: async () => {
-      debug('Stub: verifyOtp called');
+      debug.debug('Stub: verifyOtp called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     updateUser: async () => {
-      debug('Stub: updateUser called');
+      debug.debug('Stub: updateUser called');
       return { data: null, error: new Error('Supabase not configured') };
     },
     resend: async () => {
-      debug('Stub: resend called');
+      debug.debug('Stub: resend called');
       return { data: null, error: new Error('Supabase not configured') };
     },
   },
@@ -158,7 +134,7 @@ function getSupabaseClient(): SupabaseClient {
   // Use chunked SecureStoreAdapter for session persistence (no 2048 byte limit)
   // Detect session in URL is disabled (handled via Linking), PKCE is default in RN
   // @ts-ignore - allow passing storage adapter even if our local type is minimal
-  debug('[supabase] Initializing Supabase client', {
+  debug.debug('[supabase] Initializing Supabase client', {
     url: SUPABASE_URL ? `${SUPABASE_URL.substring(0, 20)}...` : 'MISSING',
     hasAnonKey: !!SUPABASE_ANON_KEY,
     anonKeyLength: SUPABASE_ANON_KEY?.length || 0,
@@ -176,7 +152,7 @@ function getSupabaseClient(): SupabaseClient {
       global: {
         // Add fetch options for better error handling
         fetch: (url, options = {}) => {
-          debug('[supabase] Making request', {
+          debug.debug('[supabase] Making request', {
             url: typeof url === 'string' ? url.substring(0, 50) : 'non-string',
             method: options.method || 'GET',
           });
@@ -184,7 +160,7 @@ function getSupabaseClient(): SupabaseClient {
         },
       },
     }) as unknown as SupabaseClient;
-    debug('[supabase] Client initialized successfully');
+    debug.debug('[supabase] Client initialized successfully');
     
     // After client initialization, Supabase should automatically restore session from storage
     // However, this happens asynchronously, so we trigger restoration here (fire-and-forget)
@@ -193,7 +169,7 @@ function getSupabaseClient(): SupabaseClient {
       try {
         // @ts-ignore
         const { data: initialSession } = await (supabaseClient as any).auth.getSession();
-        debug('[supabase] Initial session check after client init:', {
+        debug.debug('[supabase] Initial session check after client init:', {
           hasSession: !!initialSession?.session,
           hasUser: !!initialSession?.session?.user,
         });
@@ -202,17 +178,18 @@ function getSupabaseClient(): SupabaseClient {
         const { database } = await import('./db/sqlite');
         const sessionCount = await database.countAuthSessions();
         const allKeys = await database.getAllAuthSessionKeys();
-        console.log('[supabase] 🔍 Database state AFTER initial session check:', {
+        debug.debug('🔍 Database state AFTER initial session check:', {
           sessionCount,
-          keys: allKeys
+          keysCount: allKeys.length
+          // DO NOT log actual keys - they're sensitive
         });
       } catch (sessionError) {
-        debug('[supabase] Error checking initial session (non-fatal):', sessionError);
+        debug.error('Error checking initial session (non-fatal):', sessionError);
         // Non-fatal - session restoration might still be in progress
       }
     })();
   } catch (error) {
-    console.error('[supabase] Failed to create Supabase client:', error);
+    debug.error('Failed to create Supabase client:', error);
     throw error;
   }
 
@@ -271,17 +248,17 @@ export const auth = {
 export const profileSync = {
   async uploadProfile(profile: Profile, userId?: string | null): Promise<void> {
     if (!supabaseEnabled) {
-      debug('Stub: uploadProfile called');
+      debug.debug('Stub: uploadProfile called');
       return;
     }
 
     if (!userId) {
-      debug('[profileSync.uploadProfile] No userId provided, skipping Supabase sync');
+      debug.debug('[profileSync.uploadProfile] No userId provided, skipping Supabase sync');
       return;
     }
 
     try {
-      debug('[profileSync.uploadProfile] Uploading profile to Supabase', {
+      debug.debug('[profileSync.uploadProfile] Uploading profile to Supabase', {
         userId: maskUserId(userId),
         email: maskEmail(profile.email),
         fullName: maskName(profile.fullName),
@@ -295,7 +272,7 @@ export const profileSync = {
       
       // If not in auth store, try getSession() with retries
       if (!sessionToUse) {
-        debug('[profileSync.uploadProfile] Session not in auth store, trying getSession()');
+        debug.debug('[profileSync.uploadProfile] Session not in auth store, trying getSession()');
         let sessionData: any = null;
         let sessionError: any = null;
         const maxRetries = 5;
@@ -307,7 +284,7 @@ export const profileSync = {
           
           if (!sessionError && sessionData?.session) {
             sessionToUse = sessionData.session;
-            debug('[profileSync.uploadProfile] Session loaded from getSession()', {
+            debug.debug('[profileSync.uploadProfile] Session loaded from getSession()', {
               attempt,
               userId: maskUserId(sessionToUse.user?.id),
               matchesUploadUserId: sessionToUse.user?.id === userId,
@@ -316,7 +293,7 @@ export const profileSync = {
           }
           
           if (attempt < maxRetries) {
-            debug('[profileSync.uploadProfile] Session not found, retrying...', { attempt, error: sessionError });
+            debug.debug('[profileSync.uploadProfile] Session not found, retrying...', { attempt, error: sessionError });
             // Exponential backoff to allow session to propagate
             await new Promise(resolve => setTimeout(resolve, 200 * attempt));
           }
@@ -324,13 +301,13 @@ export const profileSync = {
       }
       
       if (!sessionToUse) {
-        debug('[profileSync.uploadProfile] No session available, cannot upload profile');
+        debug.debug('[profileSync.uploadProfile] No session available, cannot upload profile');
         throw new Error('No active session - please sign in again');
       }
       
       // Ensure session is set on client before making request
       // This ensures the client will include the session token in the request
-      debug('[profileSync.uploadProfile] Ensuring session is set on client', {
+      debug.debug('[profileSync.uploadProfile] Ensuring session is set on client', {
         userId: sessionToUse.user?.id,
         hasAccessToken: !!sessionToUse.access_token,
         hasRefreshToken: !!sessionToUse.refresh_token,
@@ -349,7 +326,7 @@ export const profileSync = {
           });
           if (error) {
             setSessionError = error;
-            debug('[profileSync.uploadProfile] Error setting session (attempt ' + attempt + '):', error);
+            debug.debug('[profileSync.uploadProfile] Error setting session (attempt ' + attempt + '):', error);
             if (attempt < maxSetRetries) {
               await new Promise(resolve => setTimeout(resolve, 200 * attempt));
             }
@@ -357,18 +334,18 @@ export const profileSync = {
             sessionSet = true;
             setSessionError = null;
             sessionToUse = data.session;
-            debug('[profileSync.uploadProfile] Session set on client successfully (attempt ' + attempt + ')');
+            debug.debug('[profileSync.uploadProfile] Session set on client successfully (attempt ' + attempt + ')');
             break;
           } else {
             setSessionError = new Error('No session returned from setSession');
-            debug('[profileSync.uploadProfile] No session returned from setSession (attempt ' + attempt + ')');
+            debug.debug('[profileSync.uploadProfile] No session returned from setSession (attempt ' + attempt + ')');
             if (attempt < maxSetRetries) {
               await new Promise(resolve => setTimeout(resolve, 200 * attempt));
             }
           }
         } catch (err) {
           setSessionError = err;
-          debug('[profileSync.uploadProfile] Exception while setting session (attempt ' + attempt + '):', err);
+          debug.debug('[profileSync.uploadProfile] Exception while setting session (attempt ' + attempt + '):', err);
           if (attempt < maxSetRetries) {
             await new Promise(resolve => setTimeout(resolve, 200 * attempt));
           }
@@ -376,18 +353,18 @@ export const profileSync = {
       }
       
       if (!sessionSet) {
-        debug('[profileSync.uploadProfile] Failed to set session after retries:', setSessionError);
+        debug.debug('[profileSync.uploadProfile] Failed to set session after retries:', setSessionError);
         throw new Error('Failed to set session - please try again');
       }
       
       // Instead of waiting for SecureStore to persist (which can be very slow),
       // we'll use the in-memory session to make an authenticated request
       // by manually setting the Authorization header via the REST API
-      debug('[profileSync.uploadProfile] Using direct REST API with in-memory session token');
+      debug.debug('[profileSync.uploadProfile] Using direct REST API with in-memory session token');
       
       const accessToken = sessionToUse.access_token;
       if (!accessToken) {
-        debug('[profileSync.uploadProfile] No access token available in session');
+        debug.debug('[profileSync.uploadProfile] No access token available in session');
         throw new Error('No access token available - please try signing in again');
       }
       
@@ -404,7 +381,7 @@ export const profileSync = {
         updated_at: new Date().toISOString(),
       };
       
-      debug('[profileSync.uploadProfile] Making authenticated REST request', {
+      debug.debug('[profileSync.uploadProfile] Making authenticated REST request', {
         url: restUrl.substring(0, 50) + '...',
         hasAccessToken: !!accessToken,
         hasApiKey: !!apiKey,
@@ -429,25 +406,25 @@ export const profileSync = {
         } catch {
           errorData = { message: errorText };
         }
-        debug('[profileSync.uploadProfile] REST request failed', {
+        debug.debug('[profileSync.uploadProfile] REST request failed', {
           status: response.status,
           statusText: response.statusText,
           error: errorData,
         });
         const error = errorData;
-        console.error('[profileSync.uploadProfile] Error uploading profile:', error);
+        debug.error('[profileSync.uploadProfile] Error uploading profile:', error);
         throw error;
       }
       
       const data = await response.json();
 
       const uploadedUserId = data?.[0]?.user_id || userId;
-      debug('[profileSync.uploadProfile] Profile uploaded successfully to Supabase', {
+      debug.debug('[profileSync.uploadProfile] Profile uploaded successfully to Supabase', {
         user_id: maskUserId(uploadedUserId),
         dataReceived: !!data,
       });
     } catch (error) {
-      console.error('[profileSync.uploadProfile] Failed to upload profile to Supabase:', error);
+      debug.error('[profileSync.uploadProfile] Failed to upload profile to Supabase:', error);
       // Don't throw - allow local save to continue even if sync fails
       // The caller will handle the error appropriately
     }
@@ -455,17 +432,17 @@ export const profileSync = {
 
   async downloadProfile(userId?: string | null): Promise<Profile | null> {
     if (!supabaseEnabled) {
-      debug('Stub: downloadProfile called');
+      debug.debug('Stub: downloadProfile called');
       return null;
     }
 
     if (!userId) {
-      debug('[profileSync.downloadProfile] No userId provided, skipping Supabase download');
+      debug.debug('[profileSync.downloadProfile] No userId provided, skipping Supabase download');
       return null;
     }
 
     try {
-      debug('[profileSync.downloadProfile] Downloading profile from Supabase', {
+      debug.debug('[profileSync.downloadProfile] Downloading profile from Supabase', {
         userId: maskUserId(userId),
       });
 
@@ -487,7 +464,7 @@ export const profileSync = {
         const restUrl = `${SUPABASE_URL}/rest/v1/profiles?user_id=eq.${userId}&deleted_at=is.null&select=*`;
         const apiKey = SUPABASE_ANON_KEY;
         
-        debug('[profileSync.downloadProfile] Using direct REST API with session token');
+        debug.debug('[profileSync.downloadProfile] Using direct REST API with session token');
         
         const response = await fetch(restUrl, {
           method: 'GET',
@@ -501,7 +478,7 @@ export const profileSync = {
         if (!response.ok) {
           if (response.status === 404 || response.status === 406) {
             // No profile found - this is OK
-            debug('[profileSync.downloadProfile] No profile found in Supabase');
+            debug.debug('[profileSync.downloadProfile] No profile found in Supabase');
             return null;
           }
           const errorText = await response.text();
@@ -511,7 +488,7 @@ export const profileSync = {
           } catch {
             errorData = { message: errorText };
           }
-          console.error('[profileSync.downloadProfile] Error downloading profile:', errorData);
+          debug.error('[profileSync.downloadProfile] Error downloading profile:', errorData);
           throw errorData;
         }
         
@@ -519,11 +496,11 @@ export const profileSync = {
         const data = Array.isArray(dataArray) && dataArray.length > 0 ? dataArray[0] : null;
         
         if (!data || !data.metadata) {
-          debug('[profileSync.downloadProfile] Profile found but metadata is empty');
+          debug.debug('[profileSync.downloadProfile] Profile found but metadata is empty');
           return null;
         }
 
-        debug('[profileSync.downloadProfile] Profile downloaded successfully from Supabase', {
+        debug.debug('[profileSync.downloadProfile] Profile downloaded successfully from Supabase', {
           user_id: maskUserId(data.user_id),
           email: maskEmail(data.email),
           display_name: maskName(data.display_name),
@@ -532,7 +509,7 @@ export const profileSync = {
         return data.metadata as Profile;
       } else {
         // Fallback to Supabase client (may fail if session not persisted yet)
-        debug('[profileSync.downloadProfile] No session available, using Supabase client (may fail)');
+        debug.debug('[profileSync.downloadProfile] No session available, using Supabase client (may fail)');
         // @ts-ignore
         const { data, error } = await supabase
           .from('profiles')
@@ -544,19 +521,19 @@ export const profileSync = {
         if (error) {
           if (error.code === 'PGRST116') {
             // No profile found - this is OK
-            debug('[profileSync.downloadProfile] No profile found in Supabase');
+            debug.debug('[profileSync.downloadProfile] No profile found in Supabase');
             return null;
           }
-          console.error('[profileSync.downloadProfile] Error downloading profile:', error);
+          debug.error('[profileSync.downloadProfile] Error downloading profile:', error);
           throw error;
         }
 
         if (!data || !data.metadata) {
-          debug('[profileSync.downloadProfile] Profile found but metadata is empty');
+          debug.debug('[profileSync.downloadProfile] Profile found but metadata is empty');
           return null;
         }
 
-        debug('[profileSync.downloadProfile] Profile downloaded successfully from Supabase', {
+        debug.debug('[profileSync.downloadProfile] Profile downloaded successfully from Supabase', {
           user_id: maskUserId(data.user_id),
           email: maskEmail(data.email),
           display_name: maskName(data.display_name),
@@ -565,7 +542,7 @@ export const profileSync = {
         return data.metadata as Profile;
       }
     } catch (error) {
-      console.error('[profileSync.downloadProfile] Failed to download profile from Supabase:', error);
+      debug.error('[profileSync.downloadProfile] Failed to download profile from Supabase:', error);
       // Don't throw - allow local load to continue even if sync fails
       return null;
     }
@@ -582,7 +559,7 @@ export const logsSync = {
     }
 
     if (!userId) {
-      debug('[logsSync.uploadLog] No userId provided, skipping Supabase sync');
+      debug.debug('[logsSync.uploadLog] No userId provided, skipping Supabase sync');
       return;
     }
 
@@ -603,7 +580,7 @@ export const logsSync = {
       }
       
       if (!sessionToUse?.access_token) {
-        debug('[logsSync.uploadLog] No session available, cannot upload log');
+        debug.debug('[logsSync.uploadLog] No session available, cannot upload log');
         throw new Error('No active session - please sign in again');
       }
 
@@ -644,7 +621,7 @@ export const logsSync = {
       let response: Response;
       if (existingId) {
         // Update existing log
-        debug('[logsSync.uploadLog] Updating existing log', { existingId, logId: log.id });
+        debug.debug('[logsSync.uploadLog] Updating existing log', { existingId, logId: log.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?id=eq.${existingId}&select=*`;
         response = await fetch(updateUrl, {
           method: 'PATCH',
@@ -658,7 +635,7 @@ export const logsSync = {
         });
       } else {
         // Insert new log
-        debug('[logsSync.uploadLog] Inserting new log', { logId: log.id });
+        debug.debug('[logsSync.uploadLog] Inserting new log', { logId: log.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?select=*`;
         response = await fetch(insertUrl, {
           method: 'POST',
@@ -680,15 +657,15 @@ export const logsSync = {
         } catch {
           errorData = { message: errorText };
         }
-        console.error('[logsSync.uploadLog] Error uploading log:', errorData);
+        debug.error('[logsSync.uploadLog] Error uploading log:', errorData);
         throw errorData;
       }
 
-      debug('[logsSync.uploadLog] Log uploaded successfully to Supabase', {
+      debug.debug('[logsSync.uploadLog] Log uploaded successfully to Supabase', {
         logId: log.id,
       });
     } catch (error) {
-      console.error('[logsSync.uploadLog] Failed to upload log to Supabase:', error);
+      debug.error('[logsSync.uploadLog] Failed to upload log to Supabase:', error);
       throw error;
     }
   },
@@ -699,7 +676,7 @@ export const logsSync = {
     }
 
     try {
-      debug('[logsSync.uploadLogs] Uploading logs to Supabase', {
+      debug.debug('[logsSync.uploadLogs] Uploading logs to Supabase', {
         count: logs.length,
         userId: userId.substring(0, 8) + '...',
       });
@@ -709,14 +686,14 @@ export const logsSync = {
       for (let i = 0; i < logs.length; i += batchSize) {
         const batch = logs.slice(i, i + batchSize);
         await Promise.all(batch.map(log => this.uploadLog(log, userId).catch(err => {
-          console.error(`[logsSync.uploadLogs] Failed to upload log ${log.id}:`, err);
+          debug.error(`[logsSync.uploadLogs] Failed to upload log ${log.id}:`, err);
           // Continue with other logs even if one fails
         })));
       }
 
-      debug('[logsSync.uploadLogs] All logs uploaded successfully');
+      debug.debug('[logsSync.uploadLogs] All logs uploaded successfully');
     } catch (error) {
-      console.error('[logsSync.uploadLogs] Failed to upload logs:', error);
+      debug.error('[logsSync.uploadLogs] Failed to upload logs:', error);
       throw error;
     }
   },
@@ -727,12 +704,12 @@ export const logsSync = {
     }
 
     if (!userId) {
-      debug('[logsSync.downloadLogs] No userId provided, skipping Supabase download');
+      debug.debug('[logsSync.downloadLogs] No userId provided, skipping Supabase download');
       return [];
     }
 
     try {
-      debug('[logsSync.downloadLogs] Downloading logs from Supabase', {
+      debug.debug('[logsSync.downloadLogs] Downloading logs from Supabase', {
         userId: userId.substring(0, 8) + '...',
       });
 
@@ -754,7 +731,7 @@ export const logsSync = {
         const apiKey = SUPABASE_ANON_KEY;
         const restUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?user_id=eq.${userId}&deleted_at=is.null&order=date.desc,created_at.desc&select=*`;
         
-        debug('[logsSync.downloadLogs] Using direct REST API with session token');
+        debug.debug('[logsSync.downloadLogs] Using direct REST API with session token');
         
         const response = await fetch(restUrl, {
           method: 'GET',
@@ -768,7 +745,7 @@ export const logsSync = {
         if (!response.ok) {
           if (response.status === 404 || response.status === 406) {
             // No logs found - this is OK
-            debug('[logsSync.downloadLogs] No logs found in Supabase');
+            debug.debug('[logsSync.downloadLogs] No logs found in Supabase');
             return [];
           }
           const errorText = await response.text();
@@ -778,14 +755,14 @@ export const logsSync = {
           } catch {
             errorData = { message: errorText };
           }
-          console.error('[logsSync.downloadLogs] Error downloading logs:', errorData);
+          debug.error('[logsSync.downloadLogs] Error downloading logs:', errorData);
           throw errorData;
         }
         
         const data = await response.json();
         
         if (!data || !Array.isArray(data) || data.length === 0) {
-          debug('[logsSync.downloadLogs] No logs found in Supabase');
+          debug.debug('[logsSync.downloadLogs] No logs found in Supabase');
           return [];
         }
 
@@ -795,12 +772,12 @@ export const logsSync = {
             if (row.extras && typeof row.extras === 'object') {
               return row.extras as OvertimeLog;
             }
-            debug('[logsSync.downloadLogs] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
+            debug.debug('[logsSync.downloadLogs] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
             return null;
           })
           .filter((log: OvertimeLog | null): log is OvertimeLog => log !== null);
 
-        debug('[logsSync.downloadLogs] Logs downloaded successfully from Supabase', {
+        debug.debug('[logsSync.downloadLogs] Logs downloaded successfully from Supabase', {
           count: logs.length,
           rawCount: data.length,
         });
@@ -808,7 +785,7 @@ export const logsSync = {
         return logs;
       } else {
         // Fallback to Supabase client (may fail if session not persisted yet)
-        debug('[logsSync.downloadLogs] No session available, using Supabase client (may fail)');
+        debug.debug('[logsSync.downloadLogs] No session available, using Supabase client (may fail)');
         // @ts-ignore
         const { data, error } = await supabase
           .from('overtime_logs')
@@ -819,12 +796,12 @@ export const logsSync = {
           .order('created_at', { ascending: false });
 
         if (error) {
-          console.error('[logsSync.downloadLogs] Error downloading logs:', error);
+          debug.error('[logsSync.downloadLogs] Error downloading logs:', error);
           throw error;
         }
 
         if (!data || data.length === 0) {
-          debug('[logsSync.downloadLogs] No logs found in Supabase');
+          debug.debug('[logsSync.downloadLogs] No logs found in Supabase');
           return [];
         }
 
@@ -834,12 +811,12 @@ export const logsSync = {
             if (row.extras && typeof row.extras === 'object') {
               return row.extras as OvertimeLog;
             }
-            debug('[logsSync.downloadLogs] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
+            debug.debug('[logsSync.downloadLogs] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
             return null;
           })
           .filter((log: OvertimeLog | null): log is OvertimeLog => log !== null);
 
-        debug('[logsSync.downloadLogs] Logs downloaded successfully from Supabase', {
+        debug.debug('[logsSync.downloadLogs] Logs downloaded successfully from Supabase', {
           count: logs.length,
           rawCount: data.length,
         });
@@ -847,7 +824,7 @@ export const logsSync = {
         return logs;
       }
     } catch (error) {
-      console.error('[logsSync.downloadLogs] Failed to download logs from Supabase:', error);
+      debug.error('[logsSync.downloadLogs] Failed to download logs from Supabase:', error);
       return [];
     }
   },
@@ -876,7 +853,7 @@ export const logsSync = {
 
       return { uploaded, downloaded, conflicts };
     } catch (error) {
-      console.error('[logsSync.syncLogs] Failed to sync logs:', error);
+      debug.error('[logsSync.syncLogs] Failed to sync logs:', error);
       return { uploaded: 0, downloaded: 0, conflicts: 0 };
     }
   },
@@ -905,16 +882,16 @@ export const logsSync = {
         });
 
         if (error) {
-          console.error('[logsSync.deleteLog] Error deleting log:', error);
+          debug.error('[logsSync.deleteLog] Error deleting log:', error);
           throw error;
         }
 
-        debug('[logsSync.deleteLog] Log deleted successfully from Supabase', {
+        debug.debug('[logsSync.deleteLog] Log deleted successfully from Supabase', {
           logId,
         });
       }
     } catch (error) {
-      console.error('[logsSync.deleteLog] Failed to delete log from Supabase:', error);
+      debug.error('[logsSync.deleteLog] Failed to delete log from Supabase:', error);
       throw error;
     }
   },
@@ -930,7 +907,7 @@ export const shiftsSync = {
     }
 
     if (!userId) {
-      debug('[shiftsSync.uploadShift] No userId provided, skipping Supabase sync');
+      debug.debug('[shiftsSync.uploadShift] No userId provided, skipping Supabase sync');
       return;
     }
 
@@ -948,7 +925,7 @@ export const shiftsSync = {
       }
       
       if (!sessionToUse?.access_token) {
-        debug('[shiftsSync.uploadShift] No session available, cannot upload shift');
+        debug.debug('[shiftsSync.uploadShift] No session available, cannot upload shift');
         throw new Error('No active session - please sign in again');
       }
 
@@ -990,7 +967,7 @@ export const shiftsSync = {
       let response: Response;
       if (existingId) {
         // Update existing shift
-        debug('[shiftsSync.uploadShift] Updating existing shift', { existingId, shiftId: shift.id });
+        debug.debug('[shiftsSync.uploadShift] Updating existing shift', { existingId, shiftId: shift.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingId}&select=*`;
         response = await fetch(updateUrl, {
           method: 'PATCH',
@@ -1004,7 +981,7 @@ export const shiftsSync = {
         });
       } else {
         // Insert new shift
-        debug('[shiftsSync.uploadShift] Inserting new shift', { shiftId: shift.id });
+        debug.debug('[shiftsSync.uploadShift] Inserting new shift', { shiftId: shift.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/shifts?select=*`;
         response = await fetch(insertUrl, {
           method: 'POST',
@@ -1026,15 +1003,15 @@ export const shiftsSync = {
         } catch {
           errorData = { message: errorText };
         }
-        console.error('[shiftsSync.uploadShift] Error uploading shift:', errorData);
+        debug.error('[shiftsSync.uploadShift] Error uploading shift:', errorData);
         throw errorData;
       }
 
-      debug('[shiftsSync.uploadShift] Shift uploaded successfully to Supabase', {
+      debug.debug('[shiftsSync.uploadShift] Shift uploaded successfully to Supabase', {
         shiftId: shift.id,
       });
     } catch (error) {
-      console.error('[shiftsSync.uploadShift] Failed to upload shift to Supabase:', error);
+      debug.error('[shiftsSync.uploadShift] Failed to upload shift to Supabase:', error);
       throw error;
     }
   },
@@ -1045,20 +1022,20 @@ export const shiftsSync = {
     }
 
     try {
-      debug('[shiftsSync.uploadShifts] Uploading shifts to Supabase', {
+      debug.debug('[shiftsSync.uploadShifts] Uploading shifts to Supabase', {
         count: shifts.length,
         userId: userId.substring(0, 8) + '...',
       });
 
       // Upload shifts in parallel
       await Promise.all(shifts.map(shift => this.uploadShift(shift, userId).catch(err => {
-        console.error(`[shiftsSync.uploadShifts] Failed to upload shift ${shift.id}:`, err);
+        debug.error(`[shiftsSync.uploadShifts] Failed to upload shift ${shift.id}:`, err);
         // Continue with other shifts even if one fails
       })));
 
-      debug('[shiftsSync.uploadShifts] All shifts uploaded successfully');
+      debug.debug('[shiftsSync.uploadShifts] All shifts uploaded successfully');
     } catch (error) {
-      console.error('[shiftsSync.uploadShifts] Failed to upload shifts:', error);
+      debug.error('[shiftsSync.uploadShifts] Failed to upload shifts:', error);
       throw error;
     }
   },
@@ -1069,12 +1046,12 @@ export const shiftsSync = {
     }
 
     if (!userId) {
-      debug('[shiftsSync.downloadShifts] No userId provided, skipping Supabase download');
+      debug.debug('[shiftsSync.downloadShifts] No userId provided, skipping Supabase download');
       return [];
     }
 
     try {
-      debug('[shiftsSync.downloadShifts] Downloading shifts from Supabase', {
+      debug.debug('[shiftsSync.downloadShifts] Downloading shifts from Supabase', {
         userId: userId.substring(0, 8) + '...',
       });
 
@@ -1096,7 +1073,7 @@ export const shiftsSync = {
         const apiKey = SUPABASE_ANON_KEY;
         const restUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&notes=eq.usual_shift_pattern&deleted_at=is.null&order=start_at.desc&select=*`;
         
-        debug('[shiftsSync.downloadShifts] Using direct REST API with session token');
+        debug.debug('[shiftsSync.downloadShifts] Using direct REST API with session token');
         
         const response = await fetch(restUrl, {
           method: 'GET',
@@ -1110,7 +1087,7 @@ export const shiftsSync = {
         if (!response.ok) {
           if (response.status === 404 || response.status === 406) {
             // No shifts found - this is OK
-            debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
+            debug.debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
             return [];
           }
           const errorText = await response.text();
@@ -1120,14 +1097,14 @@ export const shiftsSync = {
           } catch {
             errorData = { message: errorText };
           }
-          console.error('[shiftsSync.downloadShifts] Error downloading shifts:', errorData);
+          debug.error('[shiftsSync.downloadShifts] Error downloading shifts:', errorData);
           throw errorData;
         }
         
         const data = await response.json();
         
         if (!data || !Array.isArray(data) || data.length === 0) {
-          debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
+          debug.debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
           return [];
         }
 
@@ -1137,12 +1114,12 @@ export const shiftsSync = {
             if (row.extras && typeof row.extras === 'object') {
               return row.extras as UsualShift;
             }
-            debug('[shiftsSync.downloadShifts] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
+            debug.debug('[shiftsSync.downloadShifts] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
             return null;
           })
           .filter((shift: UsualShift | null): shift is UsualShift => shift !== null);
 
-        debug('[shiftsSync.downloadShifts] Shifts downloaded successfully from Supabase', {
+        debug.debug('[shiftsSync.downloadShifts] Shifts downloaded successfully from Supabase', {
           count: shifts.length,
           rawCount: data.length,
         });
@@ -1150,7 +1127,7 @@ export const shiftsSync = {
         return shifts;
       } else {
         // Fallback to Supabase client (may fail if session not persisted yet)
-        debug('[shiftsSync.downloadShifts] No session available, using Supabase client (may fail)');
+        debug.debug('[shiftsSync.downloadShifts] No session available, using Supabase client (may fail)');
         // @ts-ignore
         const { data, error } = await supabase
           .from('shifts')
@@ -1161,12 +1138,12 @@ export const shiftsSync = {
           .order('start_at', { ascending: false });
 
         if (error) {
-          console.error('[shiftsSync.downloadShifts] Error downloading shifts:', error);
+          debug.error('[shiftsSync.downloadShifts] Error downloading shifts:', error);
           throw error;
         }
 
         if (!data || data.length === 0) {
-          debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
+          debug.debug('[shiftsSync.downloadShifts] No shifts found in Supabase');
           return [];
         }
 
@@ -1176,12 +1153,12 @@ export const shiftsSync = {
             if (row.extras && typeof row.extras === 'object') {
               return row.extras as UsualShift;
             }
-            debug('[shiftsSync.downloadShifts] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
+            debug.debug('[shiftsSync.downloadShifts] Row missing extras:', { rowId: row.id, hasExtras: !!row.extras });
             return null;
           })
           .filter((shift: UsualShift | null): shift is UsualShift => shift !== null);
 
-        debug('[shiftsSync.downloadShifts] Shifts downloaded successfully from Supabase', {
+        debug.debug('[shiftsSync.downloadShifts] Shifts downloaded successfully from Supabase', {
           count: shifts.length,
           rawCount: data.length,
         });
@@ -1189,7 +1166,7 @@ export const shiftsSync = {
         return shifts;
       }
     } catch (error) {
-      console.error('[shiftsSync.downloadShifts] Failed to download shifts from Supabase:', error);
+      debug.error('[shiftsSync.downloadShifts] Failed to download shifts from Supabase:', error);
       return [];
     }
   },
@@ -1219,16 +1196,16 @@ export const shiftsSync = {
         });
 
         if (error) {
-          console.error('[shiftsSync.deleteShift] Error deleting shift:', error);
+          debug.error('[shiftsSync.deleteShift] Error deleting shift:', error);
           throw error;
         }
 
-        debug('[shiftsSync.deleteShift] Shift deleted successfully from Supabase', {
+        debug.debug('[shiftsSync.deleteShift] Shift deleted successfully from Supabase', {
           shiftId,
         });
       }
     } catch (error) {
-      console.error('[shiftsSync.deleteShift] Failed to delete shift from Supabase:', error);
+      debug.error('[shiftsSync.deleteShift] Failed to delete shift from Supabase:', error);
       throw error;
     }
   },
@@ -1244,7 +1221,7 @@ export const shiftTemplatesSync = {
     }
 
     if (!userId) {
-      debug('[shiftTemplatesSync.uploadTemplate] No userId provided, skipping Supabase sync');
+      debug.debug('[shiftTemplatesSync.uploadTemplate] No userId provided, skipping Supabase sync');
       return;
     }
 
@@ -1262,7 +1239,7 @@ export const shiftTemplatesSync = {
       }
       
       if (!sessionToUse?.access_token) {
-        debug('[shiftTemplatesSync.uploadTemplate] No session available, cannot upload template');
+        debug.debug('[shiftTemplatesSync.uploadTemplate] No session available, cannot upload template');
         throw new Error('No active session - please sign in again');
       }
 
@@ -1306,7 +1283,7 @@ export const shiftTemplatesSync = {
       let response: Response;
       if (existingId) {
         // Update existing template
-        debug('[shiftTemplatesSync.uploadTemplate] Updating existing template', { existingId, templateId: template.id });
+        debug.debug('[shiftTemplatesSync.uploadTemplate] Updating existing template', { existingId, templateId: template.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingId}&select=*`;
         response = await fetch(updateUrl, {
           method: 'PATCH',
@@ -1320,7 +1297,7 @@ export const shiftTemplatesSync = {
         });
       } else {
         // Insert new template
-        debug('[shiftTemplatesSync.uploadTemplate] Inserting new template', { templateId: template.id });
+        debug.debug('[shiftTemplatesSync.uploadTemplate] Inserting new template', { templateId: template.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/shifts?select=*`;
         response = await fetch(insertUrl, {
           method: 'POST',
@@ -1342,15 +1319,15 @@ export const shiftTemplatesSync = {
         } catch {
           errorData = { message: errorText };
         }
-        console.error('[shiftTemplatesSync.uploadTemplate] Error uploading template:', errorData);
+        debug.error('[shiftTemplatesSync.uploadTemplate] Error uploading template:', errorData);
         throw errorData;
       }
 
-      debug('[shiftTemplatesSync.uploadTemplate] Template uploaded successfully to Supabase', {
+      debug.debug('[shiftTemplatesSync.uploadTemplate] Template uploaded successfully to Supabase', {
         templateId: template.id,
       });
     } catch (error) {
-      console.error('[shiftTemplatesSync.uploadTemplate] Failed to upload template to Supabase:', error);
+      debug.error('[shiftTemplatesSync.uploadTemplate] Failed to upload template to Supabase:', error);
       throw error;
     }
   },
@@ -1361,7 +1338,7 @@ export const shiftTemplatesSync = {
     }
 
     if (!userId) {
-      debug('[shiftTemplatesSync.downloadTemplates] No userId provided, skipping Supabase sync');
+      debug.debug('[shiftTemplatesSync.downloadTemplates] No userId provided, skipping Supabase sync');
       return [];
     }
 
@@ -1379,7 +1356,7 @@ export const shiftTemplatesSync = {
       }
       
       if (!sessionToUse?.access_token) {
-        debug('[shiftTemplatesSync.downloadTemplates] No session available, cannot download templates');
+        debug.debug('[shiftTemplatesSync.downloadTemplates] No session available, cannot download templates');
         return [];
       }
 
@@ -1400,14 +1377,14 @@ export const shiftTemplatesSync = {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('[shiftTemplatesSync.downloadTemplates] Error downloading templates:', errorText);
+        debug.error('[shiftTemplatesSync.downloadTemplates] Error downloading templates:', errorText);
         return [];
       }
 
       const data = await response.json();
       
       if (!Array.isArray(data)) {
-        debug('[shiftTemplatesSync.downloadTemplates] Invalid response format, returning empty array');
+        debug.debug('[shiftTemplatesSync.downloadTemplates] Invalid response format, returning empty array');
         return [];
       }
 
@@ -1421,19 +1398,19 @@ export const shiftTemplatesSync = {
             }
             return null;
           } catch (error) {
-            console.error('[shiftTemplatesSync.downloadTemplates] Error parsing template:', error);
+            debug.error('[shiftTemplatesSync.downloadTemplates] Error parsing template:', error);
             return null;
           }
         })
         .filter((template: ShiftTemplate | null): template is ShiftTemplate => template !== null);
 
-      debug('[shiftTemplatesSync.downloadTemplates] Downloaded templates from Supabase', {
+      debug.debug('[shiftTemplatesSync.downloadTemplates] Downloaded templates from Supabase', {
         count: templates.length,
       });
 
       return templates;
     } catch (error) {
-      console.error('[shiftTemplatesSync.downloadTemplates] Failed to download templates from Supabase:', error);
+      debug.error('[shiftTemplatesSync.downloadTemplates] Failed to download templates from Supabase:', error);
       return [];
     }
   },
@@ -1444,7 +1421,7 @@ export const shiftTemplatesSync = {
     }
 
     if (!userId) {
-      debug('[shiftTemplatesSync.deleteTemplate] No userId provided, skipping Supabase sync');
+      debug.debug('[shiftTemplatesSync.deleteTemplate] No userId provided, skipping Supabase sync');
       return;
     }
 
@@ -1462,7 +1439,7 @@ export const shiftTemplatesSync = {
       }
       
       if (!sessionToUse?.access_token) {
-        debug('[shiftTemplatesSync.deleteTemplate] No session available, cannot delete template');
+        debug.debug('[shiftTemplatesSync.deleteTemplate] No session available, cannot delete template');
         throw new Error('No active session - please sign in again');
       }
 
@@ -1483,14 +1460,14 @@ export const shiftTemplatesSync = {
 
       if (!findResponse.ok) {
         const errorText = await findResponse.text();
-        console.error('[shiftTemplatesSync.deleteTemplate] Error finding template:', errorText);
+        debug.error('[shiftTemplatesSync.deleteTemplate] Error finding template:', errorText);
         throw new Error('Failed to find template');
       }
 
       const findData = await findResponse.json();
       
       if (!Array.isArray(findData) || findData.length === 0) {
-        debug('[shiftTemplatesSync.deleteTemplate] Template not found in Supabase', { templateId });
+        debug.debug('[shiftTemplatesSync.deleteTemplate] Template not found in Supabase', { templateId });
         return;
       }
 
@@ -1519,15 +1496,15 @@ export const shiftTemplatesSync = {
         } catch {
           errorData = { message: errorText };
         }
-        console.error('[shiftTemplatesSync.deleteTemplate] Error deleting template:', errorData);
+        debug.error('[shiftTemplatesSync.deleteTemplate] Error deleting template:', errorData);
         throw errorData;
       }
 
-      debug('[shiftTemplatesSync.deleteTemplate] Template deleted successfully from Supabase', {
+      debug.debug('[shiftTemplatesSync.deleteTemplate] Template deleted successfully from Supabase', {
         templateId,
       });
     } catch (error) {
-      console.error('[shiftTemplatesSync.deleteTemplate] Failed to delete template from Supabase:', error);
+      debug.error('[shiftTemplatesSync.deleteTemplate] Failed to delete template from Supabase:', error);
       throw error;
     }
   },
@@ -1543,7 +1520,7 @@ export const exportSync = {
     }
 
     if (!userId) {
-      debug('[exportSync.uploadExportBatch] No userId provided, skipping Supabase sync');
+      debug.debug('[exportSync.uploadExportBatch] No userId provided, skipping Supabase sync');
       return;
     }
 
@@ -1557,7 +1534,7 @@ export const exportSync = {
           try {
             remoteUri = await uploadPDFToStorage(batch.pdfUri, batch.id, userId);
           } catch (uploadError) {
-            console.error('[exportSync.uploadExportBatch] Failed to upload PDF to storage:', uploadError);
+            debug.error('[exportSync.uploadExportBatch] Failed to upload PDF to storage:', uploadError);
             // Continue with local path if upload fails - will retry later via sync queue
             remoteUri = batch.pdfUri;
           }
@@ -1579,7 +1556,7 @@ export const exportSync = {
       }
       
       if (!sessionToUse?.access_token) {
-        debug('[exportSync.uploadExportBatch] No session available, cannot upload export batch');
+        debug.debug('[exportSync.uploadExportBatch] No session available, cannot upload export batch');
         throw new Error('No active session - please sign in again');
       }
 
@@ -1626,7 +1603,7 @@ export const exportSync = {
       let response: Response;
       if (existingId) {
         // Update existing batch
-        debug('[exportSync.uploadExportBatch] Updating existing batch', { existingId, batchId: batch.id });
+        debug.debug('[exportSync.uploadExportBatch] Updating existing batch', { existingId, batchId: batch.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/export_batches?id=eq.${existingId}&select=*`;
         response = await fetch(updateUrl, {
           method: 'PATCH',
@@ -1640,7 +1617,7 @@ export const exportSync = {
         });
       } else {
         // Insert new batch
-        debug('[exportSync.uploadExportBatch] Inserting new batch', { batchId: batch.id });
+        debug.debug('[exportSync.uploadExportBatch] Inserting new batch', { batchId: batch.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/export_batches?select=*`;
         response = await fetch(insertUrl, {
           method: 'POST',
@@ -1662,14 +1639,14 @@ export const exportSync = {
         } catch {
           errorData = { message: errorText };
         }
-        console.error('[exportSync.uploadExportBatch] Error uploading export batch:', errorData);
+        debug.error('[exportSync.uploadExportBatch] Error uploading export batch:', errorData);
         throw errorData;
       }
 
       // Return updated batch with storage reference
       return batchWithRemoteUri;
     } catch (error) {
-      console.error('[exportSync.uploadExportBatch] Failed to upload export batch to Supabase:', error);
+      debug.error('[exportSync.uploadExportBatch] Failed to upload export batch to Supabase:', error);
       throw error;
     }
   },
@@ -1680,12 +1657,12 @@ export const exportSync = {
     }
 
     if (!userId) {
-      debug('[exportSync.downloadExportBatches] No userId provided, skipping Supabase download');
+      debug.debug('[exportSync.downloadExportBatches] No userId provided, skipping Supabase download');
       return [];
     }
 
     try {
-      debug('[exportSync.downloadExportBatches] Downloading export batches from Supabase', {
+      debug.debug('[exportSync.downloadExportBatches] Downloading export batches from Supabase', {
         userId: userId.substring(0, 8) + '...',
       });
 
@@ -1707,7 +1684,7 @@ export const exportSync = {
         const apiKey = SUPABASE_ANON_KEY;
         const restUrl = `${SUPABASE_URL}/rest/v1/export_batches?user_id=eq.${userId}&deleted_at=is.null&order=requested_at.desc&select=*`;
         
-        debug('[exportSync.downloadExportBatches] Using direct REST API with session token');
+        debug.debug('[exportSync.downloadExportBatches] Using direct REST API with session token');
         
         const response = await fetch(restUrl, {
           method: 'GET',
@@ -1721,7 +1698,7 @@ export const exportSync = {
         if (!response.ok) {
           if (response.status === 404 || response.status === 406) {
             // No export batches found - this is OK
-            debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
+            debug.debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
             return [];
           }
           const errorText = await response.text();
@@ -1731,14 +1708,14 @@ export const exportSync = {
           } catch {
             errorData = { message: errorText };
           }
-          console.error('[exportSync.downloadExportBatches] Error downloading export batches:', errorData);
+          debug.error('[exportSync.downloadExportBatches] Error downloading export batches:', errorData);
           throw errorData;
         }
         
         const data = await response.json();
         
         if (!data || !Array.isArray(data) || data.length === 0) {
-          debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
+          debug.debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
           return [];
         }
 
@@ -1757,12 +1734,12 @@ export const exportSync = {
 
               return batch;
             }
-            debug('[exportSync.downloadExportBatches] Row missing params:', { rowId: row.id, hasParams: !!row.params });
+            debug.debug('[exportSync.downloadExportBatches] Row missing params:', { rowId: row.id, hasParams: !!row.params });
             return null;
           })
           .filter((batch: ExportBatch | null): batch is ExportBatch => batch !== null);
 
-        debug('[exportSync.downloadExportBatches] Export batches downloaded successfully from Supabase', {
+        debug.debug('[exportSync.downloadExportBatches] Export batches downloaded successfully from Supabase', {
           count: batches.length,
           rawCount: data.length,
         });
@@ -1770,7 +1747,7 @@ export const exportSync = {
         return batches;
       } else {
         // Fallback to Supabase client (may fail if session not persisted yet)
-        debug('[exportSync.downloadExportBatches] No session available, using Supabase client (may fail)');
+        debug.debug('[exportSync.downloadExportBatches] No session available, using Supabase client (may fail)');
         // @ts-ignore
         const { data, error } = await supabase
           .from('export_batches')
@@ -1780,12 +1757,12 @@ export const exportSync = {
           .order('requested_at', { ascending: false });
 
         if (error) {
-          console.error('[exportSync.downloadExportBatches] Error downloading export batches:', error);
+          debug.error('[exportSync.downloadExportBatches] Error downloading export batches:', error);
           throw error;
         }
 
         if (!data || data.length === 0) {
-          debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
+          debug.debug('[exportSync.downloadExportBatches] No export batches found in Supabase');
           return [];
         }
 
@@ -1804,12 +1781,12 @@ export const exportSync = {
 
               return batch;
             }
-            debug('[exportSync.downloadExportBatches] Row missing params:', { rowId: row.id, hasParams: !!row.params });
+            debug.debug('[exportSync.downloadExportBatches] Row missing params:', { rowId: row.id, hasParams: !!row.params });
             return null;
           })
           .filter((batch: ExportBatch | null): batch is ExportBatch => batch !== null);
 
-        debug('[exportSync.downloadExportBatches] Export batches downloaded successfully from Supabase', {
+        debug.debug('[exportSync.downloadExportBatches] Export batches downloaded successfully from Supabase', {
           count: batches.length,
           rawCount: data.length,
         });
@@ -1817,7 +1794,7 @@ export const exportSync = {
         return batches;
       }
     } catch (error) {
-      console.error('[exportSync.downloadExportBatches] Failed to download export batches from Supabase:', error);
+      debug.error('[exportSync.downloadExportBatches] Failed to download export batches from Supabase:', error);
       return [];
     }
   },
@@ -1846,16 +1823,16 @@ export const exportSync = {
         });
 
         if (error) {
-          console.error('[exportSync.deleteExportBatch] Error deleting export batch:', error);
+          debug.error('[exportSync.deleteExportBatch] Error deleting export batch:', error);
           throw error;
         }
 
-        debug('[exportSync.deleteExportBatch] Export batch deleted successfully from Supabase', {
+        debug.debug('[exportSync.deleteExportBatch] Export batch deleted successfully from Supabase', {
           batchId,
         });
       }
     } catch (error) {
-      console.error('[exportSync.deleteExportBatch] Failed to delete export batch from Supabase:', error);
+      debug.error('[exportSync.deleteExportBatch] Failed to delete export batch from Supabase:', error);
       throw error;
     }
   },
@@ -1896,7 +1873,7 @@ export const sync = {
     }
     
     try {
-      debug('[sync.fullSync] Starting full sync for user:', userId.substring(0, 8) + '...');
+      debug.debug('[sync.fullSync] Starting full sync for user:', userId.substring(0, 8) + '...');
       
       // Check connection first
       const isConnected = await sync.checkConnection();
@@ -1930,9 +1907,9 @@ export const sync = {
       let logsSuccess = true;
       try {
         await logsSync.uploadLogs(localLogs, userId);
-        debug('[sync.fullSync] Uploaded logs:', localLogs.length);
+        debug.debug('[sync.fullSync] Uploaded logs:', localLogs.length);
       } catch (error) {
-        console.error('[sync.fullSync] Failed to upload logs:', error);
+        debug.error('[sync.fullSync] Failed to upload logs:', error);
         logsSuccess = false;
       }
       
@@ -1940,9 +1917,9 @@ export const sync = {
       let shiftsSuccess = true;
       try {
         await shiftsSync.uploadShifts(localShifts, userId);
-        debug('[sync.fullSync] Uploaded shifts:', localShifts.length);
+        debug.debug('[sync.fullSync] Uploaded shifts:', localShifts.length);
       } catch (error) {
-        console.error('[sync.fullSync] Failed to upload shifts:', error);
+        debug.error('[sync.fullSync] Failed to upload shifts:', error);
         shiftsSuccess = false;
       }
       
@@ -1951,9 +1928,9 @@ export const sync = {
       if (localProfile) {
         try {
           await profileSync.uploadProfile(localProfile, userId);
-          debug('[sync.fullSync] Uploaded profile');
+          debug.debug('[sync.fullSync] Uploaded profile');
         } catch (error) {
-          console.error('[sync.fullSync] Failed to upload profile:', error);
+          debug.error('[sync.fullSync] Failed to upload profile:', error);
           profileSuccess = false;
         }
       }
@@ -1966,9 +1943,9 @@ export const sync = {
           // Check if pdfUri is a local path - if so, upload will happen in uploadExportBatch
           await exportSync.uploadExportBatch(batch, userId);
         }
-        debug('[sync.fullSync] Uploaded export batches:', localBatches.length);
+        debug.debug('[sync.fullSync] Uploaded export batches:', localBatches.length);
       } catch (error) {
-        console.error('[sync.fullSync] Failed to upload export batches:', error);
+        debug.error('[sync.fullSync] Failed to upload export batches:', error);
         exportsSuccess = false;
       }
       
@@ -2042,9 +2019,9 @@ export const sync = {
           if (batch.pdfUri && isCloudURL(batch.pdfUri)) {
             try {
               await downloadPDFFromStorage(batch.pdfUri, batch.id);
-              debug('[sync.fullSync] Downloaded PDF to local cache:', batch.id);
+              debug.debug('[sync.fullSync] Downloaded PDF to local cache:', batch.id);
             } catch (error) {
-              console.error('[sync.fullSync] Failed to download PDF to cache:', batch.id, error);
+              debug.error('[sync.fullSync] Failed to download PDF to cache:', batch.id, error);
               // Non-fatal - continue with other batches
             }
           }
@@ -2057,9 +2034,9 @@ export const sync = {
           await profileStore.loadProfile(userId);
         }
         
-        debug('[sync.fullSync] Full sync completed successfully');
+        debug.debug('[sync.fullSync] Full sync completed successfully');
       } catch (error) {
-        console.error('[sync.fullSync] Failed to download/merge remote data:', error);
+        debug.error('[sync.fullSync] Failed to download/merge remote data:', error);
       }
       
       const success = logsSuccess && shiftsSuccess && profileSuccess && exportsSuccess;
@@ -2073,7 +2050,7 @@ export const sync = {
         error: success ? undefined : 'Some sync operations failed'
       };
     } catch (error) {
-      console.error('[sync.fullSync] Full sync failed:', error);
+      debug.error('[sync.fullSync] Full sync failed:', error);
       return {
         success: false,
         profile: false,
@@ -2163,7 +2140,7 @@ export const sync = {
         .limit(1);
       
       if (error) {
-        console.error('[sync.checkConnection] Connection check failed:', error);
+        debug.error('[sync.checkConnection] Connection check failed:', error);
         return false;
       }
       
@@ -2210,7 +2187,7 @@ export const templatesSync = {
         ensureTemplateUpToDate('avac_smo'),
       ]);
     } catch (e) {
-      console.error('[templatesSync.checkAndUpdate] Failed:', e);
+      debug.error('[templatesSync.checkAndUpdate] Failed:', e);
     }
   },
 };
