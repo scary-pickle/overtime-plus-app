@@ -80,10 +80,15 @@ export function ShiftCard({
     }
     
     try {
-      const date = new Date(nextOccurrence);
+      // Normalize both dates to midnight in local timezone for accurate comparison
+      const date = new Date(nextOccurrence + 'T00:00:00');
       const today = new Date();
-      const diffTime = date.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      today.setHours(0, 0, 0, 0);
+      const dateMidnight = new Date(date);
+      dateMidnight.setHours(0, 0, 0, 0);
+      
+      const diffTime = dateMidnight.getTime() - today.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
       
       if (diffDays === 0) {
         return 'Today';
@@ -104,10 +109,15 @@ export function ShiftCard({
 
   const formatNextOccurrenceDate = (nextOccurrence: string) => {
     try {
-      const date = new Date(nextOccurrence);
+      // Normalize both dates to midnight in local timezone for accurate comparison
+      const date = new Date(nextOccurrence + 'T00:00:00');
       const today = new Date();
-      const diffTime = date.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      today.setHours(0, 0, 0, 0);
+      const dateMidnight = new Date(date);
+      dateMidnight.setHours(0, 0, 0, 0);
+      
+      const diffTime = dateMidnight.getTime() - today.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
       
       if (diffDays === 0) {
         return 'Today';

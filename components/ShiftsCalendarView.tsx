@@ -171,7 +171,20 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date());
+    const today = new Date();
+    setCurrentDate(today);
+    
+    // Get today's date string and shifts
+    const todayStr = getLocalDateString(today);
+    const todayShifts = getShiftsForDate(today);
+    
+    // If there are shifts for today, select today's date
+    if (todayShifts.length > 0 && onDayPress) {
+      onDayPress(todayStr, todayShifts);
+    } else if (onDayPress) {
+      // Even if no shifts, still select today to show "no shifts" message
+      onDayPress(todayStr, []);
+    }
   };
 
   const togglePicker = () => {

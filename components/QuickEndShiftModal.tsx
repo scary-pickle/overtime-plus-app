@@ -13,7 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { OvertimeLog } from '../types';
 import { useProfileStore } from '../lib/state/profileStore';
-import { useLogsStore } from '../lib/state/logsStore';
+import { useLogsStore, validateLogForReady } from '../lib/state/logsStore';
 import { computeMinutes, formatMinutes, getCurrentTime, getShiftStartDate, getCurrentDate } from '../lib/time';
 import { updateWidgetStatus } from '../lib/widget/widgetStatusUpdater';
 import { TimeInput } from './TimeInput';
@@ -67,7 +67,9 @@ export function QuickEndShiftModal({
   const [rosteredStart, setRosteredStart] = useState('');
   const [rosteredFinish, setRosteredFinish] = useState('');
   const [actualStart, setActualStart] = useState('');
+  const [actualFinish, setActualFinish] = useState('');
   const [rosteredTimesNA, setRosteredTimesNA] = useState(false);
+  const [isEditingActualTimes, setIsEditingActualTimes] = useState(false);
   
   // Calculation
   const [minutesCalculation, setMinutesCalculation] = useState<any>(null);
@@ -84,7 +86,18 @@ export function QuickEndShiftModal({
         setRosteredStart(draftLog.rosteredStart && draftLog.rosteredStart !== 'N/A' ? draftLog.rosteredStart : '');
         setRosteredFinish(draftLog.rosteredFinish && draftLog.rosteredFinish !== 'N/A' ? draftLog.rosteredFinish : '');
         setActualStart(draftLog.actualStart !== 'N/A' ? draftLog.actualStart : '');
-        setRosteredTimesNA(draftLog.rosteredStart === 'N/A');
+        setActualFinish(draftLog.actualFinish !== 'N/A' ? draftLog.actualFinish : '');
+        // Set N/A if rostered times are undefined or 'N/A'
+        setRosteredTimesNA(!draftLog.rosteredStart || draftLog.rosteredStart === 'N/A' || 
+                           !draftLog.rosteredFinish || draftLog.rosteredFinish === 'N/A');
+        // Auto-enable editing if actual start is N/A (user needs to enter it)
+        if (draftLog.actualStart === 'N/A' || !draftLog.actualStart) {
+          setIsEditingActualTimes(true);
+        }
+      } else {
+        // Initialize actual times for editing (even when not in noRosterMode)
+        setActualStart(draftLog.actualStart !== 'N/A' ? draftLog.actualStart : '');
+        setActualFinish(draftLog.actualFinish !== 'N/A' ? draftLog.actualFinish : '');
       }
       
       // Calculate minutes
@@ -97,13 +110,17 @@ export function QuickEndShiftModal({
     if (draftLog) {
       calculateMinutes();
     }
-  }, [mealBreakMinutes, rosteredStart, rosteredFinish, actualStart, rosteredTimesNA, draftLog]);
+  }, [mealBreakMinutes, rosteredStart, rosteredFinish, actualStart, actualFinish, rosteredTimesNA, draftLog, isEditingActualTimes]);
 
   const calculateMinutes = () => {
     if (!draftLog) return;
     
-    const start = noRosterMode && actualStart ? actualStart : draftLog.actualStart;
-    const finish = draftLog.actualFinish;
+    // Use editable times if editing, otherwise use draft log times
+    const start = (isEditingActualTimes && actualStart) ? actualStart : 
+                  (noRosterMode && actualStart) ? actualStart : 
+                  draftLog.actualStart;
+    const finish = (isEditingActualTimes && actualFinish) ? actualFinish : 
+                   draftLog.actualFinish;
     const rStart = noRosterMode ? (rosteredTimesNA ? 'N/A' : rosteredStart) : draftLog.rosteredStart;
     const rFinish = noRosterMode ? (rosteredTimesNA ? 'N/A' : rosteredFinish) : draftLog.rosteredFinish;
     
@@ -120,8 +137,14 @@ export function QuickEndShiftModal({
   };
 
   const handleRosteredTimesNA = () => {
-    setRosteredTimesNA(!rosteredTimesNA);
-    if (!rosteredTimesNA) {
+    const newNAStatus = !rosteredTimesNA;
+    setRosteredTimesNA(newNAStatus);
+    if (newNAStatus) {
+      // Set to 'N/A' to give visual feedback
+      setRosteredStart('N/A');
+      setRosteredFinish('N/A');
+    } else {
+      // Clear when unchecking N/A
       setRosteredStart('');
       setRosteredFinish('');
     }
@@ -136,9 +159,19 @@ export function QuickEndShiftModal({
   const handleMarkAsReady = async () => {
     if (!draftLog || !minutesCalculation) return;
 
+    // Validation for editing actual times
+    if (isEditingActualTimes) {
+      if (!actualStart || !actualFinish) {
+        Alert.alert('Missing Information', 'Please enter both actual start and finish times.');
+        return;
+      }
+    }
+
     // Validation for no roster mode
     if (noRosterMode) {
-      if (!actualStart) {
+      // Check if actual start is available (either from editing or draft log)
+      const hasActualStart = isEditingActualTimes ? actualStart : draftLog.actualStart;
+      if (!hasActualStart || hasActualStart === 'N/A') {
         Alert.alert('Missing Information', 'Please enter your actual start time.');
         return;
       }
@@ -168,8 +201,12 @@ export function QuickEndShiftModal({
 
     try {
       // Determine the actual start and finish times
-      const finalActualStart = noRosterMode && actualStart ? actualStart : draftLog.actualStart;
-      const finalActualFinish = draftLog.actualFinish;
+      // Use editable times if editing, otherwise use draft log times
+      const finalActualStart = (isEditingActualTimes && actualStart) ? actualStart :
+                               (noRosterMode && actualStart) ? actualStart : 
+                               draftLog.actualStart;
+      const finalActualFinish = (isEditingActualTimes && actualFinish) ? actualFinish : 
+                                draftLog.actualFinish;
       
       // Calculate the correct date based on start and finish times
       // Use the draft log's date as the end date, or today if not available
@@ -191,6 +228,14 @@ export function QuickEndShiftModal({
         isActiveShift: false,
         updatedAt: new Date().toISOString(),
       };
+
+      // Validate that the log has all required fields before marking as ready
+      const validation = validateLogForReady(updatedLog);
+      if (!validation.isValid) {
+        const errorMessage = `Cannot mark log as ready. Missing required fields:\n• ${validation.missingFields.join('\n• ')}`;
+        Alert.alert('Cannot Mark as Ready', errorMessage);
+        return;
+      }
 
       await updateLog(updatedLog);
       
@@ -295,32 +340,36 @@ export function QuickEndShiftModal({
                 )}
               </View>
               {noRosterMode ? (
-                <View style={styles.timeRow}>
-                  <View style={styles.timeInput}>
-                    <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
-                    <SharedTimePickerProvider>
-                      <TimeInput
-                        value={rosteredStart}
-                        onChange={setRosteredStart}
-                        placeholder="Select start time"
-                        inputId="rostered-start-modal"
-                        disabled={rosteredTimesNA}
-                      />
-                    </SharedTimePickerProvider>
+                rosteredTimesNA ? (
+                  <Text style={[styles.timeDisplay, isDark && styles.darkText]}>
+                    N/A - N/A
+                  </Text>
+                ) : (
+                  <View style={styles.timeRow}>
+                    <View style={styles.timeInput}>
+                      <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
+                      <SharedTimePickerProvider>
+                        <TimeInput
+                          value={rosteredStart}
+                          onChange={setRosteredStart}
+                          placeholder="Select start time"
+                          inputId="rostered-start-modal"
+                        />
+                      </SharedTimePickerProvider>
+                    </View>
+                    <View style={styles.timeInput}>
+                      <Text style={[styles.timeLabel, isDark && styles.darkText]}>Finish</Text>
+                      <SharedTimePickerProvider>
+                        <TimeInput
+                          value={rosteredFinish}
+                          onChange={setRosteredFinish}
+                          placeholder="Select finish time"
+                          inputId="rostered-finish-modal"
+                        />
+                      </SharedTimePickerProvider>
+                    </View>
                   </View>
-                  <View style={styles.timeInput}>
-                    <Text style={[styles.timeLabel, isDark && styles.darkText]}>Finish</Text>
-                    <SharedTimePickerProvider>
-                      <TimeInput
-                        value={rosteredFinish}
-                        onChange={setRosteredFinish}
-                        placeholder="Select finish time"
-                        inputId="rostered-finish-modal"
-                        disabled={rosteredTimesNA}
-                      />
-                    </SharedTimePickerProvider>
-                  </View>
-                </View>
+                )
               ) : (
                 <Text style={[styles.timeDisplay, isDark && styles.darkText]}>
                   {formatTime12Hour(draftLog.rosteredStart)} - {formatTime12Hour(draftLog.rosteredFinish)}
@@ -330,10 +379,22 @@ export function QuickEndShiftModal({
 
             {/* Actual Times */}
             <View style={[styles.section, isDark && styles.darkCard]}>
-              <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-                Actual Times
-              </Text>
-              {noRosterMode ? (
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+                  Actual Times
+                </Text>
+                {!isEditingActualTimes && (
+                  <TouchableOpacity
+                    onPress={() => setIsEditingActualTimes(true)}
+                    style={[styles.editButtonSmall, isDark && styles.darkEditButtonSmall]}
+                  >
+                    <Text style={[styles.editButtonTextSmall, isDark && styles.darkEditButtonTextSmall]}>
+                      Edit
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {isEditingActualTimes ? (
                 <View style={styles.timeRow}>
                   <View style={styles.timeInput}>
                     <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
@@ -348,14 +409,19 @@ export function QuickEndShiftModal({
                   </View>
                   <View style={styles.timeInput}>
                     <Text style={[styles.timeLabel, isDark && styles.darkText]}>Finish</Text>
-                    <Text style={[styles.timeDisplay, isDark && styles.darkText]}>
-                      {formatTime12Hour(draftLog.actualFinish)}
-                    </Text>
+                    <SharedTimePickerProvider>
+                      <TimeInput
+                        value={actualFinish}
+                        onChange={setActualFinish}
+                        placeholder="Select finish time"
+                        inputId="actual-finish-modal"
+                      />
+                    </SharedTimePickerProvider>
                   </View>
                 </View>
               ) : (
                 <Text style={[styles.timeDisplay, isDark && styles.darkText]}>
-                  {formatTime12Hour(draftLog.actualStart)} - {formatTime12Hour(draftLog.actualFinish)}
+                  {formatTime12Hour(actualStart || draftLog.actualStart)} - {formatTime12Hour(actualFinish || draftLog.actualFinish)}
                 </Text>
               )}
             </View>
@@ -804,6 +870,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     flex: 1,
+  },
+  editButtonSmall: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  darkEditButtonSmall: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#4a4a4c',
+  },
+  editButtonTextSmall: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  darkEditButtonTextSmall: {
+    color: '#64B5F6',
   },
 });
 

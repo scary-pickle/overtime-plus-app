@@ -14,6 +14,13 @@ if (!config.resolver.sourceExts.includes('ts')) {
   config.resolver.sourceExts.push('ts', 'tsx');
 }
 
+// Exclude test files from production builds
+if (!config.resolver.blockList) {
+  config.resolver.blockList = [];
+}
+// Block test files from being bundled
+config.resolver.blockList.push(/.*\/test.*\.ts$/, /.*\/test.*\.tsx$/);
+
 // ROOT CAUSE FIX: Custom server middleware to properly decode unstable_path
 // Metro's server code doesn't decode unstable_path before using it as a filesystem path
 // This middleware intercepts requests and properly decodes the path before Metro processes it

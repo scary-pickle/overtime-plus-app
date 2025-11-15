@@ -196,3 +196,6 @@ If encryption/decryption fails:
 - [EAS Secrets Documentation](https://docs.expo.dev/build-reference/variables/)
 - [Supabase Documentation](https://supabase.com/docs)
 
+
+
+

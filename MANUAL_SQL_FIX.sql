@@ -104,3 +104,6 @@ ORDER BY p.proname;
 
 -- SUCCESS! You should see 3 functions listed above.
 -- Now reload your app and try deleting a log again.
+
+
+

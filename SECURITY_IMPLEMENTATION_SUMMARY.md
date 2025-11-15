@@ -106,3 +106,6 @@ These steps require manual action in the Supabase Dashboard:
 - Clipboard auto-clear happens 60 seconds after copying
 - All encryption/decryption is transparent to sync operations
 
+
+
+

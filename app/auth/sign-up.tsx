@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../../lib/auth/validation';
@@ -13,6 +13,8 @@ const debug = (...args: any[]) => {
 
 export default function SignUp() {
   const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const { signUp, isLoading, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -48,51 +50,181 @@ export default function SignUp() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0B2239' }}>
-      <View style={{ flex: 1, padding: 24, justifyContent: 'center' }}>
-        <View style={{ marginBottom: 24 }}>
-          <Text style={{ fontSize: 28, fontWeight: '700', color: '#fff' }}>Create your account</Text>
-          <Text style={{ color: '#cfe0f7', marginTop: 4 }}>Use your @health.qld.gov.au email</Text>
+    <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <Text style={[styles.title, isDark && styles.darkTitle]}>Create your account</Text>
+          <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>Use your @health.qld.gov.au email</Text>
         </View>
-        <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 16, gap: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12 }}>
-          {localError ? <Text style={{ color: '#b91c1c' }}>{localError}</Text> : null}
-          {error ? <Text style={{ color: '#b91c1c' }}>{error}</Text> : null}
-          <Text style={{ fontSize: 14, color: '#4b5563' }}>Email</Text>
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@health.qld.gov.au"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
-          />
-          <Text style={{ fontSize: 14, color: '#4b5563', marginTop: 8 }}>Password</Text>
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="••••••••"
-            secureTextEntry
-            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
-          />
-          <Text style={{ fontSize: 14, color: '#4b5563', marginTop: 8 }}>Confirm password</Text>
-          <TextInput
-            value={confirm}
-            onChangeText={setConfirm}
-            placeholder="••••••••"
-            secureTextEntry
-            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
-          />
-          <TouchableOpacity onPress={onSubmit} disabled={isLoading} style={{ backgroundColor: '#10B981', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, opacity: isLoading ? 0.7 : 1 }}>
-            <Text style={{ color: '#fff', fontWeight: '600' }}>{isLoading ? 'Creating...' : 'Create Account'}</Text>
+        <View style={[styles.card, isDark && styles.darkCard]}>
+          {localError ? <Text style={styles.error}>{localError}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <View style={styles.field}>
+            <Text style={[styles.label, isDark && styles.darkLabel]}>Email</Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@health.qld.gov.au"
+              placeholderTextColor={isDark ? '#666' : '#999'}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={[styles.input, isDark && styles.darkInput]}
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={[styles.label, isDark && styles.darkLabel]}>Password</Text>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="••••••••"
+              placeholderTextColor={isDark ? '#666' : '#999'}
+              secureTextEntry
+              style={[styles.input, isDark && styles.darkInput]}
+            />
+          </View>
+          <View style={styles.field}>
+            <Text style={[styles.label, isDark && styles.darkLabel]}>Confirm password</Text>
+            <TextInput
+              value={confirm}
+              onChangeText={setConfirm}
+              placeholder="••••••••"
+              placeholderTextColor={isDark ? '#666' : '#999'}
+              secureTextEntry
+              style={[styles.input, isDark && styles.darkInput]}
+            />
+          </View>
+          <TouchableOpacity 
+            onPress={onSubmit} 
+            disabled={isLoading} 
+            style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
+          >
+            <Text style={styles.buttonText}>{isLoading ? 'Creating...' : 'Create Account'}</Text>
           </TouchableOpacity>
-          <Text style={{ textAlign: 'center', marginTop: 8, color: '#6b7280' }}>
+          <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
             We'll email you a 6-digit code to confirm your account inside the app.
           </Text>
         </View>
         <Link href="/auth/sign-in">
-          <Text style={{ color: '#cfe0f7', textAlign: 'center', marginTop: 12 }}>Already have an account? Sign in</Text>
+          <Text style={[styles.link, isDark && styles.darkLink]}>Already have an account? Sign in</Text>
         </Link>
       </View>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  darkContainer: {
+    backgroundColor: '#000',
+  },
+  content: {
+    flex: 1,
+    padding: 24,
+    justifyContent: 'center',
+  },
+  header: {
+    marginBottom: 32,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 8,
+  },
+  darkTitle: {
+    color: '#fff',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+  },
+  darkSubtitle: {
+    color: '#aaa',
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  darkCard: {
+    backgroundColor: '#1c1c1e',
+    shadowOpacity: 0.3,
+  },
+  field: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  darkLabel: {
+    color: '#fff',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    padding: 14,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    color: '#333',
+  },
+  darkInput: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#444',
+    color: '#fff',
+  },
+  error: {
+    color: '#b91c1c',
+    fontSize: 14,
+    marginBottom: 12,
+  },
+  button: {
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  secondaryButton: {
+    backgroundColor: '#10B981',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  helperText: {
+    textAlign: 'center',
+    marginTop: 12,
+    fontSize: 13,
+    color: '#6b7280',
+    lineHeight: 18,
+  },
+  darkHelperText: {
+    color: '#999',
+  },
+  link: {
+    color: '#666',
+    textAlign: 'center',
+    fontSize: 14,
+    marginTop: 12,
+  },
+  darkLink: {
+    color: '#aaa',
+  },
+});

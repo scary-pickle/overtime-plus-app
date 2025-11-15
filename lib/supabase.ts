@@ -243,6 +243,167 @@ export const auth = {
 };
 
 /**
+ * Helper function to get a valid access token, refreshing if necessary
+ * This is critical for direct REST API calls which don't benefit from autoRefreshToken
+ */
+async function getValidAccessToken(): Promise<string | null> {
+  if (!supabaseEnabled) {
+    return null;
+  }
+
+  try {
+    // Get session from auth store first
+    const { useAuthStore } = await import('./state/authStore');
+    const authState = useAuthStore.getState();
+    let session = authState.session;
+    
+    // If not in auth store, try getSession()
+    if (!session) {
+      // @ts-ignore
+      const result = await (supabase as any).auth.getSession();
+      session = result?.data?.session;
+    }
+    
+    if (!session?.access_token) {
+      debug.debug('[getValidAccessToken] No session available');
+      return null;
+    }
+
+    // Check if token is expired or about to expire (within 60 seconds)
+    // JWT tokens contain an 'exp' claim with expiration timestamp
+    try {
+      const tokenParts = session.access_token.split('.');
+      if (tokenParts.length === 3) {
+        const payload = JSON.parse(atob(tokenParts[1]));
+        const exp = payload.exp; // Expiration timestamp (seconds since epoch)
+        const now = Math.floor(Date.now() / 1000); // Current time in seconds
+        
+        // If token expires within 60 seconds, refresh it
+        if (exp && exp - now < 60) {
+          debug.debug('[getValidAccessToken] Token expiring soon, refreshing...', {
+            expiresIn: exp - now,
+          });
+          
+          // Refresh the session
+          // @ts-ignore
+          const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
+            refresh_token: session.refresh_token,
+          });
+          
+          if (refreshError) {
+            debug.error('[getValidAccessToken] Failed to refresh session:', refreshError);
+            return null;
+          }
+          
+          if (refreshData?.session?.access_token) {
+            debug.debug('[getValidAccessToken] Session refreshed successfully');
+            // Update auth store with new session
+            const { useAuthStore } = await import('./state/authStore');
+            useAuthStore.setState({ session: refreshData.session, user: refreshData.session.user });
+            return refreshData.session.access_token;
+          }
+        }
+      }
+    } catch (tokenError) {
+      // If we can't parse the token, try refreshing anyway
+      debug.debug('[getValidAccessToken] Could not parse token, attempting refresh:', tokenError);
+      // @ts-ignore
+      const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
+        refresh_token: session.refresh_token,
+      });
+      
+      if (!refreshError && refreshData?.session?.access_token) {
+        const { useAuthStore } = await import('./state/authStore');
+        useAuthStore.setState({ session: refreshData.session, user: refreshData.session.user });
+        return refreshData.session.access_token;
+      }
+    }
+    
+    return session.access_token;
+  } catch (error) {
+    debug.error('[getValidAccessToken] Error getting valid access token:', error);
+    return null;
+  }
+}
+
+/**
+ * Helper function to make an authenticated REST API request with automatic token refresh
+ */
+async function authenticatedFetch(
+  url: string,
+  options: RequestInit = {},
+  retryOnExpired = true
+): Promise<Response> {
+  const accessToken = await getValidAccessToken();
+  
+  if (!accessToken) {
+    throw new Error('No valid access token available - please sign in again');
+  }
+
+  const headers = {
+    ...options.headers,
+    'Authorization': `Bearer ${accessToken}`,
+    'apikey': SUPABASE_ANON_KEY!,
+    'Content-Type': 'application/json',
+  };
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  // If we get a JWT expired error and retry is enabled, refresh and retry once
+  if (!response.ok && retryOnExpired) {
+    // Clone the response so we can read it without consuming the original
+    const clonedResponse = response.clone();
+    const errorText = await clonedResponse.text();
+    let errorData;
+    try {
+      errorData = JSON.parse(errorText);
+    } catch {
+      errorData = { message: errorText };
+    }
+    
+    // Check if it's a JWT expired error
+    if (errorData.code === 'PGRST303' || errorData.message === 'JWT expired') {
+      debug.debug('[authenticatedFetch] JWT expired, refreshing token and retrying...');
+      
+      // Force refresh the session
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      const session = authState.session;
+      
+      if (session?.refresh_token) {
+        // @ts-ignore
+        const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
+          refresh_token: session.refresh_token,
+        });
+        
+        if (!refreshError && refreshData?.session?.access_token) {
+          // Update auth store
+          useAuthStore.setState({ session: refreshData.session, user: refreshData.session.user });
+          
+          // Retry the request with new token
+          const newHeaders = {
+            ...options.headers,
+            'Authorization': `Bearer ${refreshData.session.access_token}`,
+            'apikey': SUPABASE_ANON_KEY!,
+            'Content-Type': 'application/json',
+          };
+          
+          return fetch(url, {
+            ...options,
+            headers: newHeaders,
+          });
+        }
+      }
+    }
+  }
+
+  return response;
+}
+
+/**
  * Profile sync functions
  */
 export const profileSync = {
@@ -567,36 +728,11 @@ export const logsSync = {
       // Convert minutes to hours for the hours field (for querying)
       const hours = log.minutesOvertime / 60;
 
-      // Get session from auth store
-      const { useAuthStore } = await import('./state/authStore');
-      const authState = useAuthStore.getState();
-      let sessionToUse = authState.session;
-      
-      // If not in auth store, try getSession() (but don't wait long)
-      if (!sessionToUse) {
-        // @ts-ignore
-        const result = await (supabase as any).auth.getSession();
-        sessionToUse = result?.data?.session;
-      }
-      
-      if (!sessionToUse?.access_token) {
-        debug.debug('[logsSync.uploadLog] No session available, cannot upload log');
-        throw new Error('No active session - please sign in again');
-      }
-
-      const accessToken = sessionToUse.access_token;
-      const apiKey = SUPABASE_ANON_KEY;
-      
-      // Check if log already exists using direct REST API
+      // Check if log already exists using authenticated REST API
       const checkUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?user_id=eq.${userId}&extras->>id=eq.${log.id}&deleted_at=is.null&select=id&limit=1`;
       
-      const checkResponse = await fetch(checkUrl, {
+      const checkResponse = await authenticatedFetch(checkUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
       
       let existingId: string | null = null;
@@ -623,12 +759,9 @@ export const logsSync = {
         // Update existing log
         debug.debug('[logsSync.uploadLog] Updating existing log', { existingId, logId: log.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?id=eq.${existingId}&select=*`;
-        response = await fetch(updateUrl, {
+        response = await authenticatedFetch(updateUrl, {
           method: 'PATCH',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(logData),
@@ -637,12 +770,9 @@ export const logsSync = {
         // Insert new log
         debug.debug('[logsSync.uploadLog] Inserting new log', { logId: log.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?select=*`;
-        response = await fetch(insertUrl, {
+        response = await authenticatedFetch(insertUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(logData),

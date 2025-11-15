@@ -392,9 +392,26 @@ export default function ExportsScreen() {
               text: 'Continue',
               onPress: async () => {
                 try {
+                  // Ensure PDF is a local file path before sharing
+                  let localPdfPath = batch.pdfUri;
+                  const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+                  
+                  if (isCloudURL(batch.pdfUri)) {
+                    try {
+                      console.log('[Email Share] Downloading PDF from cloud storage...');
+                      localPdfPath = await downloadPDFFromStorage(batch.pdfUri, batch.id);
+                      console.log('[Email Share] PDF downloaded to local path:', localPdfPath);
+                    } catch (downloadError) {
+                      console.error('[Email Share] Failed to download PDF:', downloadError);
+                      Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
+                      setSubmittingId(null);
+                      return;
+                    }
+                  }
+                  
                   // Open share sheet with PDF attachment
                   if (await Sharing.isAvailableAsync()) {
-                    await Sharing.shareAsync(batch.pdfUri, {
+                    await Sharing.shareAsync(localPdfPath, {
                       mimeType: 'application/pdf',
                       dialogTitle: 'Share AVAC via Email',
                       UTI: 'com.adobe.pdf'
@@ -659,6 +676,145 @@ export default function ExportsScreen() {
     }
   }, [selectedBatchIds, exportBatches, submissionStatusFilter, dateFilter, handleSharePDF]);
 
+  const renderListHeader = () => (
+    <>
+      {/* Filter Dropdown - Expands Below Header */}
+      {isFilterExpanded && (
+        <View style={[styles.filterDropdown, isDark && styles.darkFilterDropdown]}>
+          <ScrollView style={styles.filterDropdownContent} showsVerticalScrollIndicator={false}>
+            {/* Submission Status Filters */}
+            <View style={styles.filterSection}>
+              <Text style={[styles.filterSectionTitle, isDark && styles.darkText]}>Submission Status</Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={styles.statusFilterScroll}
+                contentContainerStyle={styles.statusFilterScrollContent}
+              >
+                <View style={styles.filterButtonRow}>
+                  {renderFilterButton('all', 'All')}
+                  {renderFilterButton('submitted', 'Submitted')}
+                  {renderFilterButton('notSubmitted', 'Not Submitted')}
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* Date Filter Section */}
+            <View style={styles.filterSection}>
+              <TouchableOpacity
+                style={[
+                  styles.filterTypeHeader,
+                  isDateExpanded && styles.filterTypeHeaderExpanded,
+                  isDark && styles.darkFilterTypeHeader,
+                  isDateExpanded && isDark && styles.darkFilterTypeHeaderExpanded,
+                ]}
+                onPress={() => setIsDateExpanded(!isDateExpanded)}
+              >
+                <View style={styles.filterTypeHeaderContent}>
+                  <View style={[
+                    styles.filterTypeIconContainer,
+                    dateFilter !== 'all' && styles.filterTypeIconContainerActive,
+                    isDark && styles.darkFilterTypeIconContainer,
+                    dateFilter !== 'all' && isDark && styles.darkFilterTypeIconContainerActive,
+                  ]}>
+                    <Ionicons 
+                      name="calendar" 
+                      size={14} 
+                      color={dateFilter !== 'all' ? '#fff' : (isDark ? '#999' : '#666')} 
+                    />
+                  </View>
+                  <View style={styles.filterTypeTextContainer}>
+                    <Text style={[styles.filterSectionTitle, isDark && styles.darkText]}>Date</Text>
+                    {dateFilter !== 'all' && (
+                      <Text style={[styles.filterActiveIndicator, isDark && styles.darkFilterActiveIndicator]}>
+                        {dateFilter === 'today' ? 'Today' :
+                         dateFilter === 'thisWeek' ? 'This Week' :
+                         dateFilter === 'thisMonth' ? 'This Month' :
+                         dateFilter === 'lastMonth' ? 'Last Month' :
+                         dateFilter === 'thisYear' ? 'This Year' : dateFilter}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.filterTypeChevronContainer}>
+                  <Ionicons 
+                    name={isDateExpanded ? "chevron-up" : "chevron-down"} 
+                    size={16} 
+                    color={isDark ? '#999' : '#666'} 
+                  />
+                </View>
+              </TouchableOpacity>
+              
+              {isDateExpanded && (
+                <View style={[
+                  styles.expandedContentContainer,
+                  isDark && styles.darkExpandedContentContainer,
+                ]}>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false} 
+                    style={styles.secondaryFilterScroll}
+                    contentContainerStyle={styles.secondaryFilterScrollContent}
+                  >
+                    {renderDateFilterButton('all', 'All Time', dateFilter === 'all')}
+                    {renderDateFilterButton('today', 'Today', dateFilter === 'today')}
+                    {renderDateFilterButton('thisWeek', 'This Week', dateFilter === 'thisWeek')}
+                    {renderDateFilterButton('thisMonth', 'This Month', dateFilter === 'thisMonth')}
+                    {renderDateFilterButton('lastMonth', 'Last Month', dateFilter === 'lastMonth')}
+                    {renderDateFilterButton('thisYear', 'This Year', dateFilter === 'thisYear')}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+
+            {/* Clear All Button */}
+            {(submissionStatusFilter !== 'all' || dateFilter !== 'all') && (
+              <TouchableOpacity
+                style={[styles.clearAllButton, isDark && styles.darkClearAllButton]}
+                onPress={() => {
+                  setSubmissionStatusFilter('all');
+                  setDateFilter('all');
+                }}
+              >
+                <Ionicons name="refresh" size={16} color={isDark ? '#fff' : '#007AFF'} />
+                <Text style={[styles.clearAllButtonText, isDark && styles.darkClearAllButtonText]}>
+                  Clear All Filters
+                </Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Selection Bar */}
+      {selectionMode && selectedBatchIds.size > 0 && (
+        <View style={[styles.selectionBar, isDark && styles.darkSelectionBar]}>
+          <TouchableOpacity
+            style={styles.selectionButton}
+            onPress={() => {
+              const filtered = getFilteredBatches();
+              if (selectedBatchIds.size === filtered.length) {
+                handleDeselectAll();
+              } else {
+                handleSelectAll();
+              }
+            }}
+          >
+            <Text style={[styles.selectionButtonText, isDark && styles.selectionButtonTextDark]}>
+              {(() => {
+                const filtered = getFilteredBatches();
+                return selectedBatchIds.size === filtered.length ? 'Deselect All' : 'Select All';
+              })()}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.selectionCount, isDark && styles.selectionCountDark]}>
+            {selectedBatchIds.size} selected
+          </Text>
+        </View>
+      )}
+    </>
+  );
+
   const renderExportItem = ({ item }: { item: ExportBatch }) => {
     const totalHours = Math.floor(item.totalMinutes / 60);
     const remainingMinutes = item.totalMinutes % 60;
@@ -671,26 +827,23 @@ export default function ExportsScreen() {
           styles.exportCard,
           isDark && styles.darkCard,
           selectionMode && isSelected && styles.selectedCard,
+          selectionMode && isSelected && isDark && styles.darkSelectedCard,
+          selectionMode && styles.selectionCard,
         ]}
         onPress={selectionMode ? () => handleToggleBatchSelection(item.id) : undefined}
         activeOpacity={selectionMode ? 0.7 : 1}
       >
         <View style={styles.exportHeader}>
           {selectionMode && (
-            <TouchableOpacity
-              style={styles.checkboxContainer}
+            <TouchableOpacity 
+              style={styles.selectionButton}
               onPress={() => handleToggleBatchSelection(item.id)}
             >
-              <View style={[
-                styles.checkbox,
-                isSelected && styles.checkboxSelected,
-                isDark && styles.darkCheckbox,
-                isSelected && isDark && styles.darkCheckboxSelected,
-              ]}>
-                {isSelected && (
-                  <Ionicons name="checkmark" size={16} color="#fff" />
-                )}
-              </View>
+              <Ionicons 
+                name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
+                size={24} 
+                color={isSelected ? "#007AFF" : "#ccc"} 
+              />
             </TouchableOpacity>
           )}
           <View style={[styles.exportInfo, selectionMode && styles.exportInfoWithCheckbox]}>
@@ -895,129 +1048,6 @@ export default function ExportsScreen() {
         )}
       </View>
 
-      {/* Filter Dropdown - Expands Below Header */}
-      {isFilterExpanded && (
-        <View style={[styles.filterDropdown, isDark && styles.darkFilterDropdown]}>
-          <ScrollView style={styles.filterDropdownContent} showsVerticalScrollIndicator={false}>
-            {/* Submission Status Filters */}
-            <View style={styles.filterSection}>
-              <Text style={[styles.filterSectionTitle, isDark && styles.darkText]}>Submission Status</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusFilterScroll}>
-                <View style={styles.filterButtonRow}>
-                  {renderFilterButton('all', 'All')}
-                  {renderFilterButton('submitted', 'Submitted')}
-                  {renderFilterButton('notSubmitted', 'Not Submitted')}
-                </View>
-              </ScrollView>
-            </View>
-
-            {/* Date Filter Section */}
-            <View style={styles.filterSection}>
-              <TouchableOpacity
-                style={[
-                  styles.filterTypeHeader,
-                  isDateExpanded && styles.filterTypeHeaderExpanded,
-                  isDark && styles.darkFilterTypeHeader,
-                  isDateExpanded && isDark && styles.darkFilterTypeHeaderExpanded,
-                ]}
-                onPress={() => setIsDateExpanded(!isDateExpanded)}
-              >
-                <View style={styles.filterTypeHeaderContent}>
-                  <View style={[
-                    styles.filterTypeIconContainer,
-                    dateFilter !== 'all' && styles.filterTypeIconContainerActive,
-                    isDark && styles.darkFilterTypeIconContainer,
-                    dateFilter !== 'all' && isDark && styles.darkFilterTypeIconContainerActive,
-                  ]}>
-                    <Ionicons 
-                      name="calendar" 
-                      size={14} 
-                      color={dateFilter !== 'all' ? '#fff' : (isDark ? '#999' : '#666')} 
-                    />
-                  </View>
-                  <View style={styles.filterTypeTextContainer}>
-                    <Text style={[styles.filterSectionTitle, isDark && styles.darkText]}>Date</Text>
-                    {dateFilter !== 'all' && (
-                      <Text style={[styles.filterActiveIndicator, isDark && styles.darkFilterActiveIndicator]}>
-                        {dateFilter === 'today' ? 'Today' :
-                         dateFilter === 'thisWeek' ? 'This Week' :
-                         dateFilter === 'thisMonth' ? 'This Month' :
-                         dateFilter === 'lastMonth' ? 'Last Month' :
-                         dateFilter === 'thisYear' ? 'This Year' : dateFilter}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-                <View style={styles.filterTypeChevronContainer}>
-                  <Ionicons 
-                    name={isDateExpanded ? "chevron-up" : "chevron-down"} 
-                    size={16} 
-                    color={isDark ? '#999' : '#666'} 
-                  />
-                </View>
-              </TouchableOpacity>
-              
-              {isDateExpanded && (
-                <View style={[
-                  styles.expandedContentContainer,
-                  isDark && styles.darkExpandedContentContainer,
-                ]}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.secondaryFilterScroll}>
-                    {renderDateFilterButton('all', 'All Time', dateFilter === 'all')}
-                    {renderDateFilterButton('today', 'Today', dateFilter === 'today')}
-                    {renderDateFilterButton('thisWeek', 'This Week', dateFilter === 'thisWeek')}
-                    {renderDateFilterButton('thisMonth', 'This Month', dateFilter === 'thisMonth')}
-                    {renderDateFilterButton('lastMonth', 'Last Month', dateFilter === 'lastMonth')}
-                    {renderDateFilterButton('thisYear', 'This Year', dateFilter === 'thisYear')}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
-
-            {/* Clear All Button */}
-            {(submissionStatusFilter !== 'all' || dateFilter !== 'all') && (
-              <TouchableOpacity
-                style={[styles.clearAllButton, isDark && styles.darkClearAllButton]}
-                onPress={() => {
-                  setSubmissionStatusFilter('all');
-                  setDateFilter('all');
-                }}
-              >
-                <Ionicons name="refresh" size={16} color={isDark ? '#fff' : '#007AFF'} />
-                <Text style={[styles.clearAllButtonText, isDark && styles.darkClearAllButtonText]}>
-                  Clear All Filters
-                </Text>
-              </TouchableOpacity>
-            )}
-          </ScrollView>
-        </View>
-      )}
-
-      {selectionMode && selectedBatchIds.size > 0 && (
-        <View style={[styles.selectionBar, isDark && styles.darkSelectionBar]}>
-          <TouchableOpacity
-            style={styles.selectionButton}
-            onPress={() => {
-              const filtered = getFilteredBatches();
-              if (selectedBatchIds.size === filtered.length) {
-                handleDeselectAll();
-              } else {
-                handleSelectAll();
-              }
-            }}
-          >
-            <Text style={[styles.selectionButtonText, isDark && styles.selectionButtonTextDark]}>
-              {(() => {
-                const filtered = getFilteredBatches();
-                return selectedBatchIds.size === filtered.length ? 'Deselect All' : 'Select All';
-              })()}
-            </Text>
-          </TouchableOpacity>
-          <Text style={[styles.selectionCount, isDark && styles.selectionCountDark]}>
-            {selectedBatchIds.size} selected
-          </Text>
-        </View>
-      )}
       <FlatList
         data={filteredBatches}
         renderItem={renderExportItem}
@@ -1033,6 +1063,7 @@ export default function ExportsScreen() {
           />
         }
         ListEmptyComponent={renderEmptyState}
+        ListHeaderComponent={renderListHeader}
       />
       <Modal
         visible={showEditModal}
@@ -1444,7 +1475,6 @@ const styles = StyleSheet.create({
   filterDropdown: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    marginHorizontal: 16,
     marginTop: 8,
     marginBottom: 8,
     shadowColor: '#000',
@@ -1474,9 +1504,15 @@ const styles = StyleSheet.create({
     marginHorizontal: -16,
     paddingHorizontal: 16,
   },
+  statusFilterScrollContent: {
+    paddingRight: 16,
+  },
   secondaryFilterScroll: {
     marginHorizontal: -16,
     paddingHorizontal: 16,
+  },
+  secondaryFilterScrollContent: {
+    paddingRight: 16,
   },
   filterButtonRow: {
     flexDirection: 'row',
@@ -1648,35 +1684,30 @@ const styles = StyleSheet.create({
   headerCancelTextDark: {
     color: '#0A84FF',
   },
+  selectionCard: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
   selectedCard: {
-    borderWidth: 2,
+    backgroundColor: '#f0f8ff',
+    shadowColor: '#007AFF',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  darkSelectedCard: {
+    backgroundColor: '#1a1a2e',
     borderColor: '#007AFF',
   },
-  checkboxContainer: {
+  selectionButton: {
     marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#ccc',
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxSelected: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
-  },
-  darkCheckbox: {
-    borderColor: '#666',
-  },
-  darkCheckboxSelected: {
-    backgroundColor: '#0A84FF',
-    borderColor: '#0A84FF',
+    padding: 4,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
   },
   exportInfoWithCheckbox: {
     flex: 1,
@@ -1685,7 +1716,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#fff',
     borderBottomWidth: 1,

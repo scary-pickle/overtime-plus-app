@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { Profile, ExportBatch } from '../../types';
 import { getDelegateForDepartment } from '../data/hospitalDepartments';
 import { createScopedLogger } from '../utils/logger';
+import { isCloudURL, downloadPDFFromStorage } from '../storage/pdfStorage';
 
 const debug = createScopedLogger('emailService');
 
@@ -194,8 +195,54 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
       };
     }
     
+    // Ensure PDF is a local file path (expo-mail-composer requires local paths)
+    let localPdfUri = pdfUri;
+    if (isCloudURL(pdfUri)) {
+      try {
+        // Extract batchId from exportBatch or from URI
+        const batchId = exportBatch?.id || pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
+        debug.log('Downloading PDF from cloud storage for email attachment...');
+        localPdfUri = await downloadPDFFromStorage(pdfUri, batchId);
+        debug.log('PDF downloaded to local path:', localPdfUri);
+      } catch (downloadError) {
+        debug.error('Failed to download PDF for email attachment:', downloadError);
+        return {
+          success: false,
+          error: 'Failed to download PDF file. Please check your connection and try again.'
+        };
+      }
+    }
+    
+    // Ensure the file path is in the correct format and file exists
+    try {
+      const { getInfoAsync } = await import('expo-file-system/legacy');
+      // Normalize path - ensure it has file:// prefix if it's a local path without it
+      // Paths.cache.uri from expo-file-system should already have file://, but handle both cases
+      if (!localPdfUri.startsWith('file://') && !localPdfUri.startsWith('http://') && !localPdfUri.startsWith('https://')) {
+        // If it starts with /, add file://, otherwise add file:///
+        localPdfUri = localPdfUri.startsWith('/') ? `file://${localPdfUri}` : `file:///${localPdfUri}`;
+      }
+      
+      // Verify file exists (getInfoAsync handles paths with or without file:// prefix)
+      const fileInfo = await getInfoAsync(localPdfUri);
+      if (!fileInfo.exists) {
+        debug.error('PDF file does not exist at path:', localPdfUri);
+        return {
+          success: false,
+          error: 'PDF file not found. Please try regenerating the export.'
+        };
+      }
+      debug.log('PDF file verified, exists:', fileInfo.exists, 'size:', fileInfo.size);
+    } catch (fileCheckError) {
+      debug.error('Failed to verify PDF file:', fileCheckError);
+      return {
+        success: false,
+        error: 'Failed to access PDF file. Please try regenerating the export.'
+      };
+    }
+    
     // Compose email
-    const emailData = composeAVACEmail(profile, pdfUri, recipient.email, recipient.name, exportBatch);
+    const emailData = composeAVACEmail(profile, localPdfUri, recipient.email, recipient.name, exportBatch);
     
     // Open email composer (always opens Apple Mail)
     const result = await MailComposer.composeAsync({
@@ -231,9 +278,18 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
     
   } catch (error) {
     debug.error('Error sending AVAC email:', error);
+    // Handle different error types - the Babel runtime error might not be a standard Error
+    let errorMessage = 'An unexpected error occurred';
+    if (error instanceof Error) {
+      errorMessage = error.message;
+    } else if (error && typeof error === 'object' && 'message' in error) {
+      errorMessage = String(error.message);
+    } else if (error && typeof error === 'string') {
+      errorMessage = error;
+    }
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+      error: errorMessage
     };
   }
 }

@@ -43,7 +43,7 @@ export default function LogScreen() {
   const [isCategoryExpanded, setIsCategoryExpanded] = useState(false);
   const [isTimeExpanded, setIsTimeExpanded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedLogs, setSelectedLogs] = useState<string[]>([]);
+  const [selectedLogs, setSelectedLogs] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [menuAnimation] = useState(new Animated.Value(0));
@@ -141,8 +141,13 @@ export default function LogScreen() {
     );
   };
 
-  const handleMarkReady = (log: OvertimeLog) => {
-    markReady(log.id);
+  const handleMarkReady = async (log: OvertimeLog) => {
+    try {
+      await markReady(log.id);
+    } catch (error) {
+      // Automatically navigate to edit screen if validation fails
+      handleEditLog(log);
+    }
   };
 
   const handleExportReady = () => {
@@ -176,55 +181,109 @@ export default function LogScreen() {
   };
 
   const handleToggleSelection = (logId: string) => {
-    if (selectedLogs.includes(logId)) {
-      setSelectedLogs(selectedLogs.filter(id => id !== logId));
-    } else {
-      setSelectedLogs([...selectedLogs, logId]);
-    }
+    setSelectedLogs(prev => {
+      const next = new Set(prev);
+      if (next.has(logId)) {
+        next.delete(logId);
+      } else {
+        next.add(logId);
+      }
+      return next;
+    });
   };
 
   const handleSelectAll = () => {
-    const exportedLogs = getExportedLogs();
-    if (selectedLogs.length === exportedLogs.length) {
-      setSelectedLogs([]);
+    const filtered = getFilteredLogs();
+    const selectableLogs = filtered.filter(log => log.status === 'ready' || log.status === 'exported');
+    if (selectedLogs.size === selectableLogs.length) {
+      setSelectedLogs(new Set());
     } else {
-      setSelectedLogs(exportedLogs.map(log => log.id));
+      setSelectedLogs(new Set(selectableLogs.map(log => log.id)));
     }
   };
 
-  const handleReExportSelected = () => {
-    if (selectedLogs.length === 0) {
-      Alert.alert('No Selection', 'Please select logs to re-export.');
+  const handleExportSelected = async () => {
+    if (selectedLogs.size === 0) {
+      Alert.alert('No Selection', 'Please select logs to export.');
       return;
     }
 
-    Alert.alert(
-      'Re-export Selected Logs',
-      `Are you sure you want to re-export ${selectedLogs.length} log${selectedLogs.length !== 1 ? 's' : ''}? This will reset them to ready status and create a new export.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Re-export',
-          onPress: async () => {
-            try {
-              // Reset selected logs to ready status
-              await resetLogsToReady(selectedLogs);
-              setSelectedLogs([]);
-              setIsSelectionMode(false);
-              
-              // Navigate to export preview
-              router.push('/export/preview');
-            } catch (error) {
-              Alert.alert('Error', 'Failed to reset logs. Please try again.');
+    // Check if delegate information is complete
+    if (!profile?.delegateName || !profile?.delegatePosition || !profile?.delegatePhone || !profile?.delegateAreaCode) {
+      Alert.alert(
+        'Delegate Information Required',
+        'Delegate information is required to generate AVAC forms. Please complete your delegate details in your profile.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Go to Profile', 
+            onPress: () => {
+              router.push('/(tabs)/profile');
             }
+          }
+        ]
+      );
+      return;
+    }
+
+    const selectedLogsArray = Array.from(selectedLogs);
+    const selectedLogsData = logs.filter(log => selectedLogsArray.includes(log.id));
+    const readyLogs = selectedLogsData.filter(log => log.status === 'ready');
+    const exportedLogs = selectedLogsData.filter(log => log.status === 'exported');
+
+    // If there are any exported logs, show warning
+    if (exportedLogs.length > 0) {
+      const exportedCount = exportedLogs.length;
+      const readyCount = readyLogs.length;
+      let message = '';
+      
+      if (readyCount > 0 && exportedCount > 0) {
+        message = `You have selected ${readyCount} ready log${readyCount !== 1 ? 's' : ''} and ${exportedCount} already exported log${exportedCount !== 1 ? 's' : ''}. The exported logs will be reset to ready status and re-exported. Are you sure you want to continue?`;
+      } else {
+        message = `You have selected ${exportedCount} already exported log${exportedCount !== 1 ? 's' : ''}. These will be reset to ready status and re-exported. Are you sure you want to continue?`;
+      }
+
+      Alert.alert(
+        'Export Already Exported Logs',
+        message,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: async () => {
+              try {
+                // Reset exported logs to ready status
+                if (exportedLogs.length > 0) {
+                  await resetLogsToReady(exportedLogs.map(log => log.id));
+                }
+                
+                // Navigate to export preview with selected log IDs
+                setSelectedLogs(new Set());
+                setIsSelectionMode(false);
+                router.push({
+                  pathname: '/export/preview',
+                  params: { logIds: selectedLogsArray.join(',') }
+                });
+              } catch (error) {
+                Alert.alert('Error', 'Failed to reset logs. Please try again.');
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    } else {
+      // Only ready logs, export directly
+      setSelectedLogs(new Set());
+      setIsSelectionMode(false);
+      router.push({
+        pathname: '/export/preview',
+        params: { logIds: selectedLogsArray.join(',') }
+      });
+    }
   };
 
   const handleCancelSelection = () => {
-    setSelectedLogs([]);
+    setSelectedLogs(new Set());
     setIsSelectionMode(false);
   };
 
@@ -237,19 +296,19 @@ export default function LogScreen() {
       setFilterStatus(status);
     }
     // Reset selection when changing filters
-    setSelectedLogs([]);
+    setSelectedLogs(new Set());
     setIsSelectionMode(false);
   };
 
   const handleCategoryFilterChange = (category: string) => {
     setSelectedCategory(category);
-    setSelectedLogs([]);
+    setSelectedLogs(new Set());
     setIsSelectionMode(false);
   };
 
   const handleTimeFilterChange = (timeFilter: TimeFilter) => {
     setSelectedTimeFilter(timeFilter);
-    setSelectedLogs([]);
+    setSelectedLogs(new Set());
     setIsSelectionMode(false);
   };
 
@@ -263,15 +322,20 @@ export default function LogScreen() {
       setIsTimeExpanded(!isTimeExpanded);
       setIsCategoryExpanded(false);
     }
-    setSelectedLogs([]);
+    setSelectedLogs(new Set());
     setIsSelectionMode(false);
   };
 
   const getFilteredLogs = () => {
     let filtered = logs;
 
-    // Apply status filter
-    if (filterStatus !== 'all') {
+    // In selection mode, hide drafts and only show ready/exported
+    if (isSelectionMode) {
+      filtered = filtered.filter(log => log.status === 'ready' || log.status === 'exported');
+    }
+
+    // Apply status filter (but not in selection mode)
+    if (!isSelectionMode && filterStatus !== 'all') {
       filtered = filtered.filter(log => log.status === filterStatus);
     }
 
@@ -340,126 +404,8 @@ export default function LogScreen() {
   const statusCounts = getStatusCounts();
   const filteredLogs = getFilteredLogs();
 
-  const renderLogItem = ({ item }: { item: OvertimeLog }) => {
-    const isSelected = selectedLogs.includes(item.id);
-    const isExported = item.status === 'exported';
-    
-    return (
-      <LogCard
-        log={item}
-        onPress={() => {
-          if (isSelectionMode && isExported) {
-            handleToggleSelection(item.id);
-          } else {
-            handleEditLog(item);
-          }
-        }}
-        onEdit={() => handleEditLog(item)}
-        onDelete={() => handleDeleteLog(item)}
-        onMarkReady={() => handleMarkReady(item)}
-        showActions={!isSelectionMode}
-        isSelected={isSelected}
-        showSelection={isSelectionMode && isExported}
-        onToggleSelection={() => handleToggleSelection(item.id)}
-        isDark={isDark}
-      />
-    );
-  };
-
-  const renderFilterButton = (status: FilterStatus, label: string) => {
-    const isActive = filterStatus === status && filterStatus !== 'all';
-    return (
-      <TouchableOpacity
-        style={[
-          styles.filterButton,
-          isActive && styles.activeFilterButton,
-          isDark && styles.darkFilterButton,
-          isActive && isDark && styles.darkActiveFilterButton,
-        ]}
-        onPress={() => handleFilterChange(status)}
-      >
-        <Text
-          style={[
-            styles.filterButtonText,
-            isActive && styles.activeFilterButtonText,
-            isDark && styles.darkFilterButtonText,
-            isActive && isDark && styles.darkActiveFilterButtonText,
-          ]}
-        >
-          {label} ({statusCounts[status]})
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderSecondaryFilterButton = (value: string, label: string, isActive: boolean) => (
-    <TouchableOpacity
-      style={[
-        styles.secondaryFilterButton,
-        isActive && styles.activeSecondaryFilterButton,
-        isDark && styles.darkSecondaryFilterButton,
-        isActive && isDark && styles.darkActiveSecondaryFilterButton,
-      ]}
-      onPress={() => {
-        if (filterType === 'category') {
-          handleCategoryFilterChange(value);
-        } else {
-          handleTimeFilterChange(value as TimeFilter);
-        }
-      }}
-    >
-      <Text
-        style={[
-          styles.secondaryFilterButtonText,
-          isActive && styles.activeSecondaryFilterButtonText,
-          isDark && styles.darkSecondaryFilterButtonText,
-          isActive && isDark && styles.darkActiveSecondaryFilterButtonText,
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-
-  // Show empty state only if not loading and logs are empty
-  if (!isLoading && logs.length === 0) {
-    return (
-      <EmptyState
-        title="No Overtime Logs"
-        description="Start tracking your overtime by creating your first log."
-        actionText="Add First Log"
-        onAction={handleAddLog}
-        icon="📝"
-      />
-    );
-  }
-
-  const uniqueCategories = getUniqueCategories();
-
-  return (
-    <View style={[styles.container, isDark && styles.darkContainer]}>
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <Text style={[styles.title, isDark && styles.darkText]}>
-          Logs
-        </Text>
-        <TouchableOpacity
-          onPress={handleToggleFilter}
-          style={[styles.filterButton, isDark && styles.darkFilterButton]}
-        >
-          <Ionicons 
-            name={isFilterExpanded ? "chevron-up" : "options"} 
-            size={18} 
-            color={(filterStatus !== 'all' || selectedCategory !== 'all' || selectedTimeFilter !== 'all') ? '#007AFF' : (isDark ? '#999' : '#666')} 
-          />
-          {((filterStatus !== 'all' || selectedCategory !== 'all' || selectedTimeFilter !== 'all')) && (
-            <View style={styles.filterButtonBadge}>
-              <View style={styles.filterButtonDot} />
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
+  const renderListHeader = () => (
+    <>
       {/* Filter Dropdown - Expands Below Header */}
       {isFilterExpanded && (
         <View style={[styles.filterDropdown, isDark && styles.darkFilterDropdown]}>
@@ -630,8 +576,8 @@ export default function LogScreen() {
         </View>
       )}
 
-      {/* Export Section */}
-      {getReadyLogs().length > 0 && (
+      {/* Export Section - Only show when not in selection mode */}
+      {!isSelectionMode && getReadyLogs().length > 0 && (
         <View style={[styles.exportContainer, isDark && styles.darkExportContainer]}>
           <View style={styles.exportInfo}>
             <Text style={[styles.exportTitle, isDark && styles.darkText]}>
@@ -651,8 +597,50 @@ export default function LogScreen() {
         </View>
       )}
 
-      {/* Re-export Section for Exported Logs */}
-      {filterStatus === 'exported' && getExportedLogs().length > 0 && (
+      {/* Export Section for Selection Mode */}
+      {isSelectionMode && selectedLogs.size > 0 && (
+        <View style={[styles.exportContainer, isDark && styles.darkExportContainer]}>
+          <View style={styles.exportInfo}>
+            <Text style={[styles.exportTitle, isDark && styles.darkText]}>
+              Export Selected Logs
+            </Text>
+            <Text style={[styles.exportSubtitle, isDark && styles.darkText]}>
+              {selectedLogs.size} log{selectedLogs.size !== 1 ? 's' : ''} selected for export
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.exportButton, isDark && styles.darkExportButton]}
+            onPress={handleExportSelected}
+          >
+            <Ionicons name="document-text" size={20} color="#fff" />
+            <Text style={styles.exportButtonText}>Export PDF</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Selection Mode Info Bar */}
+      {isSelectionMode && (
+        <View style={[styles.selectionBar, isDark && styles.darkSelectionBar]}>
+          <TouchableOpacity
+            style={styles.selectionButton}
+            onPress={handleSelectAll}
+          >
+            <Text style={[styles.selectionButtonText, isDark && styles.selectionButtonTextDark]}>
+              {(() => {
+                const filtered = getFilteredLogs();
+                const selectableLogs = filtered.filter(log => log.status === 'ready' || log.status === 'exported');
+                return selectedLogs.size === selectableLogs.length ? 'Deselect All' : 'Select All';
+              })()}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.selectionCount, isDark && styles.selectionCountDark]}>
+            {selectedLogs.size} selected
+          </Text>
+        </View>
+      )}
+
+      {/* Re-export Section for Exported Logs - Only show when not in selection mode */}
+      {!isSelectionMode && filterStatus === 'exported' && getExportedLogs().length > 0 && (
         <View style={[styles.reExportContainer, isDark && styles.darkReExportContainer]}>
           {!isSelectionMode ? (
             <View style={styles.reExportInfo}>
@@ -666,7 +654,7 @@ export default function LogScreen() {
           ) : (
             <View style={styles.selectionInfo}>
               <Text style={[styles.selectionTitle, isDark && styles.darkText]}>
-                {selectedLogs.length} of {getExportedLogs().length} selected
+                {selectedLogs.size} of {getExportedLogs().length} selected
               </Text>
               <Text style={[styles.selectionSubtitle, isDark && styles.darkText]}>
                 Tap logs to select them for re-export
@@ -694,7 +682,7 @@ export default function LogScreen() {
               <View style={styles.selectionModeControls}>
                 <View style={styles.selectionInfo}>
                   <Text style={[styles.selectionCounter, isDark && styles.darkSelectionCounter]}>
-                    {selectedLogs.length} of {getExportedLogs().length} selected
+                    {selectedLogs.size} of {getExportedLogs().length} selected
                   </Text>
                 </View>
                 
@@ -705,18 +693,18 @@ export default function LogScreen() {
                   >
                     <Ionicons name="checkmark-done" size={16} color="#fff" />
                     <Text style={styles.actionButtonText}>
-                      {selectedLogs.length === getExportedLogs().length ? 'Clear All' : 'Select All'}
+                      {selectedLogs.size === getExportedLogs().length ? 'Clear All' : 'Select All'}
                     </Text>
                   </TouchableOpacity>
                   
-                  {selectedLogs.length > 0 && (
+                  {selectedLogs.size > 0 && (
                     <TouchableOpacity
                       style={[styles.actionButton, styles.reExportButton]}
-                      onPress={handleReExportSelected}
+                      onPress={handleExportSelected}
                     >
                       <Ionicons name="refresh" size={16} color="#fff" />
                       <Text style={styles.actionButtonText}>
-                        Re-export ({selectedLogs.length})
+                        Re-export ({selectedLogs.size})
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -734,6 +722,148 @@ export default function LogScreen() {
           </View>
         </View>
       )}
+    </>
+  );
+
+  const renderLogItem = ({ item }: { item: OvertimeLog }) => {
+    const isSelected = selectedLogs.has(item.id);
+    
+    return (
+      <LogCard
+        log={item}
+        onPress={() => {
+          if (isSelectionMode) {
+            handleToggleSelection(item.id);
+          } else {
+            handleEditLog(item);
+          }
+        }}
+        onEdit={() => handleEditLog(item)}
+        onDelete={() => handleDeleteLog(item)}
+        onMarkReady={() => handleMarkReady(item)}
+        showActions={!isSelectionMode}
+        isSelected={isSelected}
+        showSelection={isSelectionMode}
+        onToggleSelection={() => handleToggleSelection(item.id)}
+        isDark={isDark}
+      />
+    );
+  };
+
+  const renderFilterButton = (status: FilterStatus, label: string) => {
+    const isActive = filterStatus === status && filterStatus !== 'all';
+    return (
+      <TouchableOpacity
+        style={[
+          styles.filterButton,
+          isActive && styles.activeFilterButton,
+          isDark && styles.darkFilterButton,
+          isActive && isDark && styles.darkActiveFilterButton,
+        ]}
+        onPress={() => handleFilterChange(status)}
+      >
+        <Text
+          style={[
+            styles.filterButtonText,
+            isActive && styles.activeFilterButtonText,
+            isDark && styles.darkFilterButtonText,
+            isActive && isDark && styles.darkActiveFilterButtonText,
+          ]}
+        >
+          {label} ({statusCounts[status]})
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderSecondaryFilterButton = (value: string, label: string, isActive: boolean) => (
+    <TouchableOpacity
+      style={[
+        styles.secondaryFilterButton,
+        isActive && styles.activeSecondaryFilterButton,
+        isDark && styles.darkSecondaryFilterButton,
+        isActive && isDark && styles.darkActiveSecondaryFilterButton,
+      ]}
+      onPress={() => {
+        if (filterType === 'category') {
+          handleCategoryFilterChange(value);
+        } else {
+          handleTimeFilterChange(value as TimeFilter);
+        }
+      }}
+    >
+      <Text
+        style={[
+          styles.secondaryFilterButtonText,
+          isActive && styles.activeSecondaryFilterButtonText,
+          isDark && styles.darkSecondaryFilterButtonText,
+          isActive && isDark && styles.darkActiveSecondaryFilterButtonText,
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // Show empty state only if not loading and logs are empty
+  if (!isLoading && logs.length === 0) {
+    return (
+      <EmptyState
+        title="No Overtime Logs"
+        description="Start tracking your overtime by creating your first log."
+        actionText="Add First Log"
+        onAction={handleAddLog}
+        icon="📝"
+      />
+    );
+  }
+
+  const uniqueCategories = getUniqueCategories();
+
+  return (
+    <View style={[styles.container, isDark && styles.darkContainer]}>
+      {/* Header */}
+      <View style={styles.headerContainer}>
+        <Text style={[styles.title, isDark && styles.darkText]}>
+          Logs
+        </Text>
+        {isSelectionMode ? (
+          <TouchableOpacity
+            onPress={handleCancelSelection}
+            style={[styles.filterButton, isDark && styles.darkFilterButton]}
+          >
+            <Ionicons 
+              name="close" 
+              size={18} 
+              color={isDark ? '#999' : '#666'} 
+            />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.normalModeButtons}>
+            <TouchableOpacity
+              onPress={() => setIsSelectionMode(true)}
+              style={[styles.filterButton, isDark && styles.darkFilterButton]}
+            >
+              <Ionicons name="checkbox-outline" size={18} color={isDark ? '#999' : '#666'} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleToggleFilter}
+              style={[styles.filterButton, isDark && styles.darkFilterButton]}
+            >
+              <Ionicons 
+                name={isFilterExpanded ? "chevron-up" : "options"} 
+                size={18} 
+                color={(filterStatus !== 'all' || selectedCategory !== 'all' || selectedTimeFilter !== 'all') ? '#007AFF' : (isDark ? '#999' : '#666')} 
+              />
+              {((filterStatus !== 'all' || selectedCategory !== 'all' || selectedTimeFilter !== 'all')) && (
+                <View style={styles.filterButtonBadge}>
+                  <View style={styles.filterButtonDot} />
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
 
       {/* Logs List */}
       <FlatList
@@ -744,6 +874,7 @@ export default function LogScreen() {
         onRefresh={handleRefresh}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        ListHeaderComponent={renderListHeader}
       />
 
       {/* Add Button */}
@@ -1025,7 +1156,8 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   listContainer: {
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 8,
     paddingHorizontal: 16,
   },
   addButton: {
@@ -1087,7 +1219,6 @@ const styles = StyleSheet.create({
   },
   exportContainer: {
     backgroundColor: '#e8f5e8',
-    marginHorizontal: 16,
     marginVertical: 8,
     borderRadius: 12,
     padding: 16,
@@ -1133,7 +1264,6 @@ const styles = StyleSheet.create({
   },
   reExportContainer: {
     backgroundColor: '#fff3cd',
-    marginHorizontal: 16,
     marginVertical: 8,
     borderRadius: 12,
     padding: 16,
@@ -1254,7 +1384,6 @@ const styles = StyleSheet.create({
   filterDropdown: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    marginHorizontal: 16,
     marginTop: 8,
     marginBottom: 8,
     shadowColor: '#000',
@@ -1377,5 +1506,44 @@ const styles = StyleSheet.create({
   },
   darkClearAllButtonText: {
     color: '#007AFF',
+  },
+  // Selection Mode Styles
+  normalModeButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  selectionBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  darkSelectionBar: {
+    backgroundColor: '#1c1c1e',
+    borderBottomColor: '#333',
+  },
+  selectionButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  selectionButtonText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  selectionButtonTextDark: {
+    color: '#0A84FF',
+  },
+  selectionCount: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+  },
+  selectionCountDark: {
+    color: '#999',
   },
 });

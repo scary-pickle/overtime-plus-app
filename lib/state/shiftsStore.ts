@@ -33,12 +33,12 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   error: null,
 
   loadShifts: async (userId?: string | null) => {
-    devLog('🔄 ShiftsStore: Loading shifts from database...', { userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous' });
+    devLog.debug('🔄 ShiftsStore: Loading shifts from database...', { userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous' });
     set({ isLoading: true, error: null });
     try {
       // Load from local SQLite first (fast)
       const shifts = await database.getUsualShifts(userId);
-      devLog('✅ ShiftsStore: Loaded shifts successfully:', {
+      devLog.debug('✅ ShiftsStore: Loaded shifts successfully:', {
         count: shifts.length,
         shifts: shifts.map(s => ({ id: s.id, label: s.label, day: s.dayOfWeek, type: s.type }))
       });
@@ -52,7 +52,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       if (userId) {
         shiftsSync.downloadShifts(userId).then(remoteShifts => {
           if (remoteShifts.length > 0 || shifts.length > 0) {
-            devLog('[shiftsStore.loadShifts] Syncing shifts from Supabase in background', {
+            devLog.debug('[shiftsStore.loadShifts] Syncing shifts from Supabase in background', {
               remoteCount: remoteShifts.length,
               localCount: shifts.length,
             });
@@ -137,7 +137,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   addShift: async (shift: UsualShift, userId?: string | null) => {
     // Get userId from authStore if not provided
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-    devLog('➕ ShiftsStore: Adding new shift:', {
+    devLog.debug('➕ ShiftsStore: Adding new shift:', {
       id: shift.id,
       label: shift.label,
       day: shift.dayOfWeek,
@@ -150,7 +150,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       // Save to local SQLite first
       await database.createUsualShift(shift, finalUserId);
       const { shifts } = get();
-      devLog('✅ ShiftsStore: Shift added successfully');
+      devLog.debug('✅ ShiftsStore: Shift added successfully');
       set({ 
         shifts: [...shifts, shift], 
         isLoading: false,
@@ -183,7 +183,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   updateShift: async (shift: UsualShift, userId?: string | null) => {
     // Get userId from authStore if not provided
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-    devLog('✏️ ShiftsStore: Updating shift:', {
+    devLog.debug('✏️ ShiftsStore: Updating shift:', {
       id: shift.id,
       label: shift.label,
       day: shift.dayOfWeek,
@@ -196,7 +196,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       await database.updateUsualShift(shift, finalUserId);
       const { shifts } = get();
       const updatedShifts = shifts.map(s => s.id === shift.id ? shift : s);
-      devLog('✅ ShiftsStore: Shift updated successfully');
+      devLog.debug('✅ ShiftsStore: Shift updated successfully');
       set({ 
         shifts: updatedShifts, 
         isLoading: false,
@@ -229,14 +229,14 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
   deleteShift: async (id: string, userId?: string | null) => {
     // Get userId from authStore if not provided
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-    devLog('🗑️ ShiftsStore: Deleting shift:', { id, userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous' });
+    devLog.debug('🗑️ ShiftsStore: Deleting shift:', { id, userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous' });
     set({ isLoading: true, error: null });
     try {
       // Delete from local SQLite first
       await database.deleteUsualShift(id, finalUserId);
       const { shifts } = get();
       const filteredShifts = shifts.filter(s => s.id !== id);
-      devLog('✅ ShiftsStore: Shift deleted successfully');
+      devLog.debug('✅ ShiftsStore: Shift deleted successfully');
       set({ 
         shifts: filteredShifts, 
         isLoading: false,

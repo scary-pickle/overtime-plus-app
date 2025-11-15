@@ -82,7 +82,8 @@ export default function ShiftsScreen() {
     // Toggle selection: if clicking the same date, clear it; otherwise set new date
     if (selectedDate === date) {
       setSelectedDate(null);
-    } else if (dayShifts.length > 0) {
+    } else {
+      // Allow selecting any date, even if no shifts (useful for "Go to Today")
       setSelectedDate(date);
     }
   };
@@ -208,7 +209,11 @@ export default function ShiftsScreen() {
   const nextShiftId = nextShifts.length > 0 ? nextShifts[0].shift.id : null;
 
   const renderShiftItem = ({ item }: { item: UsualShift }) => {
-    const nextOccurrence = getNextShiftOccurrence(item);
+    // When a date is selected, show that date as the occurrence (since we're filtering for that date)
+    // Otherwise, calculate the next occurrence from today
+    const nextOccurrence = selectedDate 
+      ? selectedDate 
+      : getNextShiftOccurrence(item);
     const isNextShift = nextShiftId === item.id;
     
     return (

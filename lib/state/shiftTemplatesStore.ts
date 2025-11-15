@@ -26,12 +26,12 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
   error: null,
 
   loadTemplates: async (userId?: string | null) => {
-    devLog('🔄 ShiftTemplatesStore: Loading templates from database...', { userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous' });
+    devLog.debug('🔄 ShiftTemplatesStore: Loading templates from database...', { userId: userId ? `${userId.substring(0, 8)}...` : 'anonymous' });
     set({ isLoading: true, error: null });
     try {
       // Load from local SQLite first (fast)
       const templates = await database.getShiftTemplates(userId);
-      devLog('✅ ShiftTemplatesStore: Loaded templates successfully:', {
+      devLog.debug('✅ ShiftTemplatesStore: Loaded templates successfully:', {
         count: templates.length,
         templates: templates.map(t => ({ id: t.id, label: t.label, times: `${t.rosteredStart}-${t.rosteredFinish}` }))
       });
@@ -45,7 +45,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
       if (userId) {
         shiftTemplatesSync.downloadTemplates(userId).then(remoteTemplates => {
           if (remoteTemplates.length > 0 || templates.length > 0) {
-            devLog('[shiftTemplatesStore.loadTemplates] Syncing templates from Supabase in background', {
+            devLog.debug('[shiftTemplatesStore.loadTemplates] Syncing templates from Supabase in background', {
               remoteCount: remoteTemplates.length,
               localCount: templates.length,
             });
@@ -130,7 +130,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
   addTemplate: async (template: ShiftTemplate, userId?: string | null) => {
     // Get userId from authStore if not provided
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-    devLog('➕ ShiftTemplatesStore: Adding new template:', {
+    devLog.debug('➕ ShiftTemplatesStore: Adding new template:', {
       id: template.id,
       label: template.label,
       times: `${template.rosteredStart}-${template.rosteredFinish}`,
@@ -141,7 +141,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
       // Save to local SQLite first
       await database.createShiftTemplate(template, finalUserId);
       const { templates } = get();
-      devLog('✅ ShiftTemplatesStore: Template added successfully');
+      devLog.debug('✅ ShiftTemplatesStore: Template added successfully');
       set({ 
         templates: [...templates, template], 
         isLoading: false,
@@ -174,7 +174,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
   updateTemplate: async (template: ShiftTemplate, userId?: string | null) => {
     // Get userId from authStore if not provided
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-    devLog('✏️ ShiftTemplatesStore: Updating template:', {
+    devLog.debug('✏️ ShiftTemplatesStore: Updating template:', {
       id: template.id,
       label: template.label,
       userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous'
@@ -185,7 +185,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
       await database.updateShiftTemplate(template, finalUserId);
       const { templates } = get();
       const updatedTemplates = templates.map(t => t.id === template.id ? template : t);
-      devLog('✅ ShiftTemplatesStore: Template updated successfully');
+      devLog.debug('✅ ShiftTemplatesStore: Template updated successfully');
       set({ 
         templates: updatedTemplates, 
         isLoading: false,
@@ -218,14 +218,14 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
   deleteTemplate: async (id: string, userId?: string | null) => {
     // Get userId from authStore if not provided
     const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-    devLog('🗑️ ShiftTemplatesStore: Deleting template:', { id, userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous' });
+    devLog.debug('🗑️ ShiftTemplatesStore: Deleting template:', { id, userId: finalUserId ? `${finalUserId.substring(0, 8)}...` : 'anonymous' });
     set({ isLoading: true, error: null });
     try {
       // Delete from local SQLite first
       await database.deleteShiftTemplate(id, finalUserId);
       const { templates } = get();
       const filteredTemplates = templates.filter(t => t.id !== id);
-      devLog('✅ ShiftTemplatesStore: Template deleted successfully');
+      devLog.debug('✅ ShiftTemplatesStore: Template deleted successfully');
       set({ 
         templates: filteredTemplates, 
         isLoading: false,

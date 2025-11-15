@@ -5,13 +5,15 @@ import { getCurrentTime, timeToMinutes, formatMinutes } from '../lib/time';
 interface LateBadgeProps {
   rosteredFinish?: string;
   actualFinish?: string;
+  isLogged?: boolean;
   style?: any;
 }
 
-export function LateBadge({ rosteredFinish, actualFinish, style }: LateBadgeProps) {
+export function LateBadge({ rosteredFinish, actualFinish, isLogged = false, style }: LateBadgeProps) {
   const [currentTime, setCurrentTime] = useState(getCurrentTime());
   const [isLate, setIsLate] = useState(false);
   const [lateMinutes, setLateMinutes] = useState(0);
+  const [hasShiftPassed, setHasShiftPassed] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -22,35 +24,58 @@ export function LateBadge({ rosteredFinish, actualFinish, style }: LateBadgeProp
   }, []);
 
   useEffect(() => {
-    if (!rosteredFinish || actualFinish) {
+    if (!rosteredFinish) {
       setIsLate(false);
       setLateMinutes(0);
+      setHasShiftPassed(false);
       return;
     }
 
     const currentMinutes = timeToMinutes(currentTime);
     const rosteredMinutes = timeToMinutes(rosteredFinish);
     
-    if (currentMinutes > rosteredMinutes) {
+    // Check if shift has passed
+    setHasShiftPassed(currentMinutes > rosteredMinutes);
+    
+    // Only show late badge if shift has passed, no actual finish time, and not logged
+    if (actualFinish) {
+      setIsLate(false);
+      setLateMinutes(0);
+      return;
+    }
+
+    if (currentMinutes > rosteredMinutes && !isLogged) {
       setIsLate(true);
       setLateMinutes(currentMinutes - rosteredMinutes);
     } else {
       setIsLate(false);
       setLateMinutes(0);
     }
-  }, [currentTime, rosteredFinish, actualFinish]);
+  }, [currentTime, rosteredFinish, actualFinish, isLogged]);
 
-  if (!isLate || !rosteredFinish) {
-    return null;
+  // Show "Logged" badge if shift has passed and is logged
+  if (hasShiftPassed && isLogged && rosteredFinish) {
+    return (
+      <View style={[styles.badge, styles.loggedBadge, style]}>
+        <Text style={styles.loggedBadgeText}>
+          Logged
+        </Text>
+      </View>
+    );
   }
 
-  return (
-    <View style={[styles.badge, style]}>
-      <Text style={styles.badgeText}>
-        +{formatMinutes(lateMinutes)} late
-      </Text>
-    </View>
-  );
+  // Show late badge if shift has passed, not logged, and no actual finish
+  if (isLate && !isLogged && rosteredFinish) {
+    return (
+      <View style={[styles.badge, style]}>
+        <Text style={styles.badgeText}>
+          +{formatMinutes(lateMinutes)} late
+        </Text>
+      </View>
+    );
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -62,6 +87,14 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   badgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  loggedBadge: {
+    backgroundColor: '#4CAF50',
+  },
+  loggedBadgeText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',

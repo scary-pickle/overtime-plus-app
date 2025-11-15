@@ -20,7 +20,7 @@ import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
 import { NAButton } from '../../components/NAButton';
-import { computeMinutes, formatMinutes, getCurrentDate, getCurrentTime } from '../../lib/time';
+import { computeMinutes, formatMinutes, getCurrentDate, getCurrentTime, isFinishAfterStart } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
 import { OvertimeLog } from '../../types';
 
@@ -159,8 +159,11 @@ export default function EditLogScreen() {
     if (!actualFinish) errors.push('Actual finish time is required');
     if (!category) errors.push('Category is required');
     
-    if (actualStart && actualFinish && actualStart >= actualFinish) {
-      errors.push('Finish time must be after start time');
+    // Validate finish time is after start time (handles midnight crossing)
+    if (actualStart && actualFinish && actualStart !== 'N/A' && actualFinish !== 'N/A') {
+      if (!isFinishAfterStart(actualStart, actualFinish)) {
+        errors.push('Finish time must be after start time');
+      }
     }
     
     return errors;

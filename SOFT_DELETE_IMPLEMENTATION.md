@@ -211,3 +211,6 @@ Possible improvements for future versions:
 5. **Statistics**: Show storage space saved by cleaning up old items
 6. **Export Deleted Items**: Allow exporting list of deleted items for record keeping
 
+
+
+

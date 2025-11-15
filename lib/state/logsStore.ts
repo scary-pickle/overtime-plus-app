@@ -10,6 +10,58 @@ import { createScopedLogger } from '../utils/logger';
 
 const debug = createScopedLogger('logsStore');
 
+/**
+ * Validates that a log has all required fields to be marked as ready
+ * Returns an object with isValid flag and array of missing field messages
+ */
+export function validateLogForReady(log: OvertimeLog): { isValid: boolean; missingFields: string[] } {
+  const missingFields: string[] = [];
+
+  // Check actual start and finish times (must be present and not 'N/A')
+  if (!log.actualStart || log.actualStart === 'N/A') {
+    missingFields.push('Actual start time');
+  }
+  if (!log.actualFinish || log.actualFinish === 'N/A') {
+    missingFields.push('Actual finish time');
+  }
+
+  // Check rostered times - both must be present OR both must be 'N/A'
+  const hasRosteredStart = log.rosteredStart && log.rosteredStart !== 'N/A';
+  const hasRosteredFinish = log.rosteredFinish && log.rosteredFinish !== 'N/A';
+  const rosteredTimesNA = log.rosteredStart === 'N/A' && log.rosteredFinish === 'N/A';
+  const bothRosteredPresent = hasRosteredStart && hasRosteredFinish;
+  
+  // Rostered times are valid if both are present OR both are 'N/A'
+  if (!bothRosteredPresent && !rosteredTimesNA) {
+    // Mixed state - one is N/A and one is not, or both are empty
+    if (log.rosteredStart === 'N/A' || log.rosteredFinish === 'N/A') {
+      missingFields.push('Rostered times must both be filled or both marked as N/A');
+    } else {
+      missingFields.push('Rostered start and finish times (or mark both as N/A)');
+    }
+  }
+
+  // Check category
+  if (!log.category) {
+    missingFields.push('Category');
+  }
+
+  // Check minutesOvertime (must be > 0)
+  if (!log.minutesOvertime || log.minutesOvertime <= 0) {
+    missingFields.push('Overtime calculation (must be greater than 0)');
+  }
+
+  // Check initials
+  if (!log.initials || log.initials.trim().length === 0) {
+    missingFields.push('Employee initials');
+  }
+
+  return {
+    isValid: missingFields.length === 0,
+    missingFields
+  };
+}
+
 interface LogsState {
   logs: OvertimeLog[];
   exportBatches: ExportBatch[];
@@ -404,7 +456,16 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   markReady: async (id: string, userId?: string | null) => {
     const { logs, updateLog } = get();
     const log = logs.find(l => l.id === id);
-    if (!log) return;
+    if (!log) {
+      throw new Error('Log not found');
+    }
+
+    // Validate that the log has all required fields before marking as ready
+    const validation = validateLogForReady(log);
+    if (!validation.isValid) {
+      const errorMessage = `Cannot mark log as ready. Missing required fields:\n• ${validation.missingFields.join('\n• ')}`;
+      throw new Error(errorMessage);
+    }
 
     const updatedLog: OvertimeLog = {
       ...log,

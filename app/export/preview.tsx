@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   TextInput,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getInfoAsync } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +26,7 @@ import InAppPDFViewer from '../../components/InAppPDFViewer';
 
 export default function ExportPreviewScreen() {
   const router = useRouter();
+  const { logIds } = useLocalSearchParams<{ logIds?: string }>();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
@@ -39,6 +40,13 @@ export default function ExportPreviewScreen() {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'summary' | 'preview'>('summary');
   const [customName, setCustomName] = useState('');
+  const [batchLogIds, setBatchLogIds] = useState<string[]>(() => {
+    // Initialize from route params if available
+    if (logIds && logIds.trim()) {
+      return logIds.split(',').map(id => id.trim()).filter(id => id);
+    }
+    return [];
+  });
 
   useEffect(() => {
     generatePDF();
@@ -69,17 +77,48 @@ export default function ExportPreviewScreen() {
       return;
     }
 
-    const readyLogs = getReadyLogs();
+    // Get logs to export - either from params, existing batch, or all ready logs
+    let readyLogs;
+    if (regenerate && exportBatch) {
+      // When regenerating, use stored log IDs or find by exportBatchId
+      if (batchLogIds.length > 0) {
+        readyLogs = logs.filter(log => batchLogIds.includes(log.id));
+      } else {
+        // Fallback: try to find logs by exportBatchId
+        readyLogs = logs.filter(log => log.exportBatchId === exportBatch.id);
+        // If still no logs, try logIds param
+        if (readyLogs.length === 0 && logIds && logIds.trim()) {
+          const logIdArray = logIds.split(',').map(id => id.trim()).filter(id => id);
+          readyLogs = logs.filter(log => logIdArray.includes(log.id));
+        }
+      }
+    } else if (logIds && logIds.trim()) {
+      const logIdArray = logIds.split(',').map(id => id.trim()).filter(id => id);
+      readyLogs = logs.filter(log => logIdArray.includes(log.id) && (log.status === 'ready' || log.status === 'exported'));
+    } else {
+      readyLogs = getReadyLogs();
+    }
+
     if (readyLogs.length === 0) {
-      setError('No ready logs to export');
+      // Only show error if not regenerating (to avoid showing error while typing custom name)
+      if (!regenerate) {
+        setError('No ready logs to export');
+      } else {
+        // When regenerating, if we can't find logs, just return silently
+        // Don't set error or regenerate PDF
+        console.log('[ExportPreview] No logs found for regeneration, skipping');
+        return;
+      }
       return;
     }
 
-    // Validate logs
-    const validation = validateLogsForPDF(readyLogs);
-    if (!validation.valid) {
-      setError(validation.errors.join(', '));
-      return;
+    // Validate logs (skip validation when regenerating to avoid errors while typing)
+    if (!regenerate) {
+      const validation = validateLogsForPDF(readyLogs);
+      if (!validation.valid) {
+        setError(validation.errors.join(', '));
+        return;
+      }
     }
 
     setIsGenerating(true);
@@ -99,8 +138,12 @@ export default function ExportPreviewScreen() {
       const userId = user?.id;
       
       if (!regenerate) {
+        // Store the log IDs used for this batch
+        const logIdsForBatch = readyLogs.map(log => log.id);
+        setBatchLogIds(logIdsForBatch);
+        
         // Create export batch with custom name
-        const batch = await batchExport(readyLogs.map(log => log.id), pdfUri, userId);
+        const batch = await batchExport(logIdsForBatch, pdfUri, userId);
         const batchWithCustomName = { ...batch, customName: customName.trim() || undefined };
         setExportBatch(batchWithCustomName);
         
@@ -150,9 +193,19 @@ export default function ExportPreviewScreen() {
 
   const handleCustomNameChange = (text: string) => {
     setCustomName(text);
-    // Regenerate PDF if it already exists
-    if (pdfUri && exportBatch) {
-      generatePDF(true);
+    // Just update the batch name without regenerating PDF immediately
+    // This avoids errors and is more performant
+    if (exportBatch) {
+      const userId = user?.id;
+      const updatedBatch = { ...exportBatch, customName: text.trim() || undefined };
+      // Update optimistically in state
+      setExportBatch(updatedBatch);
+      // Update in database (fire and forget)
+      updateExportBatch(updatedBatch, userId).catch(err => {
+        console.error('Failed to update batch name:', err);
+        // Revert on error
+        setExportBatch(exportBatch);
+      });
     }
   };
 

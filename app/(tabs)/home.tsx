@@ -80,7 +80,7 @@ export default function HomeScreen() {
       setHasLoggedToday(hasLogged);
       setTodayLoggedShift(hasLogged ? loggedShift : null);
     }
-  }, [hasProfile, shifts, logs]);
+  }, [hasProfile, shifts, logs, currentTime]);
 
   // Check for active shift draft and handle stale drafts
   useEffect(() => {
@@ -306,8 +306,15 @@ export default function HomeScreen() {
           updatedAt: new Date().toISOString(),
         };
         
+        // Check if the draft has rostered times - if not, enable noRosterMode
+        // This allows users to edit rostered times even if they didn't add shifts to shift tracking
+        const hasRosteredTimes = updatedDraft.rosteredStart && 
+                                  updatedDraft.rosteredFinish && 
+                                  updatedDraft.rosteredStart !== 'N/A' && 
+                                  updatedDraft.rosteredFinish !== 'N/A';
+        
         setEndShiftDraft(updatedDraft);
-        setEndShiftNoRosterMode(false);
+        setEndShiftNoRosterMode(!hasRosteredTimes);
         setShowEndShiftModal(true);
       } else {
         // No active draft - check if roster exists
@@ -458,6 +465,7 @@ export default function HomeScreen() {
               </Text>
               <LateBadge 
                 rosteredFinish={todayRoster.rosteredFinish}
+                isLogged={hasLoggedToday}
                 style={styles.lateBadge}
               />
             </View>

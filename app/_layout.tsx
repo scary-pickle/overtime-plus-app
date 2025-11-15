@@ -16,6 +16,7 @@ import { syncQueue } from '../lib/sync/queue';
 import { templatesSync, templateOTAEnabled } from '../lib/supabase';
 import { purgeLegacyAuthStorage } from '../lib/auth/migrateAuthStorage';
 import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -131,14 +132,14 @@ export default function RootLayout() {
   };
 
   return (
-    <>
+    <ErrorBoundary>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       <Stack>
         <Stack.Screen name="auth/welcome" options={{ headerShown: false }} />
-        <Stack.Screen name="auth/sign-in" options={{ title: 'Sign In', headerShown: true }} />
-        <Stack.Screen name="auth/sign-up" options={{ title: 'Create Account', headerShown: true }} />
-        <Stack.Screen name="auth/verify-email" options={{ title: 'Verify Email', headerShown: true }} />
-        <Stack.Screen name="auth/forgot-password" options={{ title: 'Reset Password', headerShown: true }} />
+        <Stack.Screen name="auth/sign-in" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/sign-up" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/verify-email" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/forgot-password" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen 
           name="log/[id]" 
@@ -270,6 +271,6 @@ export default function RootLayout() {
           }} 
         />
       </Stack>
-    </>
+    </ErrorBoundary>
   );
 }

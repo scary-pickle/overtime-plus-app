@@ -119,3 +119,6 @@ The proper fix would be to:
 2. **Long-term:** Report this as a bug to Metro/Expo and fix at the source
 3. **Testing:** Test production builds to ensure assets load correctly without Metro URLs
 
+
+
+

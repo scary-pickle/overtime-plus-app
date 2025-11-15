@@ -70,6 +70,79 @@ For Supabase sync (offline-first by default):
    EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    ```
 
+## Production Deployment
+
+### Prerequisites
+- EAS CLI installed: `npm install -g eas-cli`
+- Expo account with EAS access
+- Production Supabase project configured
+- App Store developer accounts (iOS/Android)
+
+### Quick Start
+
+1. **Link EAS Project:**
+   ```bash
+   eas build:configure
+   ```
+   This will create/link your EAS project and update `app.config.ts`.
+
+2. **Set Production Secrets:**
+   ```bash
+   eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value "https://your-project.supabase.co"
+   eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "your-anon-key"
+   ```
+
+3. **Apply Database Migrations:**
+   - Run all migrations from `supabase/migrations/` in production
+   - Run production SQL scripts:
+     - `supabase/sql/pdf_templates_production.sql`
+     - `supabase/sql/storage_policy_production.sql`
+
+4. **Build for Production:**
+   ```bash
+   # iOS
+   eas build --platform ios --profile production
+   
+   # Android
+   eas build --platform android --profile production
+   ```
+
+5. **Submit to App Stores:**
+   ```bash
+   # iOS
+   eas submit --platform ios --profile production
+   
+   # Android
+   eas submit --platform android --profile production
+   ```
+
+### Detailed Documentation
+
+For comprehensive production deployment guides, see:
+- **Environment Variables:** `PRODUCTION_ENV_CHECKLIST.md`
+- **EAS Setup:** `EAS_SETUP_NOTES.md`
+- **Security Verification:** `SECURITY_VERIFICATION.md`
+- **Database Setup:** `DATABASE_INFRASTRUCTURE_VERIFICATION.md`
+- **Testing:** `PRODUCTION_TESTING_CHECKLIST.md`
+- **App Store Prep:** `APP_STORE_PREPARATION.md`
+- **Full Deployment Guide:** `DEPLOYMENT.md`
+
+### Environment Variables
+
+All required environment variables are documented in `env.example`. For production:
+- Use EAS Secrets (not `.env` file)
+- Set secrets per build profile in `eas.json`
+- Verify all secrets are set: `eas secret:list`
+
+### Security
+
+- ✅ All logging uses secure logger with sensitive data masking
+- ✅ No hardcoded secrets in codebase
+- ✅ Debug logs disabled in production builds
+- ✅ Error boundary catches React errors gracefully
+
+See `SECURITY_VERIFICATION.md` for complete security checklist.
+
 ## Project Structure
 
 ```

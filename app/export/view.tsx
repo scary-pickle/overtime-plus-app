@@ -91,7 +91,7 @@ export default function PDFViewerScreen() {
   };
 
   const handleViewPDF = async () => {
-    const pdfUri = localPdfUri || exportBatch?.pdfUri;
+    let pdfUri = localPdfUri || exportBatch?.pdfUri;
     if (!pdfUri) {
       Alert.alert('Error', 'PDF file not found');
       return;
@@ -99,6 +99,21 @@ export default function PDFViewerScreen() {
 
     setIsLoading(true);
     try {
+      // Ensure PDF is a local file path before sharing
+      if (isCloudURL(pdfUri)) {
+        try {
+          const batchId = exportBatch?.id || pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
+          console.log('[View PDF] Downloading PDF from cloud storage...');
+          pdfUri = await downloadPDFFromStorage(pdfUri, batchId);
+          console.log('[View PDF] PDF downloaded to local path:', pdfUri);
+        } catch (downloadError) {
+          console.error('[View PDF] Failed to download PDF:', downloadError);
+          Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
+          setIsLoading(false);
+          return;
+        }
+      }
+      
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(pdfUri, {
           mimeType: 'application/pdf',
@@ -116,7 +131,7 @@ export default function PDFViewerScreen() {
   };
 
   const handleSharePDF = async () => {
-    const pdfUri = localPdfUri || exportBatch?.pdfUri;
+    let pdfUri = localPdfUri || exportBatch?.pdfUri;
     if (!pdfUri) {
       Alert.alert('Error', 'PDF file not found');
       return;
@@ -124,6 +139,21 @@ export default function PDFViewerScreen() {
 
     setIsLoading(true);
     try {
+      // Ensure PDF is a local file path before sharing
+      if (isCloudURL(pdfUri)) {
+        try {
+          const batchId = exportBatch?.id || pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
+          console.log('[Share PDF] Downloading PDF from cloud storage...');
+          pdfUri = await downloadPDFFromStorage(pdfUri, batchId);
+          console.log('[Share PDF] PDF downloaded to local path:', pdfUri);
+        } catch (downloadError) {
+          console.error('[Share PDF] Failed to download PDF:', downloadError);
+          Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
+          setIsLoading(false);
+          return;
+        }
+      }
+      
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(pdfUri, {
           mimeType: 'application/pdf',
@@ -193,9 +223,25 @@ export default function PDFViewerScreen() {
               text: 'Continue',
               onPress: async () => {
                 try {
+                  // Ensure PDF is a local file path before sharing
+                  let localPdfPath = pdfUri;
+                  if (isCloudURL(pdfUri)) {
+                    try {
+                      const batchId = exportBatch?.id || pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
+                      console.log('[Email Share] Downloading PDF from cloud storage...');
+                      localPdfPath = await downloadPDFFromStorage(pdfUri, batchId);
+                      console.log('[Email Share] PDF downloaded to local path:', localPdfPath);
+                    } catch (downloadError) {
+                      console.error('[Email Share] Failed to download PDF:', downloadError);
+                      Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
+                      setIsSubmitting(false);
+                      return;
+                    }
+                  }
+                  
                   // Open share sheet with PDF attachment
                   if (await Sharing.isAvailableAsync()) {
-                    await Sharing.shareAsync(pdfUri, {
+                    await Sharing.shareAsync(localPdfPath, {
                       mimeType: 'application/pdf',
                       dialogTitle: 'Share AVAC via Email',
                       UTI: 'com.adobe.pdf'

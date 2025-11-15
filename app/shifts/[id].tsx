@@ -227,7 +227,7 @@ export default function EditShiftScreen() {
 
               // 2) Create new record for future with new times
               const newShift: UsualShift = {
-                id: crypto.randomUUID(),
+                id: `shift_${Date.now()}_0`,
                 label,
                 type,
                 weekIndex: type === 'biweekly' ? weekIndex : undefined,
