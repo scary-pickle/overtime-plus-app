@@ -38,7 +38,7 @@ export default function HomeScreen() {
   const hasProfile = !!profile;
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const { shifts, getRosterFor, loadShifts } = useShiftsStore();
-  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, clearActiveShift, markDraftAsStale, loadLogs, hasLoggedShiftForDate, getLoggedShiftForDate } = useLogsStore();
+  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, updateLog, clearActiveShift, markDraftAsStale, loadLogs, hasLoggedShiftForDate, getLoggedShiftForDate } = useLogsStore();
   
   const [currentTime, setCurrentTime] = useState(getCurrentTime());
   const [todayRoster, setTodayRoster] = useState<any>(null);
@@ -317,65 +317,110 @@ export default function HomeScreen() {
         setEndShiftNoRosterMode(!hasRosteredTimes);
         setShowEndShiftModal(true);
       } else {
-        // No active draft - check if roster exists
-        const logInitials = initials || profile?.employeeInitial || '';
+        // No active draft - check if there's an existing draft log for today
+        // Look for drafts that were created from a previous "end shift" action
+        const draftLogs = getDraftLogs();
+        const todayISO = today; // ISO date string (YYYY-MM-DD)
+        const todayDrafts = draftLogs.filter(log => {
+          // Check if draft was created today (based on createdAt)
+          const createdDate = log.createdAt ? new Date(log.createdAt).toISOString().split('T')[0] : null;
+          return log.status === 'draft' && 
+                 log.isActiveShift === false &&
+                 createdDate === todayISO &&
+                 log.actualFinish !== 'N/A'; // Has a finish time, so it was from "end shift"
+        });
         
-        if (roster) {
-          // Roster exists - create draft with actual start = rostered start
-          // Calculate the correct date based on start and finish times
-          const actualStart = roster.rosteredStart || currentActualTime;
-          const shiftStartDate = getShiftStartDate(today, actualStart, currentActualTime);
-          
-          const draftLog: OvertimeLog = {
-            id: `log_${Date.now()}`,
-            date: shiftStartDate, // Use calculated start date, not today
-            rosteredStart: roster.rosteredStart,
-            rosteredFinish: roster.rosteredFinish,
-            actualStart: actualStart,
-            actualFinish: currentActualTime,
-            mealBreakMinutes: roster.mealBreakMinutes || 30,
-            minutesOvertime: 0, // Will be calculated in modal
-            category: 'Overtime',
-            initials: logInitials,
-            status: 'draft',
-            isActiveShift: false,
-            source: 'manual',
-            createdAt: new Date().toISOString(),
+        // Get the most recent draft (sorted by createdAt descending)
+        const existingDraft = todayDrafts.length > 0 
+          ? todayDrafts.sort((a, b) => {
+              const timeA = new Date(a.createdAt).getTime();
+              const timeB = new Date(b.createdAt).getTime();
+              return timeB - timeA; // Most recent first
+            })[0]
+          : null;
+
+        if (existingDraft) {
+          // Found an existing draft - use it and update the finish time
+          const shiftStartDate = getShiftStartDate(today, existingDraft.actualStart, currentActualTime);
+          const updatedDraft: OvertimeLog = {
+            ...existingDraft,
+            date: shiftStartDate, // Recalculate date based on start and finish times
+            actualFinish: currentActualTime, // Update finish time to current time
             updatedAt: new Date().toISOString(),
           };
           
-          // Save draft to store before opening modal
-          await addLog(draftLog);
-          setEndShiftDraft(draftLog);
-          setEndShiftNoRosterMode(false);
+          // Check if the draft has rostered times - if not, enable noRosterMode
+          const hasRosteredTimes = updatedDraft.rosteredStart && 
+                                    updatedDraft.rosteredFinish && 
+                                    updatedDraft.rosteredStart !== 'N/A' && 
+                                    updatedDraft.rosteredFinish !== 'N/A';
+          
+          // Update the existing draft in the store
+          await updateLog(updatedDraft);
+          setEndShiftDraft(updatedDraft);
+          setEndShiftNoRosterMode(!hasRosteredTimes);
           setShowEndShiftModal(true);
         } else {
-          // No roster - enter "no roster" mode
-          // For no roster mode, we'll calculate the date in the modal after user enters start time
-          // For now, use today but it will be updated when user enters start time
-          const draftLog: OvertimeLog = {
-            id: `log_${Date.now()}`,
-            date: today, // Will be recalculated in modal when user enters start time
-            rosteredStart: undefined,
-            rosteredFinish: undefined,
-            actualStart: 'N/A', // User will need to enter this
-            actualFinish: currentActualTime,
-            mealBreakMinutes: 30,
-            minutesOvertime: 0, // Will be calculated in modal
-            category: 'Overtime',
-            initials: logInitials,
-            status: 'draft',
-            isActiveShift: false,
-            source: 'manual',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
+          // No existing draft - create a new one
+          const logInitials = initials || profile?.employeeInitial || '';
           
-          // Save draft to store before opening modal
-          await addLog(draftLog);
-          setEndShiftDraft(draftLog);
-          setEndShiftNoRosterMode(true);
-          setShowEndShiftModal(true);
+          if (roster) {
+            // Roster exists - create draft with actual start = rostered start
+            // Calculate the correct date based on start and finish times
+            const actualStart = roster.rosteredStart || currentActualTime;
+            const shiftStartDate = getShiftStartDate(today, actualStart, currentActualTime);
+            
+            const draftLog: OvertimeLog = {
+              id: `log_${Date.now()}`,
+              date: shiftStartDate, // Use calculated start date, not today
+              rosteredStart: roster.rosteredStart,
+              rosteredFinish: roster.rosteredFinish,
+              actualStart: actualStart,
+              actualFinish: currentActualTime,
+              mealBreakMinutes: roster.mealBreakMinutes || 30,
+              minutesOvertime: 0, // Will be calculated in modal
+              category: 'Overtime',
+              initials: logInitials,
+              status: 'draft',
+              isActiveShift: false,
+              source: 'manual',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            
+            // Save draft to store before opening modal
+            await addLog(draftLog);
+            setEndShiftDraft(draftLog);
+            setEndShiftNoRosterMode(false);
+            setShowEndShiftModal(true);
+          } else {
+            // No roster - enter "no roster" mode
+            // For no roster mode, we'll calculate the date in the modal after user enters start time
+            // For now, use today but it will be updated when user enters start time
+            const draftLog: OvertimeLog = {
+              id: `log_${Date.now()}`,
+              date: today, // Will be recalculated in modal when user enters start time
+              rosteredStart: undefined,
+              rosteredFinish: undefined,
+              actualStart: 'N/A', // User will need to enter this
+              actualFinish: currentActualTime,
+              mealBreakMinutes: 30,
+              minutesOvertime: 0, // Will be calculated in modal
+              category: 'Overtime',
+              initials: logInitials,
+              status: 'draft',
+              isActiveShift: false,
+              source: 'manual',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            
+            // Save draft to store before opening modal
+            await addLog(draftLog);
+            setEndShiftDraft(draftLog);
+            setEndShiftNoRosterMode(true);
+            setShowEndShiftModal(true);
+          }
         }
       }
     } catch (error) {

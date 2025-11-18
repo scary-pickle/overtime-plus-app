@@ -5,21 +5,81 @@
 
 Integrate RevenueCat for subscription-based payments with a **1-month free trial** for all new users. After the trial expires, automatic subscription starts. **Cancellation behavior differs by period**: During trial, cancellation makes app unusable immediately. After trial (paid subscription), cancellation prevents auto-renewal but user retains access until the end of the paid period (month or year). RevenueCat is the easiest and cheapest option - free tier up to $10k monthly revenue.
 
+## Status & Remaining Work
+
+### Completed
+
+- Added Supabase migration `supabase/migrations/20251115235959_add_subscription_and_paywall_support.sql` that:
+- Creates `subscription_status` enum plus `subscription_*`, `trial_*`, `grace_period_until`, `data_retention_until`, `legacy_free_access`, and `paywall_acknowledged_at` columns on `public.profiles`.
+- Seeds existing users with `legacy_free_access = true` and ensures `subscription_status` defaults to `'none'`.
+- Adds supporting indexes for subscription/trial/grace queries.
+- Introduces `public.remote_feature_flags` with RLS, update trigger, and an initial `enable_paywall` flag used for staged rollout control.
+
+### Still Needed
+
+- Apply the migration to staging/production Supabase and verify RLS + index creation.
+- Implement Supabase Edge Function/webhook handler that mutates the new columns based on RevenueCat events.
+- Build `lib/state/subscriptionStore.ts`, `lib/utils/subscription.ts`, and the RevenueCat SDK wrapper that sync with the new schema.
+- Gate app navigation/layout based on `subscription_status`, `trial_consumed`, `legacy_free_access`, and `remote_feature_flags.enable_paywall`.
+- Update profile/paywall UI with trial eligibility copy, grace-period export mode, and manage-subscription CTAs.
+- Add integration/system tests covering trial eligibility, grace period, legacy-user migration, and feature-flagged rollout.
+
 ## Payment Model
 
-- **1-month free trial** for all new users
+- **1-month free trial** for all new users (see eligibility caveats below)
 - Trial starts automatically when user signs up and selects subscription plan
 - After trial expires, automatic subscription starts (monthly or yearly based on user selection)
-- If user cancels subscription, app becomes unusable immediately (hard paywall)
+- Cancellation rules:
+- During trial → access revoked immediately (hard paywall)
+- During paid period → user retains full access until the end of the current paid term
+- After paid term ends → core features stay locked, but a **7-day read-only grace window** unlocks the export screen so users can pull their data or resubscribe
 - No free tier - only trial period before paid subscription
+
+## Trial Eligibility Safeguards
+
+- App Store/Play Store may block free trials for returning subscribers; never assume eligibility.
+- Subscription store must call RevenueCat `checkTrialOrIntroEligibility` (or equivalent helper) before showing "1-month free trial" copy.
+- Mirror eligibility server-side by adding a `trial_consumed` boolean (or derived flag) to the Supabase profile so backend trust does not rely solely on client checks.
+- Paywall messaging adapts dynamically:
+- Eligible → "Start 1-month free trial"
+- Ineligible → show paid price copy and highlight cancellation policy.
+- Backend sets `trial_consumed = true` the moment a trial starts (even if user cancels immediately) so re-subscribers never receive another free month.
 
 ## Implementation Steps
 
-### 1. Install Dependencies
+### 1. Install Dependencies & Set Up Expo Development Build
 
-- Install `react-native-purchases` (RevenueCat SDK) or `@revenuecat/purchases-expo` for Expo
-- Update `app.config.ts` with RevenueCat configuration
-- Add RevenueCat API keys to environment variables
+**Important**: RevenueCat requires an Expo development build (not Expo Go for full functionality). Expo Go supports Preview API Mode for prototyping, but real purchases require a development build.
+
+**Installation Steps:**
+
+1. Install `expo-dev-client` (required for development builds):
+   ```
+   npx expo install expo-dev-client
+   ```
+
+2. Install RevenueCat SDKs using Expo's install command:
+   ```
+   npx expo install react-native-purchases react-native-purchases-ui
+   ```
+   - `react-native-purchases` - Core RevenueCat SDK
+   - `react-native-purchases-ui` - UI components (Paywalls, Customer Center, etc.)
+
+3. **Critical**: After installing RevenueCat SDKs, you **must** run a full build process (not just hot reload). Hot reloading without building will result in errors like:
+   ```
+   Invariant Violation: `new NativeEventEmitter()` requires a non-null argument.
+   ```
+
+4. Update `app.config.ts` with RevenueCat configuration (if needed for config plugins)
+
+5. Add RevenueCat API keys to environment variables:
+   - `EXPO_PUBLIC_REVENUECAT_API_KEY_IOS` - iOS public API key
+   - `EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID` - Android public API key
+
+**Note on Expo Go:**
+- Expo Go includes Preview API Mode that allows prototyping subscription UIs and testing integration flows
+- Real purchases will not function in Expo Go
+- For full testing, use a development build (see Testing section)
 
 ### 2. Set Up RevenueCat Account & Products
 
@@ -31,7 +91,7 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Yearly: $XX.99/year with 1-month free trial
 - Get RevenueCat API keys (public key for app, secret key for backend)
 
-### 3. Create Subscription Store
+### 3. Create Subscription Store & Initialize RevenueCat SDK
 
 - Create `lib/state/subscriptionStore.ts` using Zustand
 - Store subscription status, entitlements, active products, and **trial status**
@@ -39,10 +99,61 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - `checkSubscriptionStatus()` - Check if user has active subscription OR active trial
 - `isInTrial()` - Check if currently in trial period
 - `getTrialInfo()` - Get trial start date, end date, days remaining
+- `refreshTrialEligibility()` - call RevenueCat eligibility API and set local + server flag
 - `restorePurchases()` - Restore previous purchases
 - `purchaseSubscription()` - Start subscription (begins trial if first time)
-- Initialize RevenueCat SDK with user ID from auth store
+- Initialize RevenueCat SDK with Supabase user ID through `Purchases.logIn(userId)`
+- Add `logOut()` handler so logging out of the app also calls `Purchases.logOut()` and clears cache
+- Handle anonymous installs: start with `Purchases.configure` (anonymous), then call `logIn` after onboarding so pre-trial transactions on the device transfer to the authenticated customer
+- Store `lastRevenueCatAppUserId` locally to detect mismatches and trigger `restorePurchases`
 - Track trial expiration and auto-conversion to paid subscription
+
+**SDK Initialization (Expo-specific):**
+
+Initialize RevenueCat in your app entry point (e.g., `app/_layout.tsx`):
+
+```typescript
+import { Platform } from 'react-native';
+import { useEffect } from 'react';
+import Purchases, { LOG_LEVEL } from 'react-native-purchases';
+
+export default function App() {
+  useEffect(() => {
+    // Enable verbose logging for debugging (remove in production)
+    Purchases.setLogLevel(LOG_LEVEL.VERBOSE);
+
+    // Configure with platform-specific API keys
+    if (Platform.OS === 'ios') {
+      Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS });
+    } else if (Platform.OS === 'android') {
+      Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID });
+      // OR: if building for Amazon, use:
+      // Purchases.configure({ apiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_AMAZON, useAmazon: true });
+    }
+  }, []);
+}
+```
+
+**Identify Users:**
+
+After user authentication, identify the user to RevenueCat:
+```typescript
+await Purchases.logIn(supabaseUserId);
+```
+
+**Check Subscription Status:**
+
+```typescript
+try {
+  const customerInfo = await Purchases.getCustomerInfo();
+  // Check entitlements
+  if (typeof customerInfo.entitlements.active[<my_entitlement_identifier>] !== "undefined") {
+    // Grant user "premium" access
+  }
+} catch (e) {
+  // Error fetching customer info
+}
+```
 
 ### 4. Database Schema Updates
 
@@ -50,17 +161,22 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Add `subscription_expires_at` timestamp
 - Add `trial_started_at` timestamp
 - Add `trial_expires_at` timestamp
+- Add `trial_consumed` boolean (server-trusted flag to prevent duplicate trials)
 - Add `subscription_product_id` (monthly/yearly)
 - Add `subscription_cancelled_at` timestamp (for tracking cancellations)
 - Create migration: `supabase/migrations/YYYYMMDD_add_subscriptions.sql`
 
 ### 5. Backend Integration (Supabase)
 
-- Create Supabase Edge Function or use webhooks to sync subscription status
+- Create Supabase Edge Function that consumes RevenueCat webhooks (Events API v2)
+- Validate RevenueCat webhook signatures and persist the raw payloads for auditing/replay
+- Update Supabase `profiles` table on every webhook (trial started, renewal, cancellation, billing issue, expiration)
+- Set `trial_consumed = true` the moment RevenueCat reports a trial start, even if the user churns before billing
+- Nightly cron/Edge Function re-fetches customer info from RevenueCat to self-heal missed hooks or client tampering
 - Store subscription status when user purchases/restores/starts trial
-- Verify subscription status on app launch
-- Add RLS policies for subscription data
-- Handle trial expiration and conversion to paid subscription
+- Verify subscription status on app launch by trusting Supabase values (client shows read-only snapshot)
+- Add RLS policies for subscription data (only owner/service role reads `subscription_*` fields)
+- Handle trial expiration, cancellation conversions, and grace window transitions on the server
 
 ### 6. Create Paywall Screen
 
@@ -68,11 +184,24 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Display subscription options (monthly/yearly) with **"1-month free trial"** messaging
 - Show pricing with trial information
 - Display trial countdown if user is in trial period
+- Fallback UI copy when user is ineligible for trial (hide free-trial badge, highlight immediate billing)
 - Add "Start Free Trial" button (converts to "Subscribe" after trial)
 - Add "Restore Purchases" button
 - Handle purchase flow with RevenueCat
 - Show loading states and error handling
 - Show cancellation warning (app becomes unusable if cancelled)
+
+**Using RevenueCat Paywalls:**
+
+RevenueCat provides `react-native-purchases-ui` for pre-built paywall components. Review the [React Native Paywalls documentation](https://www.revenuecat.com/docs/paywalls) for implementation options:
+
+- Use RevenueCat's remote paywall builder (no code changes needed)
+- Use `react-native-purchases-ui` components for Customer Center and paywall presentation
+- Or build custom paywall UI using RevenueCat SDK methods
+
+**Presenting a Paywall:**
+
+There are several ways to present a paywall in Expo. Review the React Native Paywalls documentation for the best approach for your use case.
 
 ### 7. Add Subscription Checks
 
@@ -92,6 +221,7 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - "Expired" or "Cancelled"
 - Show trial countdown if in trial period
 - Show subscription expiration date if subscribed
+- If trial not available, display "Trial already used" state so expectations are clear
 - Add "Manage Subscription" button (links to App Store/Play Store)
 - Add "Cancel Subscription" button with warning (app becomes unusable)
 - Show cancellation date if subscription was cancelled
@@ -103,13 +233,109 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Active subscription OR
 - Active trial period
 - Add `isInTrial()` helper function
+- Add `isTrialEligible()` helper that combines RevenueCat response + server `trial_consumed` flag
 - Add `getTrialDaysRemaining()` helper function
 - Gate **ALL app features** behind subscription/trial check (hard paywall)
 - Show paywall immediately if no active subscription or trial
 - Block access to all main features (home, logs, shifts, exports) if subscription cancelled
 - No free tier - only trial period
 
-### 10. Testing
+### 10. Testing with Expo Development Builds
+
+**Important**: RevenueCat requires Expo development builds for testing. You cannot test real purchases in Expo Go (though Preview API Mode allows UI prototyping).
+
+**Set Up EAS Build for Testing:**
+
+1. Install EAS CLI globally:
+   ```
+   npm install -g eas-cli
+   ```
+
+2. Login to EAS:
+   ```
+   eas login
+   ```
+
+3. Initialize EAS configuration:
+   ```
+   eas init
+   ```
+
+4. Configure build profiles:
+   ```
+   eas build:configure
+   ```
+
+5. Update `eas.json` with development build profiles:
+
+```json
+{
+  "cli": {
+    "version": ">= 7.3.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {},
+    "ios-simulator": {
+      "extends": "development",
+      "ios": {
+        "simulator": true
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
+```
+
+**Testing on iOS Simulator:**
+
+1. Build for iOS simulator:
+   ```
+   eas build --platform ios --profile ios-simulator
+   ```
+
+2. Enter your app's bundle ID (must match RevenueCat config and App Store Connect)
+
+3. After build completes, choose "Yes" to open in simulator
+
+4. Start Expo development server:
+   ```
+   npx expo start
+   ```
+
+5. Choose the local development server in the iOS simulator
+
+**Testing on Android Device/Emulator:**
+
+1. Ensure `developmentClient: true` in `eas.json` under `build.development` profile
+
+2. Build for Android:
+   ```
+   eas build --platform android --profile development
+   ```
+
+3. Enter your app's application ID (must match RevenueCat config and Google Play Console)
+
+4. Choose "Yes" when asked to create a new Android Keystore (if needed)
+
+5. After build completes:
+   - For physical device: Install Expo Orbit, connect device, select from Orbit menu, or use QR code
+   - For emulator: Choose "Yes" in terminal after build completes
+
+6. Start Expo development server:
+   ```
+   npx expo start
+   ```
+
+**Test Scenarios:**
 
 - Test subscription flow on iOS (sandbox) with free trial
 - Test subscription flow on Android (test purchases) with free trial
@@ -118,6 +344,21 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Test subscription cancellation (verify app becomes unusable)
 - Test offline subscription status (cache last known status)
 - Test trial countdown display
+- Test paywall presentation using `react-native-purchases-ui` components
+
+## Existing User Migration Plan
+
+- Capture baseline: export all current active users and mark them as `legacy_free_access` so they keep functionality until they accept the new paywall.
+- Show a modal/banner explaining the upcoming subscription before forcing the paywall; require explicit acknowledgement before moving them to trial/subscription flow.
+- Offer a one-time promo code or extended grace period for existing paid beta testers (configurable flag in Supabase).
+- Use a remote feature flag (`enable_paywall`) to stage rollout:
+
+1. Internal QA accounts only
+2. 10% of production users
+3. 100% after metrics look healthy
+
+- Run a backfill job that creates RevenueCat customer records for existing Supabase users (without active entitlements) so analytics stay accurate once they see the paywall.
+- Communicate via in-app message + email before/after migration, linking to FAQ and support.
 
 ## Files to Create/Modify
 
@@ -131,12 +372,13 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 
 ### Modified Files
 
-- `package.json` - Add RevenueCat dependencies
-- `app.config.ts` - Add RevenueCat configuration
-- `app/_layout.tsx` - Add subscription/trial check on app launch, show paywall if needed
+- `package.json` - Add RevenueCat dependencies (`react-native-purchases`, `react-native-purchases-ui`) and `expo-dev-client`
+- `app.config.ts` - Add RevenueCat configuration (if config plugins needed)
+- `eas.json` - Add development build profiles for iOS simulator and Android testing
+- `app/_layout.tsx` - Initialize RevenueCat SDK, add subscription/trial check on app launch, show paywall if needed
 - `app/(tabs)/profile.tsx` - Add subscription management section with trial countdown
 - `lib/supabase.ts` - Add subscription sync functions
-- `env.example` - Add RevenueCat API keys
+- `env.example` - Add RevenueCat API keys (`EXPO_PUBLIC_REVENUECAT_API_KEY_IOS`, `EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID`)
 
 ## Configuration Required
 
@@ -176,8 +418,19 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 
 ## Environment Variables
 
-- `EXPO_PUBLIC_REVENUECAT_API_KEY` - RevenueCat public API key
-- `REVENUECAT_SECRET_KEY` - RevenueCat secret key (backend only)
+**Client-side (Expo):**
+- `EXPO_PUBLIC_REVENUECAT_API_KEY_IOS` - RevenueCat iOS public API key (bundled in app)
+- `EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID` - RevenueCat Android public API key (bundled in app)
+- `EXPO_PUBLIC_REVENUECAT_API_KEY_AMAZON` - RevenueCat Amazon public API key (if supporting Amazon Appstore)
+
+**Server-side (Supabase Edge Functions):**
+- `REVENUECAT_SECRET_KEY_<ENV>` - RevenueCat secret key stored only in Supabase Edge Function secrets / CI, never bundled in the client
+
+**Notes:**
+- Use separate API keys for development/staging/production environments
+- Document rotation steps: revoke old key in RevenueCat dashboard, update Supabase secret, redeploy Edge Functions, then update Expo environment variables and rebuild
+- `.env` / `env.example` should reference placeholders only; real values live in secure secret managers (1Password / SSM)
+- RevenueCat provides separate test API keys for development (use test keys in development, production keys in production)
 
 ## Subscription Products
 
@@ -198,7 +451,7 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - User retains full app access until end of current paid period
 - Monthly subscription: Access until end of current month
 - Yearly subscription: Access until end of current year
-- After paid period expires → App becomes unusable (hard paywall)
+- After paid period expires → Core features locked, export/resubscribe screen available for 7 days, then standard paywall
 
 8. User must resubscribe before expiration to maintain access
 
@@ -207,7 +460,7 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Handle network errors during purchase
 - Handle cancelled purchases gracefully
 - Handle trial expiration gracefully (show paywall before trial ends)
-- Handle subscription cancellation (immediate paywall, no grace period)
+- Handle subscription cancellation transitions (trial lockout vs paid-term access vs grace window)
 - Show user-friendly error messages
 - Log errors for debugging
 
@@ -220,7 +473,8 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - User account remains active in Supabase auth (not deleted)
 - User can still sign in to their account
 - Subscription status set to 'cancelled' in database
-- App access is blocked (hard paywall) - user cannot use app features
+- While `now < subscription_expires_at`, user retains full access
+- After `subscription_expires_at`, main tabs are blocked (hard paywall) and user is routed to the limited export/resubscribe experience
 
 **Data Retention Policy:**
 
@@ -236,12 +490,12 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 
 **Grace Period:**
 
-- 7-day grace period after cancellation before app access is blocked
-- During grace period, user can:
+- 7-day grace period **after the paid term ends** (not immediately at cancellation)
+- During grace period, user sees a read-only screen where they can:
 - Export all their data (PDF exports, CSV exports)
 - Download their logs and shifts
-- Cancel subscription cancellation (if supported by platform)
-- After grace period, app shows paywall and blocks access
+- Resubscribe to immediately restore full access
+- After grace period, export access is revoked and the standard paywall is shown
 
 **Data Export Before Cancellation:**
 
@@ -319,9 +573,9 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 **Week 1: Setup & Core Integration (5-7 days)**
 
 - Day 1-2: RevenueCat account setup, App Store Connect/Play Console configuration
-- Day 3-4: Install SDK, create subscription store, database migration
+- Day 3-4: Install SDK (`expo-dev-client`, `react-native-purchases`, `react-native-purchases-ui`), set up EAS build configuration, create subscription store, database migration, initialize RevenueCat SDK
 - Day 5: Basic paywall screen and subscription checks
-- Day 6-7: Testing subscription flow in sandbox/test mode
+- Day 6-7: Build development build with EAS, testing subscription flow in sandbox/test mode
 
 **Week 2: Feature Gating & UI (4-5 days)**
 
@@ -338,16 +592,25 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 
 **Note:** Actual time may vary based on:
 
-- Familiarity with RevenueCat SDK
+- Familiarity with RevenueCat SDK and Expo development builds
+- EAS build times (first build can take 15-30 minutes)
 - App Store/Play Console approval times for subscription products
 - Complexity of testing scenarios
 - Integration with existing Supabase infrastructure
+- Learning curve for EAS build process if new to Expo development builds
 
 ## Testing Strategy
 
 ### Development Testing (Before Production)
 
 **1. RevenueCat Sandbox/Test Mode**
+
+**Expo Development Build Setup:**
+
+- **Required**: Use Expo development builds (not Expo Go) for testing real purchases
+- Build development client using EAS: `eas build --platform ios --profile ios-simulator` or `eas build --platform android --profile development`
+- After build, start Expo dev server: `npx expo start`
+- Development builds allow hot reloading while maintaining native module support
 
 **iOS Testing:**
 
@@ -356,6 +619,7 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Use sandbox tester accounts (not real Apple IDs)
 - Test purchases use sandbox environment (no real charges)
 - Subscription products must be approved in App Store Connect first (can take 24-48 hours)
+- Test on iOS simulator using EAS build with `ios-simulator` profile
 
 **Android Testing:**
 
@@ -364,6 +628,13 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Use license testing accounts (up to 100 test accounts)
 - Test purchases use test environment (no real charges)
 - Subscription products must be created in Play Console (can take a few hours)
+- Test on Android device/emulator using EAS build with `development` profile
+
+**Expo Go Limitations:**
+
+- Expo Go supports Preview API Mode for prototyping subscription UIs and testing integration flows
+- Real purchases will not function in Expo Go
+- Use Expo Go only for UI/UX prototyping; use development builds for actual purchase testing
 
 **2. Local Development Testing**
 
@@ -446,6 +717,10 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - [ ] Production API keys configured (not test keys)
 - [ ] Error handling works gracefully
 - [ ] Offline subscription status caching works
+- [ ] Expo development build configured and tested (not using Expo Go for production testing)
+- [ ] EAS build profiles configured correctly for iOS and Android
+- [ ] RevenueCat SDK initialized correctly with platform-specific API keys
+- [ ] Development build tested on both iOS simulator and Android device/emulator
 
 **6. Testing Tools & Methods**
 

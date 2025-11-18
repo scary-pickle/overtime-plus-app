@@ -451,18 +451,7 @@ export const HOSPITAL_DEPARTMENT_ORG_UNITS: HospitalDepartmentMapping[] = [
       // Add more departments as needed...
     ],
     departmentDelegates: [
-      // Example delegate mappings - these need to be replaced with actual delegate information
-      { department: 'Neurosurgery', delegateName: 'Dr Eric Guazzo', delegatePosition: 'Neurosurgery SMO', delegatePhone: '44331145', delegateEmail: 'eric.guazzo@health.qld.gov.au' },
-      { department: 'Cardiology', delegateName: 'Dr Sarah Wilson', delegatePosition: 'Cardiology SMO', delegatePhone: '44331146', delegateEmail: 'sarah.wilson@health.qld.gov.au' },
-      { department: 'Emergency Medicine', delegateName: 'Dr Michael Brown', delegatePosition: 'Emergency Medicine SMO', delegatePhone: '44331147', delegateEmail: 'michael.brown@health.qld.gov.au' },
-      { department: 'Orthopaedic Surgery', delegateName: 'Dr Jennifer Davis', delegatePosition: 'Orthopaedic Surgery SMO', delegatePhone: '44331148', delegateEmail: 'jennifer.davis@health.qld.gov.au' },
-      { department: 'General Surgery', delegateName: 'Dr Robert Taylor', delegatePosition: 'General Surgery SMO', delegatePhone: '44331149', delegateEmail: 'robert.taylor@health.qld.gov.au' },
-      { department: 'Anaesthetics', delegateName: 'Dr Lisa Anderson', delegatePosition: 'Anaesthetics SMO', delegatePhone: '44331150', delegateEmail: 'lisa.anderson@health.qld.gov.au' },
-      { department: 'Intensive Care Medicine', delegateName: 'Dr David Miller', delegatePosition: 'ICU SMO', delegatePhone: '44331151', delegateEmail: 'david.miller@health.qld.gov.au' },
-      { department: 'Obstetrics & Gynaecology', delegateName: 'Dr Emma Thompson', delegatePosition: 'Obstetrics & Gynaecology SMO', delegatePhone: '44331152', delegateEmail: 'emma.thompson@health.qld.gov.au' },
-      { department: 'Paediatrics', delegateName: 'Dr James Wilson', delegatePosition: 'Paediatrics SMO', delegatePhone: '44331153', delegateEmail: 'james.wilson@health.qld.gov.au' },
-      { department: 'Radiology', delegateName: 'Dr Maria Garcia', delegatePosition: 'Radiology SMO', delegatePhone: '44331154', delegateEmail: 'maria.garcia@health.qld.gov.au' },
-      // Add more departments as needed...
+      // Delegate mappings will be added here as needed
     ]
   },
   {
@@ -475,10 +464,7 @@ export const HOSPITAL_DEPARTMENT_ORG_UNITS: HospitalDepartmentMapping[] = [
       // Add more departments as needed...
     ],
     departmentDelegates: [
-      { department: 'Neurosurgery', delegateName: 'Dr John Smith', delegatePosition: 'Neurosurgery SMO', delegatePhone: '3646 8001', delegateEmail: 'john.smith@health.qld.gov.au' },
-      { department: 'Cardiology', delegateName: 'Dr Jane Doe', delegatePosition: 'Cardiology SMO', delegatePhone: '3646 8002', delegateEmail: 'jane.doe@health.qld.gov.au' },
-      { department: 'Emergency Medicine', delegateName: 'Dr Bob Johnson', delegatePosition: 'Emergency Medicine SMO', delegatePhone: '3646 8003', delegateEmail: 'bob.johnson@health.qld.gov.au' },
-      // Add more departments as needed...
+      // Delegate mappings will be added here as needed
     ]
   },
   // Add more hospitals as needed...
