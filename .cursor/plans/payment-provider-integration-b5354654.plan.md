@@ -24,6 +24,35 @@ Integrate RevenueCat for subscription-based payments with a **1-month free trial
 - Update profile/paywall UI with trial eligibility copy, grace-period export mode, and manage-subscription CTAs.
 - Add integration/system tests covering trial eligibility, grace period, legacy-user migration, and feature-flagged rollout.
 
+## Implementation Progress (Nov 18, 2025)
+
+- ✅ Added RevenueCat dependencies, Expo dev build profile tweaks, and new env variables (`EXPO_PUBLIC_REVENUECAT_API_KEY_*`).
+- ✅ Created `lib/subscription/revenuecat.ts`, `lib/utils/subscription.ts`, and `lib/state/subscriptionStore.ts` to encapsulate RevenueCat setup, Supabase feature flags, and subscription gating logic.
+- ✅ Wired `app/_layout.tsx` to initialize the subscription store after auth, automatically redirect to `/subscription/paywall` when required, and reset state on sign-out.
+- ✅ Built `app/subscription/paywall.tsx` with plan selection, trial copy, restore/manage buttons, and rollout cohort details pulled from remote feature flags.
+- ✅ Updated `app/(tabs)/profile.tsx` with a subscription status card (trial countdown, legacy badge, quick links to paywall/manage subscription) so users always see their entitlement state.
+- ✅ Added helper functions in `lib/supabase.ts` to fetch subscription snapshots + remote feature flags and to store paywall acknowledgements.
+
+### Outstanding to finish the plan
+
+1. **Supabase backend work**
+   - ✅ Applied `20251115235959_add_subscription_and_paywall_support.sql` to the database (indexes + RLS confirmed).
+   - Ship the RevenueCat webhook Edge Function that flips `subscription_status`, `trial_consumed`, `grace_period_until`, etc. (see "Backend Integration" section below for exact events to handle).
+   - Ensure nightly RevenueCat re-sync cron is implemented so the client cannot spoof entitlements.
+
+2. **RevenueCat config**
+   - Create offerings (monthly/yearly) with 1-month trials in the RevenueCat dashboard, then update `.env`/EAS secrets with the correct public keys for each environment.
+   - Double-check that the package identifiers used in the dashboard match `DEFAULT_SUBSCRIPTION_PRODUCTS` (update that array if product IDs differ).
+
+3. **Client polish**
+   - Connect `subscriptionApi.markPaywallAcknowledged` to a UI acknowledgement flow for legacy users (e.g., a modal before showing the paywall).
+   - Decide whether to surface RevenueCat paywalls (`react-native-purchases-ui`) instead of our custom screen and adjust the `packageCard` rendering accordingly.
+
+4. **Testing & rollout**
+   - Build iOS simulator + Android dev clients via `eas build --profile ios-simulator` / `eas build --profile development`, install on devices, and run through purchase, cancel, grace, and restore cases.
+   - Add automated tests (vitest/jest or detox) for the new store logic—mock `subscriptionApi` + `revenuecatClient` so we cover `legacy_free_access`, `grace_period_until`, and feature-flagged gating.
+   - Stage rollout by flipping `remote_feature_flags.enable_paywall` (`enabled`, `cohort_percentage`, `target_group`) per cohort described later in this file.
+
 ## Payment Model
 
 - **1-month free trial** for all new users (see eligibility caveats below)

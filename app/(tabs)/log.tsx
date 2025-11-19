@@ -812,7 +812,7 @@ export default function LogScreen() {
         title="No Overtime Logs"
         description="Start tracking your overtime by creating your first log."
         actionText="Add First Log"
-        onAction={handleAddLog}
+        onAction={handleNewLog}
         icon="📝"
       />
     );

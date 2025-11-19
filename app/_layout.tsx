@@ -1,7 +1,7 @@
 import 'react-native-reanimated';
 import 'react-native-url-polyfill/auto';
 import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useColorScheme } from 'react-native';
 import { database } from '../lib/db/sqlite';
@@ -17,6 +17,7 @@ import { templatesSync, templateOTAEnabled } from '../lib/supabase';
 import { purgeLegacyAuthStorage } from '../lib/auth/migrateAuthStorage';
 import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { useSubscriptionStore } from '../lib/state/subscriptionStore';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -24,6 +25,12 @@ export default function RootLayout() {
   const { loadProfile } = useProfileStore();
   const { loadShifts } = useShiftsStore();
   const { loadLogs, loadExportBatches } = useLogsStore();
+  const router = useRouter();
+  const pathname = usePathname();
+  const shouldShowPaywall = useSubscriptionStore((state) => state.access.shouldShowPaywall);
+  const subscriptionInitialized = useSubscriptionStore((state) => state.initialized);
+  const initializeSubscription = useSubscriptionStore((state) => state.init);
+  const resetSubscription = useSubscriptionStore((state) => state.reset);
 
   useEffect(() => {
     (async () => {
@@ -63,6 +70,36 @@ export default function RootLayout() {
       unsubscribeLinking();
     };
   }, []);
+
+  useEffect(() => {
+    if (user?.id && emailVerified) {
+      initializeSubscription(user.id).catch(() => {});
+    } else {
+      resetSubscription();
+    }
+  }, [user?.id, emailVerified, initializeSubscription, resetSubscription]);
+
+  useEffect(() => {
+    if (!user?.id || !emailVerified || !subscriptionInitialized) {
+      return;
+    }
+    const onPaywallScreen = pathname?.startsWith('/subscription');
+    const snapshot = useSubscriptionStore.getState().snapshot;
+    const legacyAccess = snapshot?.legacyFreeAccess;
+    const acknowledged = snapshot?.paywallAcknowledgedAt;
+    
+    // If legacy user hasn't acknowledged, don't force paywall yet
+    // (The modal will be shown from profile screen or paywall screen)
+    if (legacyAccess && !acknowledged) {
+      return;
+    }
+    
+    if (shouldShowPaywall && !onPaywallScreen) {
+      router.replace('/subscription/paywall');
+    } else if (!shouldShowPaywall && onPaywallScreen) {
+      router.replace('/(tabs)/home');
+    }
+  }, [shouldShowPaywall, subscriptionInitialized, pathname, router, user?.id, emailVerified]);
 
   const initializeApp = async () => {
     try {
@@ -269,6 +306,13 @@ export default function RootLayout() {
           options={{ 
             headerShown: false 
           }} 
+        />
+        <Stack.Screen
+          name="subscription/paywall"
+          options={{
+            headerShown: false,
+            presentation: 'modal',
+          }}
         />
       </Stack>
     </ErrorBoundary>

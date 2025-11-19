@@ -11,6 +11,8 @@ import {
   Switch,
   Animated,
   Keyboard,
+  Linking,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -25,12 +27,123 @@ import { profileStorage } from '../../lib/storage/profile';
 import { useAuthStore } from '../../lib/state/authStore';
 import { useOnboardingStore } from '../../lib/state/onboardingStore';
 import { useSyncStore } from '../../lib/state/syncStore';
+import { useSubscriptionStore } from '../../lib/state/subscriptionStore';
+import { getManageSubscriptionUrl } from '../../lib/utils/subscription';
 
 const devLog = (...args: any[]) => {
   if (process.env.NODE_ENV !== 'production') {
     console.log(...args);
   }
 };
+
+const subscriptionStatusCopy = (reason: string): { title: string; detail: string } => {
+  switch (reason) {
+    case 'trial':
+      return { title: 'Trial Active', detail: 'Enjoy all features until your trial expires.' };
+    case 'legacy-free':
+      return { title: 'Legacy Access', detail: 'You have temporary access during the rollout.' };
+    case 'grace':
+      return { title: 'Grace Period', detail: 'Exports remain available for 7 days after expiry.' };
+    case 'active':
+    case 'customer-entitled':
+      return { title: 'Subscription Active', detail: 'Billing is current. Manage anytime.' };
+    case 'paywall-disabled':
+      return { title: 'Paywall Disabled', detail: 'Subscriptions are not enforced in this build.' };
+    default:
+      return { title: 'Subscription Required', detail: 'Start a trial or subscribe to keep access.' };
+  }
+};
+
+function SubscriptionStatusCard({ isDark }: { isDark: boolean }) {
+  const router = useRouter();
+  const access = useSubscriptionStore((state) => state.access);
+  const snapshot = useSubscriptionStore((state) => state.snapshot);
+  const trialEligible = useSubscriptionStore((state) => state.isTrialEligible());
+  const trialDaysRemaining = useSubscriptionStore((state) => state.trialDaysRemaining());
+  const graceDaysRemaining = useSubscriptionStore((state) => state.graceDaysRemaining());
+  const refreshSubscription = useSubscriptionStore((state) => state.refresh);
+  const refreshing = useSubscriptionStore((state) => state.refreshing);
+  const shouldShowPaywall = useSubscriptionStore((state) => state.access.shouldShowPaywall);
+
+  const manageLabel = Platform.OS === 'ios' ? 'Manage in App Store' : 'Manage in Play Store';
+
+  const handleManage = () => {
+    const url = getManageSubscriptionUrl(Platform.OS === 'ios' ? 'ios' : 'android');
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Manage Subscription', 'Unable to open subscription settings.');
+    });
+  };
+
+  const copy = subscriptionStatusCopy(access.reason);
+
+  return (
+    <View style={[styles.subscriptionCard, isDark && styles.darkCard]}>
+      <View style={styles.subscriptionHeader}>
+        <Ionicons name="card-outline" size={20} color={isDark ? '#fff' : '#111'} />
+        <View style={{ marginLeft: 12, flex: 1 }}>
+          <Text style={[styles.subscriptionTitle, isDark && styles.darkSectionTitle]}>{copy.title}</Text>
+          <Text style={[styles.subscriptionDetail, isDark && styles.darkSubtitle]}>{copy.detail}</Text>
+        </View>
+      </View>
+      {trialEligible && (
+        <Text style={[styles.subscriptionBadge, isDark && styles.darkSubscriptionBadge]}>
+          Eligible for 1-month free trial
+        </Text>
+      )}
+      {typeof trialDaysRemaining === 'number' && access.reason === 'trial' && (
+        <Text style={[styles.subscriptionMeta, isDark && styles.darkSubtitle]}>
+          Trial ends in {trialDaysRemaining} day{trialDaysRemaining === 1 ? '' : 's'}.
+        </Text>
+      )}
+      {typeof graceDaysRemaining === 'number' && access.reason === 'grace' && (
+        <Text style={[styles.subscriptionMeta, isDark && styles.darkSubtitle]}>
+          Grace period ends in {graceDaysRemaining} day{graceDaysRemaining === 1 ? '' : 's'}.
+        </Text>
+      )}
+      {snapshot?.subscriptionExpiresAt && (
+        <Text style={[styles.subscriptionMeta, isDark && styles.darkSubtitle]}>
+          Next renewal: {new Date(snapshot.subscriptionExpiresAt).toLocaleDateString()}
+        </Text>
+      )}
+      {snapshot?.legacyFreeAccess && (
+        <Text style={[styles.subscriptionMeta, styles.subscriptionLegacy]}>
+          Legacy access enabled until you accept the paywall.
+        </Text>
+      )}
+      <View style={styles.subscriptionButtons}>
+        <TouchableOpacity
+          style={[styles.subscriptionPrimaryButton, shouldShowPaywall && styles.subscriptionCTA]}
+          onPress={() => router.push('/subscription/paywall')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.subscriptionPrimaryButtonText}>
+            {shouldShowPaywall ? 'Unlock Access' : 'View Paywall'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.subscriptionSecondaryButton, isDark && styles.darkSecondaryButton]}
+          onPress={handleManage}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.subscriptionSecondaryButtonText, isDark && styles.darkText]}>
+            {manageLabel}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity
+        style={styles.subscriptionRefresh}
+        onPress={() => refreshSubscription()}
+        disabled={refreshing}
+      >
+        {refreshing ? (
+          <Text style={styles.subscriptionRefreshText}>Refreshing…</Text>
+        ) : (
+          <Text style={styles.subscriptionRefreshText}>Refresh subscription status</Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
 // Sync Status Indicator Component
 function SyncStatusIndicator({ isDark }: { isDark: boolean }) {
   const { status, lastSyncTime, pendingOperations, error, checkSyncStatus, triggerFullSync } = useSyncStore();
@@ -768,6 +881,8 @@ export default function ProfileScreen() {
             {isProfileComplete ? 'Complete' : 'Incomplete'}
           </Text>
         </View>
+
+        <SubscriptionStatusCard isDark={isDark} />
 
         {/* Missing Fields Alert */}
         {!isProfileComplete && missingFields.length > 0 && (
@@ -1770,5 +1885,95 @@ const styles = StyleSheet.create({
   },
   darkSyncButton: {
     backgroundColor: 'transparent',
+  },
+  subscriptionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  subscriptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  subscriptionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  subscriptionDetail: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 2,
+  },
+  subscriptionBadge: {
+    backgroundColor: '#E8F5E9',
+    color: '#2e7d32',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    fontWeight: '600',
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  darkSubscriptionBadge: {
+    backgroundColor: '#1b2e1b',
+    color: '#81C784',
+  },
+  subscriptionMeta: {
+    fontSize: 13,
+    color: '#555',
+    marginBottom: 4,
+  },
+  subscriptionLegacy: {
+    color: '#ff9800',
+    fontWeight: '600',
+  },
+  subscriptionButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  subscriptionPrimaryButton: {
+    flex: 1,
+    backgroundColor: '#007AFF',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  subscriptionCTA: {
+    backgroundColor: '#00c853',
+  },
+  subscriptionPrimaryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  subscriptionSecondaryButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+  darkSecondaryButton: {
+    borderColor: '#333',
+    backgroundColor: '#1e1e1e',
+  },
+  subscriptionSecondaryButtonText: {
+    fontWeight: '600',
+    color: '#333',
+  },
+  subscriptionRefresh: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  subscriptionRefreshText: {
+    color: '#007AFF',
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

@@ -4,7 +4,7 @@
  * When Supabase credentials are provided, real sync functionality will be enabled
  */
 
-import { Profile, OvertimeLog, ExportBatch, UsualShift, ShiftTemplate } from '../types';
+import { Profile, OvertimeLog, ExportBatch, UsualShift, ShiftTemplate, SubscriptionSnapshot, RemoteFeatureFlag } from '../types';
 import { createClient } from '@supabase/supabase-js';
 import { SecureStoreAdapter } from './auth/storageAdapter';
 import { database } from './db/sqlite';
@@ -175,14 +175,22 @@ function getSupabaseClient(): SupabaseClient {
         });
         
         // CRITICAL: Check if database still has the session after Supabase's getSession call
-        const { database } = await import('./db/sqlite');
-        const sessionCount = await database.countAuthSessions();
-        const allKeys = await database.getAllAuthSessionKeys();
-        debug.debug('🔍 Database state AFTER initial session check:', {
-          sessionCount,
-          keysCount: allKeys.length
-          // DO NOT log actual keys - they're sensitive
-        });
+        // Only check if database is initialized
+        try {
+          const { database } = await import('./db/sqlite');
+          // Check if database is initialized by trying to access it
+          // The database.init() should be called elsewhere, but we'll handle gracefully if not
+          const sessionCount = await database.countAuthSessions().catch(() => 0);
+          const allKeys = await database.getAllAuthSessionKeys().catch(() => []);
+          debug.debug('🔍 Database state AFTER initial session check:', {
+            sessionCount,
+            keysCount: allKeys.length
+            // DO NOT log actual keys - they're sensitive
+          });
+        } catch (dbError) {
+          // Database might not be initialized yet - this is non-fatal
+          debug.debug('Database not available for session check (non-fatal)');
+        }
       } catch (sessionError) {
         debug.error('Error checking initial session (non-fatal):', sessionError);
         // Non-fatal - session restoration might still be in progress
@@ -2318,6 +2326,130 @@ export const templatesSync = {
       ]);
     } catch (e) {
       debug.error('[templatesSync.checkAndUpdate] Failed:', e);
+    }
+  },
+};
+
+type SubscriptionRow = {
+  subscription_status: string | null;
+  subscription_expires_at: string | null;
+  trial_started_at: string | null;
+  trial_expires_at: string | null;
+  trial_consumed: boolean | null;
+  subscription_product_id: string | null;
+  subscription_cancelled_at: string | null;
+  grace_period_until: string | null;
+  data_retention_until: string | null;
+  account_deleted_at: string | null;
+  legacy_free_access: boolean | null;
+  paywall_acknowledged_at: string | null;
+};
+
+function mapSubscriptionRow(row: SubscriptionRow | null): SubscriptionSnapshot | null {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    status: (row.subscription_status as SubscriptionSnapshot['status']) || 'none',
+    subscriptionExpiresAt: row.subscription_expires_at,
+    trialStartedAt: row.trial_started_at,
+    trialExpiresAt: row.trial_expires_at,
+    trialConsumed: Boolean(row.trial_consumed),
+    subscriptionProductId: row.subscription_product_id,
+    subscriptionCancelledAt: row.subscription_cancelled_at,
+    gracePeriodUntil: row.grace_period_until,
+    dataRetentionUntil: row.data_retention_until,
+    accountDeletedAt: row.account_deleted_at,
+    legacyFreeAccess: Boolean(row.legacy_free_access),
+    paywallAcknowledgedAt: row.paywall_acknowledged_at,
+  };
+}
+
+export async function fetchRemoteFeatureFlags(): Promise<Record<string, RemoteFeatureFlag>> {
+  if (!supabaseEnabled) {
+    return {};
+  }
+
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/remote_feature_flags?select=key,value,description,updated_at`;
+    const response = await authenticatedFetch(url, { method: 'GET' });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to load feature flags: ${errorText}`);
+    }
+
+    const rows = await response.json();
+    const flags: Record<string, RemoteFeatureFlag> = {};
+    rows.forEach((row: any) => {
+      flags[row.key] = {
+        key: row.key,
+        value: row.value || {},
+        description: row.description,
+        updatedAt: row.updated_at,
+      };
+    });
+
+    return flags;
+  } catch (error) {
+    debug.error('[fetchRemoteFeatureFlags] Failed to fetch feature flags:', error);
+    return {};
+  }
+}
+
+export const subscriptionApi = {
+  async fetchSnapshot(userId?: string | null): Promise<SubscriptionSnapshot | null> {
+    if (!supabaseEnabled || !userId) {
+      return null;
+    }
+
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/profiles?user_id=eq.${userId}&select=subscription_status,subscription_expires_at,trial_started_at,trial_expires_at,trial_consumed,subscription_product_id,subscription_cancelled_at,grace_period_until,data_retention_until,account_deleted_at,legacy_free_access,paywall_acknowledged_at&limit=1`;
+      const response = await authenticatedFetch(url, { method: 'GET' });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Failed to fetch subscription snapshot: ${text}`);
+      }
+
+      const rows = await response.json();
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return null;
+      }
+
+      return mapSubscriptionRow(rows[0]);
+    } catch (error) {
+      debug.error('[subscriptionApi.fetchSnapshot] Failed to load subscription data:', error);
+      return null;
+    }
+  },
+
+  async markPaywallAcknowledged(userId?: string | null): Promise<boolean> {
+    if (!supabaseEnabled || !userId) {
+      return false;
+    }
+
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/profiles?user_id=eq.${userId}`;
+      const response = await authenticatedFetch(url, {
+        method: 'PATCH',
+        headers: {
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          paywall_acknowledged_at: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Failed to mark paywall acknowledgement: ${text}`);
+      }
+
+      return true;
+    } catch (error) {
+      debug.error('[subscriptionApi.markPaywallAcknowledged] Failed:', error);
+      return false;
     }
   },
 };

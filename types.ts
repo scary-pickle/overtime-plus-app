@@ -150,3 +150,33 @@ export type ShiftTemplate = {
   userId?: string | null; // For multi-user support
   deletedAt?: string;    // ISO timestamp for soft delete
 };
+
+export type SubscriptionStatus = 'none' | 'trial' | 'active' | 'expired' | 'cancelled';
+
+export type RemoteFeatureFlagValue = Record<string, any> & {
+  enabled?: boolean;
+  cohort_percentage?: number;
+  target_group?: string;
+};
+
+export type RemoteFeatureFlag = {
+  key: string;
+  value: RemoteFeatureFlagValue;
+  description?: string | null;
+  updatedAt?: string | null;
+};
+
+export type SubscriptionSnapshot = {
+  status: SubscriptionStatus;
+  subscriptionExpiresAt: string | null;
+  trialStartedAt: string | null;
+  trialExpiresAt: string | null;
+  trialConsumed: boolean;
+  subscriptionProductId: string | null;
+  subscriptionCancelledAt: string | null;
+  gracePeriodUntil: string | null;
+  dataRetentionUntil: string | null;
+  accountDeletedAt: string | null;
+  legacyFreeAccess: boolean;
+  paywallAcknowledgedAt: string | null;
+};

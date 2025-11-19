@@ -3,6 +3,8 @@ import { supabase } from '../supabase';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../auth/validation';
 import { toFriendlyAuthMessage } from '../auth/errors';
 import { useOnboardingStore } from './onboardingStore';
+import { useSubscriptionStore } from './subscriptionStore';
+import { revenuecatClient } from '../subscription/revenuecat';
 import * as SecureStore from 'expo-secure-store';
 import { createScopedLogger, maskEmail, maskUserId } from '../utils/logger';
 
@@ -660,6 +662,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       // Clear current user ID from SecureStore
       await SecureStore.deleteItemAsync(CURRENT_USER_ID_KEY);
+      
+      // Reset subscription cache and RevenueCat identity
+      // Safely log out from RevenueCat (may fail if native module not available)
+      try {
+        await revenuecatClient.logOut();
+      } catch (error) {
+        // Ignore errors - native module may not be available
+      }
+      const subscriptionStore = useSubscriptionStore.getState();
+      subscriptionStore.reset();
       
       set({
         user: null,

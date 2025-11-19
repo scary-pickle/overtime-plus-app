@@ -186,162 +186,167 @@ export async function downloadPDFFromStorage(
     const { data: sessionData } = await (supabase as any).auth.getSession();
     const accessToken = sessionData?.session?.access_token;
 
-    // Try using Supabase's download method first (works better with auth)
+    // In React Native, Supabase's .download() doesn't return a standard Blob,
+    // so we skip it and go straight to the signed URL method which works reliably
+    // Try using Supabase's download method first (only on web where Blob is properly supported)
     let response: Response;
     let downloadUrl: string;
     
-    try {
-      // @ts-ignore
-      const { data, error } = await supabase.storage
-        .from(EXPORTS_BUCKET)
-        .download(storagePath);
-
-      if (error) {
-        throw error;
-      }
-
-      if (data) {
-        // Try to convert Blob to base64
-        // Note: In React Native, Supabase's .download() may not return a standard Blob
-        let base64String: string;
-        try {
-          // Check if data has arrayBuffer method (standard Blob)
-          if (typeof data.arrayBuffer === 'function') {
-            const arrayBuffer = await data.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            const chunkSize = 8192;
-            let binaryString = '';
-            for (let i = 0; i < uint8Array.length; i += chunkSize) {
-              const chunk = uint8Array.slice(i, i + chunkSize);
-              binaryString += String.fromCharCode(...chunk);
-            }
-            base64String = btoa(binaryString);
-          } else {
-            // In React Native, the SDK might return something else
-            // Throw to fall back to signed URL method
-            throw new Error('Supabase SDK returned non-Blob data (React Native limitation), falling back to signed URL');
-          }
-        } catch (convertError) {
-          // SDK download didn't work with Blob conversion - fall back to signed URL
-          throw convertError; // Re-throw to trigger fallback
-        }
-
-        // Save to local cache
-        // Ensure we have a valid cache directory path
-        const finalCacheDir = Paths?.cache?.uri;
-        if (!finalCacheDir) {
-          throw new Error('Cache directory not available');
-        }
-        const finalLocalCachePath = finalCacheDir.endsWith('/') 
-          ? `${finalCacheDir}${fileName}` 
-          : `${finalCacheDir}/${fileName}`;
-        
-      await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
-      return finalLocalCachePath;
-      }
-    } catch (sdkError) {
-      // Expected in React Native: Supabase SDK .download() doesn't return standard Blob
-      // Fall back to signed URL method which works reliably
-      if (isDevLoggingEnabled) {
-        debug.warn('Falling back to signed URL method:', sdkError);
-      }
-      // Fallback: Try signed URL (works better for private buckets)
-      // @ts-ignore
-      const { data: signedUrlData, error: signedError } = await supabase.storage
-        .from(EXPORTS_BUCKET)
-        .createSignedUrl(storagePath, 3600); // 1 hour expiry
-
-      if (signedError || !signedUrlData?.signedUrl) {
-        throw signedError || new Error('No signed URL returned');
-      }
-
-      downloadUrl = signedUrlData.signedUrl;
-
-      // Download using fetch
-      response = await fetch(downloadUrl, {
-        headers: accessToken ? {
-          'Authorization': `Bearer ${accessToken}`,
-        } : {},
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to download PDF: ${response.status} ${response.statusText}`);
-      }
-
-      // Convert response to blob, then to base64
-      let blob: Blob;
+    // Check if we're on web (where Blob is properly supported)
+    // In React Native, we'll skip the SDK method and use signed URL directly
+    const isWeb = typeof window !== 'undefined' && typeof window.document !== 'undefined';
+    
+    if (isWeb) {
+      // Try SDK download method on web (where Blob is properly supported)
       try {
-        blob = await response.blob();
-      } catch (blobError) {
-        // If blob() fails, try arrayBuffer as fallback
-        const arrayBuffer = await response.arrayBuffer();
-        blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-      }
+        // @ts-ignore
+        const { data, error } = await supabase.storage
+          .from(EXPORTS_BUCKET)
+          .download(storagePath);
 
-      // Convert Blob to base64
-      let base64String: string;
-      try {
-        const arrayBuffer = await blob.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        // For large files, convert in chunks to avoid stack overflow
-        const chunkSize = 8192;
-        let binaryString = '';
-        for (let i = 0; i < uint8Array.length; i += chunkSize) {
-          const chunk = uint8Array.slice(i, i + chunkSize);
-          binaryString += String.fromCharCode(...chunk);
+        if (error) {
+          throw error;
         }
-        base64String = btoa(binaryString);
-      } catch (convertError) {
-        // Fallback: use FileReader if available (web) or arrayBuffer directly
-        if (typeof FileReader !== 'undefined') {
-          // FileReader is available (web)
-          base64String = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const result = reader.result as string;
-              // Remove data URL prefix if present
-              const base64 = result.includes(',') ? result.split(',')[1] : result;
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
-        } else {
-          // React Native: try direct arrayBuffer again
+
+        if (data) {
+          // Try to convert Blob to base64
+          let base64String: string;
           try {
-            const arrayBuffer = await response.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            const chunkSize = 8192;
-            let binaryString = '';
-            for (let i = 0; i < uint8Array.length; i += chunkSize) {
-              const chunk = uint8Array.slice(i, i + chunkSize);
-              binaryString += String.fromCharCode(...chunk);
+            // Check if data has arrayBuffer method (standard Blob)
+            if (typeof data.arrayBuffer === 'function') {
+              const arrayBuffer = await data.arrayBuffer();
+              const uint8Array = new Uint8Array(arrayBuffer);
+              const chunkSize = 8192;
+              let binaryString = '';
+              for (let i = 0; i < uint8Array.length; i += chunkSize) {
+                const chunk = uint8Array.slice(i, i + chunkSize);
+                binaryString += String.fromCharCode(...chunk);
+              }
+              base64String = btoa(binaryString);
+            } else {
+              // Non-standard Blob - fall back to signed URL
+              throw new Error('Supabase SDK returned non-Blob data, falling back to signed URL');
             }
-            base64String = btoa(binaryString);
-          } catch (finalError) {
-            throw new Error(`Failed to convert PDF to base64: ${finalError}`);
+          } catch (convertError) {
+            // SDK download didn't work with Blob conversion - fall back to signed URL
+            throw convertError; // Re-throw to trigger fallback
           }
-        }
-      }
 
-      // Save to local cache
-      // Ensure we have a valid cache directory path
-      const finalCacheDir = Paths?.cache?.uri;
-      if (!finalCacheDir) {
-        throw new Error('Cache directory not available');
-      }
-      const finalLocalCachePath = finalCacheDir.endsWith('/') 
-        ? `${finalCacheDir}${fileName}` 
-        : `${finalCacheDir}/${fileName}`;
-      
-        await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
+          // Save to local cache
+          const finalCacheDir = Paths?.cache?.uri;
+          if (!finalCacheDir) {
+            throw new Error('Cache directory not available');
+          }
+          const finalLocalCachePath = finalCacheDir.endsWith('/') 
+            ? `${finalCacheDir}${fileName}` 
+            : `${finalCacheDir}/${fileName}`;
+          
+          await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
+          return finalLocalCachePath;
+        }
+      } catch (sdkError) {
+        // SDK method failed - fall back to signed URL method
         if (isDevLoggingEnabled) {
-          debug.debug('Saved PDF to cache', finalLocalCachePath);
+          debug.debug('SDK download method failed, using signed URL fallback:', sdkError);
         }
-        return finalLocalCachePath;
       }
+    }
+    
+    // Use signed URL method (works reliably in React Native and as fallback on web)
+    // Fallback: Try signed URL (works better for private buckets)
+    // @ts-ignore
+    const { data: signedUrlData, error: signedError } = await supabase.storage
+      .from(EXPORTS_BUCKET)
+      .createSignedUrl(storagePath, 3600); // 1 hour expiry
 
-      throw new Error('Storage download returned no data');
+    if (signedError || !signedUrlData?.signedUrl) {
+      throw signedError || new Error('No signed URL returned');
+    }
+
+    downloadUrl = signedUrlData.signedUrl;
+
+    // Download using fetch
+    response = await fetch(downloadUrl, {
+      headers: accessToken ? {
+        'Authorization': `Bearer ${accessToken}`,
+      } : {},
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to download PDF: ${response.status} ${response.statusText}`);
+    }
+
+    // Convert response to blob, then to base64
+    let blob: Blob;
+    try {
+      blob = await response.blob();
+    } catch (blobError) {
+      // If blob() fails, try arrayBuffer as fallback
+      const arrayBuffer = await response.arrayBuffer();
+      blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+    }
+
+    // Convert Blob to base64
+    let base64String: string;
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      // For large files, convert in chunks to avoid stack overflow
+      const chunkSize = 8192;
+      let binaryString = '';
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.slice(i, i + chunkSize);
+        binaryString += String.fromCharCode(...chunk);
+      }
+      base64String = btoa(binaryString);
+    } catch (convertError) {
+      // Fallback: use FileReader if available (web) or arrayBuffer directly
+      if (typeof FileReader !== 'undefined') {
+        // FileReader is available (web)
+        base64String = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            // Remove data URL prefix if present
+            const base64 = result.includes(',') ? result.split(',')[1] : result;
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        // React Native: try direct arrayBuffer again
+        try {
+          const arrayBuffer = await response.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          const chunkSize = 8192;
+          let binaryString = '';
+          for (let i = 0; i < uint8Array.length; i += chunkSize) {
+            const chunk = uint8Array.slice(i, i + chunkSize);
+            binaryString += String.fromCharCode(...chunk);
+          }
+          base64String = btoa(binaryString);
+        } catch (finalError) {
+          throw new Error(`Failed to convert PDF to base64: ${finalError}`);
+        }
+      }
+    }
+
+    // Save to local cache
+    // Ensure we have a valid cache directory path
+    const finalCacheDir = Paths?.cache?.uri;
+    if (!finalCacheDir) {
+      throw new Error('Cache directory not available');
+    }
+    const finalLocalCachePath = finalCacheDir.endsWith('/') 
+      ? `${finalCacheDir}${fileName}` 
+      : `${finalCacheDir}/${fileName}`;
+    
+    await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
+    if (isDevLoggingEnabled) {
+      debug.debug('Saved PDF to cache', finalLocalCachePath);
+    }
+    return finalLocalCachePath;
   } catch (error) {
     debug.error('Failed to download PDF from storage:', error);
     throw error;

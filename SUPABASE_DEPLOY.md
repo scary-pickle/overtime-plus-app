@@ -92,19 +92,48 @@ supabase functions deploy auth-signup-guard \
    - `ALLOWED_DOMAINS=health.qld.gov.au`
    - `SIGNUP_GUARD_SECRET=<your-generated-secret>`
 
-### Configure Auth Hook
-Hook the function to Auth events (Dashboard → Authentication → Hooks):
-- **Event:** Pre-signup (if available), otherwise User Signed Up webhook
-- **URL:** `https://<project-ref>.functions.supabase.co/auth-signup-guard`
-- **HTTP Method:** POST
+### Configure Auth Hook (OPTIONAL - Database Trigger Recommended)
 
-**Note:** The function accepts the secret in two ways:
-1. **Authorization header** (preferred): `Authorization: Bearer <SIGNUP_GUARD_SECRET>`
-   - If your hook configuration supports custom headers, use this method
-2. **Request body** (fallback): Include `"secret": "<SIGNUP_GUARD_SECRET>"` in the JSON body
-   - Use this if your hook doesn't support custom headers
+**⚠️ IMPORTANT:** Due to limitations with Supabase Auth Hooks (they don't easily support custom headers), we recommend using the **Database Trigger** approach instead (see below). The edge function hook is kept for backwards compatibility but may have reliability issues.
 
-If using the body method, you may need to configure a custom webhook transformer or use Supabase's Database Webhooks feature instead of Auth Hooks.
+If you still want to use the Auth Hook:
+
+1. Go to Dashboard → Authentication → Hooks
+2. Create a new hook:
+   - **Event:** Pre-signup (if available), otherwise User Signed Up webhook
+   - **URL:** `https://<project-ref>.supabase.co/functions/v1/auth-signup-guard`
+   - **HTTP Method:** POST
+   - **Headers:** Add `Authorization: Bearer <SIGNUP_GUARD_SECRET>` if supported
+   - **Body:** If headers aren't supported, you'll need to use a webhook transformer to add `"secret": "<SIGNUP_GUARD_SECRET>"` to the request body
+
+**Note:** The function accepts the secret in multiple formats:
+- Authorization header: `Authorization: Bearer <SIGNUP_GUARD_SECRET>` (preferred)
+- Request body fields: `secret`, `SIGNUP_GUARD_SECRET`, `auth_secret`, or `webhook_secret`
+
+### Database Trigger (RECOMMENDED)
+
+A more reliable approach is to use a database trigger that validates email domains directly in the database. This doesn't require HTTP calls and is more reliable.
+
+**Apply the migration:**
+```bash
+supabase db push
+```
+
+Or manually run the SQL in Supabase Dashboard → SQL Editor:
+```sql
+-- See: supabase/migrations/20250120000000_auth_signup_guard_trigger.sql
+```
+
+This creates a trigger on `auth.users` that validates email domains before allowing signup. If the domain is not allowed, the signup will be rejected with a clear error message.
+
+**Benefits of Database Trigger:**
+- ✅ More reliable (no HTTP calls, no network issues)
+- ✅ Faster (runs synchronously in the database)
+- ✅ Clearer error messages
+- ✅ No secret management needed
+- ✅ Works regardless of hook configuration
+
+**Note:** If you use the database trigger, you can disable or remove the Auth Hook. The trigger provides the same protection at the database level.
 
 ## App Link Handling
 - Ensure `scheme` in `app.config.ts` is `overtime-plus`

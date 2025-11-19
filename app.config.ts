@@ -56,6 +56,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     eas: {
       projectId: 'your-project-id'
+    },
+    revenuecat: {
+      iosApiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS,
+      androidApiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID,
+      amazonApiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_AMAZON
     }
   }
 });
