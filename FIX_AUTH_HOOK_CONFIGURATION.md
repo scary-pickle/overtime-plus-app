@@ -7,12 +7,12 @@ Supabase is rejecting signups with "Hook requires authorization token" (500 erro
 
 ### Step 1: Get the Correct Secret
 
-The secret you need to configure in the hook is:
+The secret you need to configure in the hook should be in Standard Webhooks format:
 ```
-v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH
+v1,whsec_<YOUR_BASE64_ENCODED_SECRET>
 ```
 
-This is the **base64-encoded bytes** format (not the hex string).
+This is the **base64-encoded bytes** format (not the hex string). Get this value from your environment variables or generate a new one.
 
 ### Step 2: Configure the Hook in Supabase Dashboard
 
@@ -31,9 +31,10 @@ This is the **base64-encoded bytes** format (not the hex string).
      - ⚠️ **IMPORTANT:** Use this exact format: `<project-ref>.supabase.co/functions/v1/<function-name>`
      - ❌ **WRONG:** `<project-ref>.functions.supabase.co/<function-name>`
    - **HTTP Method:** `POST`
-   - **Secret:** `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+   - **Secret:** `v1,whsec_<YOUR_SECRET_HERE>` (get from environment variables)
      - This is the Standard Webhooks format secret
      - Supabase will use this to sign the webhook requests
+     - Must match the `SIGNUP_GUARD_SECRET` environment variable exactly
 
 4. **Save the Hook:**
    - Click "Save" or "Create"
@@ -47,8 +48,9 @@ This is the **base64-encoded bytes** format (not the hex string).
    - Verify the secret is set (it may be masked/redacted in the UI)
 
 2. **Verify Edge Function Secret:**
-   - The edge function's `SIGNUP_GUARD_SECRET` environment variable should also be set to: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
-   - This has already been set via CLI
+   - The edge function's `SIGNUP_GUARD_SECRET` environment variable should be set to the same value as the hook secret
+   - Format: `v1,whsec_<YOUR_SECRET_HERE>`
+   - Must match the hook secret exactly
 
 ### Step 4: Test the Signup
 
@@ -77,8 +79,9 @@ This is the **base64-encoded bytes** format (not the hex string).
 
 1. **Verify the hook secret is set:**
    - Go back to the hook configuration
-   - Make sure the secret field has: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+   - Make sure the secret field has the format: `v1,whsec_<base64_encoded_secret>`
    - The secret must be in this exact format (Standard Webhooks format)
+   - Must match the `SIGNUP_GUARD_SECRET` environment variable
 
 2. **Check if the hook is enabled:**
    - Make sure the hook toggle is ON/Enabled
@@ -95,8 +98,9 @@ This is the **base64-encoded bytes** format (not the hex string).
 
 1. **Check the function logs** for signature previews
 2. **Verify both secrets match:**
-   - Hook secret: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
-   - Function env var: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+   - Hook secret: `v1,whsec_<YOUR_SECRET_HERE>`
+   - Function env var: `v1,whsec_<YOUR_SECRET_HERE>` (must be identical)
+   - Both should be in Standard Webhooks format
 3. **Wait for propagation** - secrets may take 1-2 minutes to propagate
 
 ## Alternative: Database Trigger (If Hook Still Fails)

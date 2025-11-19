@@ -34,8 +34,9 @@ A secure secret has been generated for you. Use this same secret in both places 
      - ⚠️ **CRITICAL:** Use this exact format: `<project-ref>.supabase.co/functions/v1/<function-name>`
      - ❌ **WRONG:** `<project-ref>.functions.supabase.co/<function-name>`
    - **HTTP Method:** `POST`
-   - **Secret:** `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+   - **Secret:** `v1,whsec_<YOUR_SECRET_HERE>` (get this from your environment variables or generate a new one)
      - This is the Standard Webhooks format secret
+     - Must match the `SIGNUP_GUARD_SECRET` environment variable exactly
 
 4. Click **"Save"** or **"Update"**
 

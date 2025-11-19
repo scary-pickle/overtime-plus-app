@@ -23,13 +23,13 @@ Check:
 - ✅ Event is set to "User Signed Up" or "Pre-signup"
 - ✅ URL is: `https://ethllesuiqlomdtctvdh.supabase.co/functions/v1/auth-signup-guard`
 - ✅ Method is: `POST`
-- ✅ Secret is set to: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+- ✅ Secret is set to: `v1,whsec_<YOUR_SECRET_HERE>` (check your Supabase dashboard)
 
 ### 3. Verify Secret in Environment Variables
 
 The secret in the edge function environment variables should match the hook secret:
-- Secret: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
-- This is what we set via CLI (Standard Webhooks format)
+- Secret format: `v1,whsec_<base64_encoded_secret>` (Standard Webhooks format)
+- Must match the hook secret exactly
 
 ### 4. Possible Issues
 
@@ -41,7 +41,7 @@ The secret in the edge function environment variables should match the hook secr
 
 **Issue 3: Wrong Secret Format**
 - The hook secret must be: `v1,whsec_<base64_encoded_secret>`
-- The environment variable secret should match: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+- The environment variable secret should match the hook secret exactly
 
 **Issue 4: Hook URL Wrong**
 - Must be: `https://ethllesuiqlomdtctvdh.supabase.co/functions/v1/auth-signup-guard`

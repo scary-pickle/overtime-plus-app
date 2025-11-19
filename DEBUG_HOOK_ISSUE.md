@@ -25,8 +25,10 @@ After trying to sign up, check the function logs:
 
 The hook secret must be in Standard Webhooks format:
 ```
-v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH
+v1,whsec_<YOUR_BASE64_ENCODED_SECRET>
 ```
+
+Get this value from your environment variables or generate a new one.
 
 ### 4. Check What Supabase Actually Sends
 

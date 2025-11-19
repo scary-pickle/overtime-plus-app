@@ -25,12 +25,12 @@ You need to ensure **both** of these use the **exact same secret**:
 
 ### 1. Auth Hook Secret
 - Location: Supabase Dashboard → Authentication → Hooks → auth-signup-guard
-- Should be: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+- Should be: `v1,whsec_<YOUR_SECRET_HERE>` (get this from your Supabase dashboard or generate a new one)
 
 ### 2. Edge Function Environment Variable
 - Location: Supabase Dashboard → Edge Functions → auth-signup-guard → Settings → Environment Variables
 - Variable name: `SIGNUP_GUARD_SECRET`
-- Should be: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+- Should be: `v1,whsec_<YOUR_SECRET_HERE>` (must match the hook secret exactly)
 
 ## Step-by-Step Fix
 
@@ -40,8 +40,8 @@ You need to ensure **both** of these use the **exact same secret**:
 2. Find the hook for `auth-signup-guard`
 3. Click "Edit"
 4. Check the **Secret** field:
-   - It should be: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
-   - If it's different or empty, update it to this value
+   - It should be in format: `v1,whsec_<base64_encoded_secret>`
+   - If it's different or empty, generate a new secret or use the one from your environment variables
 5. Verify the URL is: `https://ethllesuiqlomdtctvdh.supabase.co/functions/v1/auth-signup-guard`
 6. Make sure the hook is **enabled**
 7. Click "Save"
@@ -52,8 +52,8 @@ You need to ensure **both** of these use the **exact same secret**:
 2. Scroll to "Environment Variables"
 3. Find `SIGNUP_GUARD_SECRET`
 4. Check the value:
-   - It should be: `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
-   - If it's different or missing, add/update it to this value
+   - It should be in format: `v1,whsec_<base64_encoded_secret>` (must match the hook secret exactly)
+   - If it's different or missing, add/update it to match the hook secret
 5. Click "Save"
 
 ### Step 3: Redeploy the Edge Function (if you made code changes)

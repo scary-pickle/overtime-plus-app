@@ -280,7 +280,7 @@ serve(async (req) => {
             // The signatures don't match - this could mean:
             // 1. The secret in env var doesn't match the hook secret
             //    SOLUTION: Ensure both the Auth Hook secret and SIGNUP_GUARD_SECRET env var
-            //    are set to the exact same value: v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH
+            //    are set to the exact same value (check your Supabase dashboard for the hook secret)
             // 2. The signature algorithm is different
             // 3. The payload format is different
             // For now, we'll reject the request for security

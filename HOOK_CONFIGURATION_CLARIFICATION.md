@@ -22,8 +22,9 @@ For the `auth-signup-guard` edge function, you **must** use an **HTTPS webhook**
   - ⚠️ **IMPORTANT:** The URL format is `<project-ref>.supabase.co/functions/v1/<function-name>`
   - ❌ **WRONG:** `<project-ref>.functions.supabase.co/<function-name>`
 - **HTTP Method:** `POST`
-- **Secret:** `v1,whsec_8uWRnZb68UxS74XeMFwmktTXlmmf1NW6mQTSHvi8PbWQ7D3cuqCN2ODm+rvn5FrPZQvVGy/ULjLmzlNH`
+- **Secret:** `v1,whsec_<YOUR_SECRET_HERE>` (get from environment variables)
   - This is the Standard Webhooks format secret
+  - Must match the `SIGNUP_GUARD_SECRET` environment variable exactly
 
 ### PostgreSQL vs HTTPS
 
