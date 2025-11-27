@@ -3,12 +3,9 @@ import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Keyboard, Scroll
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 
-const isDev = process.env.NODE_ENV !== 'production';
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log(...args);
-  }
-};
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('VerifyEmail');
 
 const maskEmail = (email?: string | null) => {
   if (!email) return email ?? undefined;
@@ -321,31 +318,13 @@ export default function VerifyEmail() {
           }}
         >
           {error ? <Text style={{ color: '#b91c1c' }}>{error}</Text> : null}
-          {statusMsg ? <Text style={{ color: '#111827' }}>{statusMsg}</Text> : null}
-          <Text style={{ color: '#4b5563', marginTop: 8 }}>Email</Text>
-          <TextInput
-            value={emailInput}
-            onChangeText={setEmailInput}
-            placeholder="you@health.qld.gov.au"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
-          />
-          <TouchableOpacity
-            onPress={onSendOtp}
-            disabled={busy || cooldown > 0}
-            style={{
-              backgroundColor: '#111827',
-              borderRadius: 12,
-              padding: 14,
-              alignItems: 'center',
-              opacity: busy || cooldown > 0 ? 0.7 : 1,
-            }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '600' }}>{sendLabel}</Text>
-          </TouchableOpacity>
-
-          <Text style={{ color: '#4b5563', marginTop: 16 }}>Enter the 6-digit code</Text>
+          {statusMsg ? (
+            <Text style={{ color: '#111827' }}>{statusMsg}</Text>
+          ) : (
+            <Text style={{ color: '#4b5563', marginTop: 8 }}>
+              Check your email for the 6-digit code.
+            </Text>
+          )}
           <TextInput
             value={otpCode}
             onChangeText={(text) => {
@@ -407,6 +386,21 @@ export default function VerifyEmail() {
             }}
           >
             <Text style={{ color: '#fff', fontWeight: '600' }}>{verifyLabel}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onSendOtp}
+            disabled={busy || cooldown > 0}
+            style={{ marginTop: 8, alignItems: 'center' }}
+          >
+            <Text
+              style={{
+                color: busy || cooldown > 0 ? '#9CA3AF' : '#111827',
+                fontSize: 14,
+                fontWeight: '500',
+              }}
+            >
+              {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend 6-digit code'}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

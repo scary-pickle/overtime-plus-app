@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   useColorScheme,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -15,9 +14,13 @@ import { useAuthStore } from '../../lib/state/authStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
+import { TextInputModal } from '../../components/TextInputModal';
 import { getCurrentDate, getCurrentTime } from '../../lib/time';
 import { validateShift } from '../../lib/roster';
 import { UsualShift, ShiftTemplate } from '../../types';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('NewShift');
 
 const SHIFT_TYPES = [
   { value: 'weekly', label: 'Weekly' },
@@ -62,6 +65,7 @@ export default function NewShiftScreen() {
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [createdFromTemplate, setCreatedFromTemplate] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [showLabelModal, setShowLabelModal] = useState(false);
 
   useEffect(() => {
     // Load templates on mount
@@ -134,8 +138,8 @@ export default function NewShiftScreen() {
   };
 
   const handleSave = async (saveAsTemplate: boolean = false) => {
-    console.log('💾 NewShiftScreen: Save button pressed');
-    console.log('📝 NewShiftScreen: Form data:', {
+    debug.debug('Save button pressed');
+    debug.debug('Form data:', {
       label,
       type,
       selectedDays,
@@ -147,7 +151,7 @@ export default function NewShiftScreen() {
     });
 
     if (!validateForm()) {
-      console.log('❌ NewShiftScreen: Validation failed:', validationErrors);
+      debug.debug('Validation failed:', validationErrors);
       Alert.alert('Validation Error', validationErrors.join('\n'));
       return;
     }
@@ -178,10 +182,10 @@ export default function NewShiftScreen() {
           updatedAt: new Date().toISOString(),
         };
         await addTemplate(template, user?.id);
-        console.log('✅ NewShiftScreen: Template saved successfully');
+        debug.debug('Template saved successfully');
       }
 
-      console.log('🔄 NewShiftScreen: Creating shifts for days:', selectedDays);
+      debug.debug('Creating shifts for days:', selectedDays);
       // Create a separate shift for each selected day
       const shiftPromises = selectedDays.map((dayOfWeek, index) => {
         const shift: UsualShift = {
@@ -196,7 +200,7 @@ export default function NewShiftScreen() {
           activeFrom,
           activeTo: activeTo || undefined,
         };
-        console.log(`➕ NewShiftScreen: Creating shift ${index + 1}/${selectedDays.length}:`, {
+        debug.debug(`Creating shift ${index + 1}/${selectedDays.length}:`, {
           id: shift.id,
           label: shift.label,
           day: shift.dayOfWeek,
@@ -206,7 +210,7 @@ export default function NewShiftScreen() {
       });
 
       await Promise.all(shiftPromises);
-      console.log('✅ NewShiftScreen: All shifts created successfully');
+      debug.debug('All shifts created successfully');
       
       Alert.alert(
         'Success',
@@ -214,7 +218,7 @@ export default function NewShiftScreen() {
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
-      console.error('❌ NewShiftScreen: Failed to create shifts:', error);
+      debug.error('Failed to create shifts:', error);
       Alert.alert('Error', 'Failed to create shift patterns. Please try again.');
     }
   };
@@ -520,26 +524,7 @@ export default function NewShiftScreen() {
       </Text>
       <TouchableOpacity
         style={[styles.labelButton, isDark && styles.darkInput]}
-        onPress={() => {
-          // TODO: Implement text input modal
-          Alert.prompt(
-            'Shift Label',
-            'Enter a name for this shift pattern:',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'OK', onPress: (text?: string) => {
-                setLabel(text || '');
-                // Reset template flag if manually edited
-                if (createdFromTemplate) {
-                  setCreatedFromTemplate(false);
-                  setSelectedTemplateId(null);
-                }
-              }}
-            ],
-            'plain-text',
-            label
-          );
-        }}
+        onPress={() => setShowLabelModal(true)}
       >
         <Text style={[styles.labelText, isDark && styles.darkText]}>
           {label || 'Enter shift label...'}
@@ -594,6 +579,25 @@ export default function NewShiftScreen() {
         </View>
       </View>
     </ScrollView>
+    <TextInputModal
+      visible={showLabelModal}
+      title="Shift Label"
+      message="Enter a name for this shift pattern:"
+      placeholder="Enter shift label..."
+      initialValue={label}
+      onConfirm={(text) => {
+        setLabel(text);
+        setShowLabelModal(false);
+        // Reset template flag if manually edited
+        if (createdFromTemplate) {
+          setCreatedFromTemplate(false);
+          setSelectedTemplateId(null);
+        }
+      }}
+      onCancel={() => setShowLabelModal(false)}
+      confirmText="OK"
+      cancelText="Cancel"
+    />
     </SharedTimePickerProvider>
   );
 }

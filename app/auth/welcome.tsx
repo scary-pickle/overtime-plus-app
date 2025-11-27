@@ -1,22 +1,11 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme } from 'react-native';
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 export default function Welcome() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-
-  const signInButtonStyle = {
-    ...styles.button,
-    backgroundColor: '#2563EB',
-    width: '100%',
-  };
-
-  const signUpButtonStyle = {
-    ...styles.button,
-    backgroundColor: '#10B981',
-    width: '100%',
-  };
+  const router = useRouter();
 
   return (
     <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
@@ -28,16 +17,20 @@ export default function Welcome() {
           </Text>
         </View>
         <View style={styles.buttons}>
-          <Link href="/auth/sign-in" asChild>
-            <TouchableOpacity style={signInButtonStyle}>
-              <Text style={styles.buttonText}>Sign In</Text>
-            </TouchableOpacity>
-          </Link>
-          <Link href="/auth/sign-up" asChild>
-            <TouchableOpacity style={signUpButtonStyle}>
-              <Text style={styles.buttonText}>Create Account</Text>
-            </TouchableOpacity>
-          </Link>
+          <TouchableOpacity 
+            style={[styles.button, styles.primaryButton]}
+            activeOpacity={0.8}
+            onPress={() => router.push('/auth/sign-in')}
+          >
+            <Text style={styles.buttonText}>Sign In</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.button, styles.secondaryButton]}
+            activeOpacity={0.8}
+            onPress={() => router.push('/auth/sign-up')}
+          >
+            <Text style={styles.buttonText}>Create Account</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>

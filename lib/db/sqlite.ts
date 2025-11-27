@@ -264,7 +264,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE overtime_logs ADD COLUMN is_active_shift INTEGER DEFAULT 0;
       `);
-      console.log('✅ Added is_active_shift column');
+      debug.debug('Added is_active_shift column');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -274,7 +274,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE overtime_logs ADD COLUMN concurrent_employment INTEGER DEFAULT 0;
       `);
-      console.log('✅ Added concurrent_employment column');
+      debug.debug('Added concurrent_employment column');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -284,7 +284,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE overtime_logs ADD COLUMN smo_categories TEXT;
       `);
-      console.log('✅ Added smo_categories column');
+      debug.debug('Added smo_categories column');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -298,7 +298,7 @@ class Database {
       const hasActualStart = tableInfo.some((col: any) => col.name === 'actual_start');
       
       if (hasActualStart) {
-        console.log('🔄 Migrating log_templates table to remove actual_start/actual_finish...');
+        debug.debug('Migrating log_templates table to remove actual_start/actual_finish...');
         // Create new table without actual_start and actual_finish
         await this.db.execAsync(`
           CREATE TABLE IF NOT EXISTS log_templates_new (
@@ -334,10 +334,10 @@ class Database {
           CREATE INDEX IF NOT EXISTS idx_log_templates_name ON log_templates(name);
         `);
         
-        console.log('✅ Migrated log_templates table successfully');
+        debug.debug('Migrated log_templates table successfully');
       }
     } catch (error) {
-      console.error('Migration error (may be fine if table doesn\'t exist yet):', error);
+      debug.error('Migration error (may be fine if table doesn\'t exist yet):', error);
       // Migration error is okay - table might not exist yet or might already be migrated
     }
 
@@ -346,7 +346,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE usual_shifts ADD COLUMN deleted_at TEXT;
       `);
-      console.log('✅ Added deleted_at column to usual_shifts');
+      debug.debug('Added deleted_at column to usual_shifts');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -355,7 +355,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE overtime_logs ADD COLUMN deleted_at TEXT;
       `);
-      console.log('✅ Added deleted_at column to overtime_logs');
+      debug.debug('Added deleted_at column to overtime_logs');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -364,7 +364,7 @@ class Database {
       await this.db.execAsync(`
         ALTER TABLE export_batches ADD COLUMN deleted_at TEXT;
       `);
-      console.log('✅ Added deleted_at column to export_batches');
+      debug.debug('Added deleted_at column to export_batches');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -670,7 +670,7 @@ class Database {
     if (!this.db) throw new Error('Database not initialized');
 
     try {
-      console.log('Creating template:', { id: template.id, name: template.name, category: template.category });
+      debug.debug('Creating template:', { id: template.id, name: template.name, category: template.category });
       await this.db.runAsync(`
         INSERT INTO log_templates (
           id, name, rostered_start, rostered_finish,
@@ -685,10 +685,10 @@ class Database {
         template.smoCategories ? JSON.stringify(template.smoCategories) : null,
         template.createdAt, template.updatedAt
       ]);
-      console.log('✅ Template created successfully:', template.id);
+      debug.debug('Template created successfully:', template.id);
     } catch (error) {
-      console.error('❌ Failed to create template:', error);
-      console.error('Template data:', {
+      debug.error('Failed to create template:', error);
+      debug.error('Template data:', {
         id: template.id,
         name: template.name,
         rosteredStart: template.rosteredStart,
@@ -714,7 +714,7 @@ class Database {
         ORDER BY name, created_at DESC
       `);
 
-      console.log('Fetched templates from database:', result.length);
+      debug.debug('Fetched templates from database:', result.length);
       
       return result.map((row: any) => ({
         id: row.id as string,
@@ -730,10 +730,10 @@ class Database {
         updatedAt: row.updated_at as string
       }));
     } catch (error) {
-      console.error('Error fetching templates:', error);
+      debug.error('Error fetching templates:', error);
       // If table doesn't exist yet, return empty array
       if (error instanceof Error && error.message.includes('no such table')) {
-        console.log('log_templates table does not exist yet, returning empty array');
+        debug.debug('log_templates table does not exist yet, returning empty array');
         return [];
       }
       throw error;
@@ -788,9 +788,9 @@ class Database {
         template.createdAt,
         template.updatedAt
       ]);
-      console.log('✅ Shift template created successfully:', template.id);
+      debug.debug('Shift template created successfully:', template.id);
     } catch (error) {
-      console.error('❌ Failed to create shift template:', error);
+      debug.error('Failed to create shift template:', error);
       throw error;
     }
   }
@@ -806,7 +806,7 @@ class Database {
 
       const result = await this.db.getAllAsync(query, params);
 
-      console.log('Fetched shift templates from database:', result.length);
+      debug.debug('Fetched shift templates from database:', result.length);
 
       return result.map((row: any) => ({
         id: row.id as string,
@@ -820,10 +820,10 @@ class Database {
         deletedAt: row.deleted_at as string | undefined
       }));
     } catch (error) {
-      console.error('Error fetching shift templates:', error);
+      debug.error('Error fetching shift templates:', error);
       // If table doesn't exist yet, return empty array
       if (error instanceof Error && error.message.includes('no such table')) {
-        console.log('shift_templates table does not exist yet, returning empty array');
+        debug.debug('shift_templates table does not exist yet, returning empty array');
         return [];
       }
       throw error;
@@ -957,6 +957,7 @@ class Database {
     await this.db.runAsync('DELETE FROM auth_sessions WHERE key = ?', [key]);
   }
 
+  // Clear all cached Supabase auth sessions (used for account deletion)
   async clearAuthSessions(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
     

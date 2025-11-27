@@ -20,7 +20,11 @@ import { formatMinutes } from '../../lib/time';
 import { sendAVACEmail } from '../../lib/email/emailService';
 import { downloadPDFFromStorage, isCloudURL, isLocalPath } from '../../lib/storage/pdfStorage';
 import { setClipboardWithAutoClear } from '../../lib/utils/clipboard';
+import { getExportFileName, getExportDisplayName } from '../../lib/utils/exportFilename';
 import InAppPDFViewer from '../../components/InAppPDFViewer';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('PDFViewer');
 
 export default function PDFViewerScreen() {
   const router = useRouter();
@@ -57,12 +61,14 @@ export default function PDFViewerScreen() {
     if (isCloudURL(pdfUri)) {
       try {
         setIsLoading(true);
-        console.log('[PDFViewer] Downloading PDF from cloud storage...');
-        finalUri = await downloadPDFFromStorage(pdfUri, batchId || '');
+        debug.debug('Downloading PDF from cloud storage...');
+        // Get the preferred filename from export batch
+        const preferredFileName = exportBatch ? getExportFileName(exportBatch, profile) : undefined;
+        finalUri = await downloadPDFFromStorage(pdfUri, batchId || '', preferredFileName);
         setLocalPdfUri(finalUri);
-        console.log('[PDFViewer] PDF downloaded to local cache:', finalUri);
+        debug.debug('PDF downloaded to local cache:', finalUri);
       } catch (error) {
-        console.error('[PDFViewer] Failed to download PDF from cloud:', error);
+        debug.error('Failed to download PDF from cloud:', error);
         // Fallback to cloud URL if download fails
         finalUri = pdfUri;
       } finally {
@@ -82,11 +88,11 @@ export default function PDFViewerScreen() {
         setFileInfo(info);
       } catch (error) {
         // Non-fatal error - just log it
-        console.error('Failed to get file info:', error);
+        debug.error('Failed to get file info:', error);
       }
     } else {
       // Not a local file - skip file info
-      console.log('[PDFViewer] Skipping file info for non-local file:', finalUri?.substring(0, 50));
+      debug.debug('Skipping file info for non-local file:', finalUri?.substring(0, 50));
     }
   };
 
@@ -103,11 +109,13 @@ export default function PDFViewerScreen() {
       if (isCloudURL(pdfUri)) {
         try {
           const batchId = exportBatch?.id || pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
-          console.log('[View PDF] Downloading PDF from cloud storage...');
-          pdfUri = await downloadPDFFromStorage(pdfUri, batchId);
-          console.log('[View PDF] PDF downloaded to local path:', pdfUri);
+          debug.debug('Downloading PDF from cloud storage...');
+          // Get the preferred filename from export batch
+          const preferredFileName = exportBatch ? getExportFileName(exportBatch, profile) : undefined;
+          pdfUri = await downloadPDFFromStorage(pdfUri, batchId, preferredFileName);
+          debug.debug('PDF downloaded to local path:', pdfUri);
         } catch (downloadError) {
-          console.error('[View PDF] Failed to download PDF:', downloadError);
+          debug.error('Failed to download PDF:', downloadError);
           Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
           setIsLoading(false);
           return;
@@ -123,7 +131,7 @@ export default function PDFViewerScreen() {
         Alert.alert('Sharing not available', 'Sharing is not available on this device.');
       }
     } catch (error) {
-      console.error('Failed to open PDF:', error);
+      debug.error('Failed to open PDF:', error);
       Alert.alert('Error', 'Failed to open PDF. The file may have been deleted.');
     } finally {
       setIsLoading(false);
@@ -143,11 +151,13 @@ export default function PDFViewerScreen() {
       if (isCloudURL(pdfUri)) {
         try {
           const batchId = exportBatch?.id || pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
-          console.log('[Share PDF] Downloading PDF from cloud storage...');
-          pdfUri = await downloadPDFFromStorage(pdfUri, batchId);
-          console.log('[Share PDF] PDF downloaded to local path:', pdfUri);
+          debug.debug('Downloading PDF from cloud storage...');
+          // Get the preferred filename from export batch
+          const preferredFileName = exportBatch ? getExportFileName(exportBatch, profile) : undefined;
+          pdfUri = await downloadPDFFromStorage(pdfUri, batchId, preferredFileName);
+          debug.debug('PDF downloaded to local path:', pdfUri);
         } catch (downloadError) {
-          console.error('[Share PDF] Failed to download PDF:', downloadError);
+          debug.error('Failed to download PDF:', downloadError);
           Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
           setIsLoading(false);
           return;
@@ -163,7 +173,7 @@ export default function PDFViewerScreen() {
         Alert.alert('Sharing not available', 'Sharing is not available on this device.');
       }
     } catch (error) {
-      console.error('Sharing failed:', error);
+      debug.error('Sharing failed:', error);
       Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
     } finally {
       setIsLoading(false);
@@ -197,23 +207,24 @@ export default function PDFViewerScreen() {
         Alert.alert('Success', 'Email opened in Apple Mail with attachment and all details pre-filled. Please review and send.');
         setIsSubmitting(false);
       } else if (result.success && result.useShareSheet) {
-        // Share sheet method - store email details for manual copy
-        if (result.recipientEmail && result.subject && result.body) {
+        // Share sheet method - store email details for manual copy (recipient is optional)
+        if (result.subject && result.body) {
           setEmailDetails({
-            recipientEmail: result.recipientEmail,
+            recipientEmail: result.recipientEmail || '',
             subject: result.subject,
             body: result.body,
           });
-        } else {
-          Alert.alert('Error', 'Email details are incomplete. Please try again.');
-          setIsSubmitting(false);
-          return;
         }
+        
+        // Prepare alert message (recipient is optional)
+        const emailDetailsText = result.recipientEmail 
+          ? `To: ${result.recipientEmail}\n\nSubject: ${result.subject}\n\nUse the "Copy Email Details" button below to copy the email details to your clipboard, then select your email app (e.g., Outlook) and paste (Cmd+V) the details.`
+          : `Subject: ${result.subject}\n\nUse the "Copy Email Details" button below to copy the email details to your clipboard, then select your email app (e.g., Outlook), choose your recipient, and paste (Cmd+V) the details.`;
         
         // Show alert with option to copy to clipboard
         Alert.alert(
           'Ready to Email',
-          `To: ${result.recipientEmail}\n\nSubject: ${result.subject}\n\nUse the "Copy Email Details" button below to copy the email details to your clipboard, then select your email app (e.g., Outlook) and paste (Cmd+V) the details.`,
+          emailDetailsText,
           [
             { text: 'Cancel', style: 'cancel', onPress: () => {
               setIsSubmitting(false);
@@ -228,11 +239,13 @@ export default function PDFViewerScreen() {
                   if (isCloudURL(pdfUri)) {
                     try {
                       const batchId = exportBatch?.id || pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
-                      console.log('[Email Share] Downloading PDF from cloud storage...');
-                      localPdfPath = await downloadPDFFromStorage(pdfUri, batchId);
-                      console.log('[Email Share] PDF downloaded to local path:', localPdfPath);
+                      debug.debug('Downloading PDF from cloud storage...');
+                      // Get the preferred filename from export batch
+                      const preferredFileName = exportBatch ? getExportFileName(exportBatch, profile) : undefined;
+                      localPdfPath = await downloadPDFFromStorage(pdfUri, batchId, preferredFileName);
+                      debug.debug('PDF downloaded to local path:', localPdfPath);
                     } catch (downloadError) {
-                      console.error('[Email Share] Failed to download PDF:', downloadError);
+                      debug.error('Failed to download PDF:', downloadError);
                       Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
                       setIsSubmitting(false);
                       return;
@@ -252,7 +265,7 @@ export default function PDFViewerScreen() {
                     Alert.alert('Sharing not available', 'Sharing is not available on this device.');
                   }
                 } catch (shareError) {
-                  console.error('Sharing failed:', shareError);
+                  debug.error('Sharing failed:', shareError);
                   Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
                 } finally {
                   setIsSubmitting(false);
@@ -266,7 +279,7 @@ export default function PDFViewerScreen() {
         setIsSubmitting(false);
       }
     } catch (error) {
-      console.error('Error submitting AVAC:', error);
+      debug.error('Error submitting AVAC:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
       setIsSubmitting(false);
     }
@@ -281,7 +294,7 @@ export default function PDFViewerScreen() {
       await setClipboardWithAutoClear(clipboardText, 60000); // Auto-clear after 60 seconds
       Alert.alert('Copied', 'Email details copied to clipboard. They will be automatically cleared in 60 seconds.');
     } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
+      debug.error('Failed to copy to clipboard:', error);
       Alert.alert('Error', 'Failed to copy email details to clipboard. Please try again.');
     }
   };
@@ -328,6 +341,9 @@ export default function PDFViewerScreen() {
   const totalHours = Math.floor(exportBatch.totalMinutes / 60);
   const remainingMinutes = exportBatch.totalMinutes % 60;
   const createdDate = new Date(exportBatch.createdAt);
+  
+  // Get the shortened display name (without person's name)
+  const displayName = getExportDisplayName(exportBatch, profile);
 
   // If in preview mode, show the PDF viewer
   if (viewMode === 'preview') {
@@ -346,7 +362,7 @@ export default function PDFViewerScreen() {
     return (
       <InAppPDFViewer
         pdfUri={pdfUri}
-        title={`Export #${exportBatch.id.split('_')[1]}`}
+        title={displayName}
         onClose={() => router.replace('/(tabs)/exports')}
       />
     );
@@ -358,7 +374,7 @@ export default function PDFViewerScreen() {
         {/* Header */}
         <View style={[styles.header, isDark && styles.darkCard]}>
           <Text style={[styles.headerTitle, isDark && styles.darkText]}>
-            Export #{exportBatch.id.split('_')[1]}
+            {displayName}
           </Text>
           <Text style={[styles.headerSubtitle, isDark && styles.darkText]}>
             Generated on {createdDate.toLocaleDateString('en-AU', {

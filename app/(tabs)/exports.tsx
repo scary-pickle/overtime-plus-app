@@ -28,6 +28,10 @@ import { useAuthStore } from '../../lib/state/authStore';
 import { formatMinutes } from '../../lib/time';
 import { ExportBatch } from '../../types';
 import { sendAVACEmail } from '../../lib/email/emailService';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('Exports');
+import { getExportFileName, getExportDisplayName } from '../../lib/utils/exportFilename';
 
 type SubmissionStatusFilter = 'all' | 'submitted' | 'notSubmitted';
 type DateFilter = 'all' | 'today' | 'thisWeek' | 'thisMonth' | 'lastMonth' | 'thisYear';
@@ -208,7 +212,7 @@ export default function ExportsScreen() {
   const handleScroll = () => {
     // Close any expanded menus when user scrolls
     if (expandedActionIds.size > 0) {
-      console.log('[EXPORTS] Scroll detected - closing menus');
+      debug.debug('Scroll detected - closing menus');
       setExpandedActionIds(new Set());
     }
   };
@@ -231,12 +235,16 @@ export default function ExportsScreen() {
       // Handle cloud URLs - download to cache if needed
       let pdfUri = batch.pdfUri;
       const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+      const { getExportFileName } = await import('../../lib/utils/exportFilename');
+      const { profile } = useProfileStore.getState();
       
       if (isCloudURL(batch.pdfUri)) {
         try {
-          pdfUri = await downloadPDFFromStorage(batch.pdfUri, batch.id);
+          // Get the preferred filename from export batch
+          const preferredFileName = getExportFileName(batch, profile);
+          pdfUri = await downloadPDFFromStorage(batch.pdfUri, batch.id, preferredFileName);
         } catch (error) {
-          console.error('Failed to download PDF from cloud:', error);
+          debug.error('Failed to download PDF from cloud:', error);
           Alert.alert('Error', 'Failed to download PDF from cloud. Please check your connection.');
           return;
         }
@@ -251,40 +259,40 @@ export default function ExportsScreen() {
         Alert.alert('Sharing not available', 'Sharing is not available on this device.');
       }
     } catch (error) {
-      console.error('Sharing failed:', error);
+      debug.error('Sharing failed:', error);
       Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
     }
   };
 
   const handleDeleteBatch = (batch: ExportBatch) => {
-    console.log('[EXPORTS] handleDeleteBatch called', { batchId: batch.id });
+    debug.debug('handleDeleteBatch called', { batchId: batch.id });
     const batchId = batch.id;
-    
+
     // Close the expanded menu immediately to prevent dismiss overlay from interfering
-    console.log('[EXPORTS] Closing expanded menu for delete');
+    debug.debug('Closing expanded menu for delete');
     setExpandedActionIds(prev => {
       const next = new Set(prev);
       next.delete(batchId);
-      console.log('[EXPORTS] Expanded menu state updated, size:', next.size);
+      debug.debug('Expanded menu state updated, size:', next.size);
       return next;
     });
-    
+
     // Execute the alert immediately - it will show even if menu closes
-    console.log('[EXPORTS] Showing delete alert');
+    debug.debug('Showing delete alert');
     Alert.alert(
       'Delete Export',
       'Are you sure you want to delete this export? This action cannot be undone.',
       [
-        { 
-          text: 'Cancel', 
+        {
+          text: 'Cancel',
           style: 'cancel',
-          onPress: () => console.log('[EXPORTS] Delete cancelled')
+          onPress: () => debug.debug('Delete cancelled')
         },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            console.log('[EXPORTS] Delete confirmed, calling deleteExportBatch');
+            debug.debug('Delete confirmed, calling deleteExportBatch');
             deleteExportBatch(batchId);
           },
         },
@@ -293,38 +301,39 @@ export default function ExportsScreen() {
   };
 
   const handleEditName = (batch: ExportBatch) => {
-    console.log('[EXPORTS] handleEditName called', { batchId: batch.id });
+    debug.debug('handleEditName called', { batchId: batch.id });
     const batchId = batch.id;
-    const customName = batch.customName || `Export #${batch.id.split('_')[1]}`;
+    // Get the display name for editing (use customName if available, otherwise use shortened display name)
+    const customName = batch.customName || getExportDisplayName(batch, profile);
     
     // Set state first, then close menu - this ensures modal opens
-    console.log('[EXPORTS] Setting edit state', { batchId, customName });
+    debug.debug('Setting edit state', { batchId, customName });
     setEditingId(batchId);
     setEditName(customName);
     setShowEditModal(true);
     
     // Close the expanded menu after modal state is set
-    console.log('[EXPORTS] Closing expanded menu for edit');
+    debug.debug('Closing expanded menu for edit');
     setExpandedActionIds(prev => {
       const next = new Set(prev);
       next.delete(batchId);
-      console.log('[EXPORTS] Expanded menu state updated, size:', next.size);
+      debug.debug('Expanded menu state updated, size:', next.size);
       return next;
     });
   };
 
   const toggleExpandedActions = (batchId: string) => {
-    console.log('[EXPORTS] toggleExpandedActions called', { batchId });
+    debug.debug('toggleExpandedActions called', { batchId });
     setExpandedActionIds(prev => {
       const next = new Set(prev);
       if (next.has(batchId)) {
         next.delete(batchId);
-        console.log('[EXPORTS] Closing menu for batch:', batchId);
+        debug.debug('Closing menu for batch:', batchId);
       } else {
         next.add(batchId);
-        console.log('[EXPORTS] Opening menu for batch:', batchId);
+        debug.debug('Opening menu for batch:', batchId);
       }
-      console.log('[EXPORTS] Expanded menu size:', next.size);
+      debug.debug('Expanded menu size:', next.size);
       return next;
     });
   };
@@ -378,14 +387,32 @@ export default function ExportsScreen() {
         Alert.alert('Success', 'Email opened in Apple Mail with attachment and all details pre-filled. Please review and send.');
         setSubmittingId(null);
       } else if (result.success && result.useShareSheet) {
-        // Share sheet method - copy info to clipboard and open share sheet
-        const clipboardText = `To: ${result.recipientEmail}\nSubject: ${result.subject}\n\n${result.body}`;
-        await Clipboard.setStringAsync(clipboardText);
+        // Share sheet method - prepare email details for clipboard (optional recipient)
+        const emailParts: string[] = [];
+        if (result.recipientEmail) {
+          emailParts.push(`To: ${result.recipientEmail}`);
+        }
+        if (result.subject) {
+          emailParts.push(`Subject: ${result.subject}`);
+        }
+        if (result.body) {
+          emailParts.push(`\n${result.body}`);
+        }
+        const clipboardText = emailParts.join('\n');
+        
+        // Copy to clipboard if we have email details
+        if (clipboardText.trim()) {
+          await Clipboard.setStringAsync(clipboardText);
+        }
         
         // Show brief notification then open share sheet
+        const alertMessage = result.recipientEmail 
+          ? `✓ Email details copied to clipboard\n\nTo: ${result.recipientEmail}\n\nNext: Select your email app (e.g., Outlook), then paste (Cmd+V) the email details.`
+          : `✓ Email details copied to clipboard\n\nNext: Select your email app (e.g., Outlook), choose your recipient, then paste (Cmd+V) the email details.`;
+        
         Alert.alert(
           'Ready to Email',
-          `✓ Email details copied to clipboard\n\nTo: ${result.recipientEmail}\n\nNext: Select your email app (e.g., Outlook), then paste (Cmd+V) the email details.`,
+          alertMessage,
           [
             { text: 'Cancel', style: 'cancel', onPress: () => setSubmittingId(null) },
             {
@@ -395,14 +422,18 @@ export default function ExportsScreen() {
                   // Ensure PDF is a local file path before sharing
                   let localPdfPath = batch.pdfUri;
                   const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+                  const { getExportFileName } = await import('../../lib/utils/exportFilename');
+                  const { profile } = useProfileStore.getState();
                   
                   if (isCloudURL(batch.pdfUri)) {
                     try {
-                      console.log('[Email Share] Downloading PDF from cloud storage...');
-                      localPdfPath = await downloadPDFFromStorage(batch.pdfUri, batch.id);
-                      console.log('[Email Share] PDF downloaded to local path:', localPdfPath);
+                      debug.debug('Downloading PDF from cloud storage...');
+                      // Get the preferred filename from export batch
+                      const preferredFileName = getExportFileName(batch, profile);
+                      localPdfPath = await downloadPDFFromStorage(batch.pdfUri, batch.id, preferredFileName);
+                      debug.debug('PDF downloaded to local path:', localPdfPath);
                     } catch (downloadError) {
-                      console.error('[Email Share] Failed to download PDF:', downloadError);
+                      debug.error('Failed to download PDF:', downloadError);
                       Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
                       setSubmittingId(null);
                       return;
@@ -422,7 +453,7 @@ export default function ExportsScreen() {
                     Alert.alert('Sharing not available', 'Sharing is not available on this device.');
                   }
                 } catch (shareError) {
-                  console.error('Sharing failed:', shareError);
+                  debug.error('Sharing failed:', shareError);
                   Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
                 } finally {
                   setSubmittingId(null);
@@ -436,7 +467,7 @@ export default function ExportsScreen() {
         setSubmittingId(null);
       }
     } catch (error) {
-      console.error('Error submitting AVAC:', error);
+      debug.error('Error submitting AVAC:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
       setSubmittingId(null);
     }
@@ -448,13 +479,13 @@ export default function ExportsScreen() {
     // Only get info for local files, not cloud URLs
     const { isCloudURL } = await import('../../lib/storage/pdfStorage');
     if (isCloudURL(batch.pdfUri)) {
-      console.log('[Exports] Skipping file info for cloud URL');
+      debug.debug('Skipping file info for cloud URL');
       return null;
     }
     
     // Check if it's a local file path
     if (!batch.pdfUri.startsWith('file://') && !batch.pdfUri.startsWith('/')) {
-      console.log('[Exports] Skipping file info for non-local file');
+      debug.debug('Skipping file info for non-local file');
       return null;
     }
     
@@ -462,7 +493,7 @@ export default function ExportsScreen() {
       const info = await getInfoAsync(batch.pdfUri);
       return info;
     } catch (error) {
-      console.error('Failed to get PDF info:', error);
+      debug.error('Failed to get PDF info:', error);
       return null;
     }
   };
@@ -507,7 +538,7 @@ export default function ExportsScreen() {
     const batchCount = selectedBatches.length;
     const batchNames = selectedBatches
       .slice(0, 3)
-      .map(batch => batch.customName || `Export #${batch.id.split('_')[1]}`)
+      .map(batch => getExportDisplayName(batch, profile))
       .join('\n');
     const moreText = batchCount > 3 ? `\n...and ${batchCount - 3} more` : '';
 
@@ -518,13 +549,13 @@ export default function ExportsScreen() {
         {
           text: 'Cancel',
           style: 'cancel',
-          onPress: () => console.log('[EXPORTS] Batch delete cancelled')
+          onPress: () => debug.debug('Batch delete cancelled')
         },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            console.log('[EXPORTS] Batch delete confirmed, deleting', batchCount, 'exports');
+            debug.debug('Batch delete confirmed, deleting', batchCount, 'exports');
             
             // Delete all selected batches
             selectedBatches.forEach(batch => {
@@ -575,6 +606,9 @@ export default function ExportsScreen() {
       const mergedPdf = await PDFDocument.create();
       
       // Read all PDF files and merge their pages into the merged PDF
+      const { getExportFileName } = await import('../../lib/utils/exportFilename');
+      const { profile } = useProfileStore.getState();
+      
       for (const batch of selectedBatches) {
         try {
           // Handle cloud URLs - download to cache if needed
@@ -583,9 +617,12 @@ export default function ExportsScreen() {
           
           if (isCloudURL(batch.pdfUri)) {
             try {
-              pdfUri = await downloadPDFFromStorage(batch.pdfUri, batch.id);
+              // Get the preferred filename from export batch (for batch merge, we still use batch ID for temp files)
+              // but this ensures consistency if the file is accessed later
+              const preferredFileName = getExportFileName(batch, profile);
+              pdfUri = await downloadPDFFromStorage(batch.pdfUri, batch.id, preferredFileName);
             } catch (error) {
-              console.error(`Failed to download PDF ${batch.id} from cloud:`, error);
+              debug.error(`Failed to download PDF ${batch.id} from cloud:`, error);
               Alert.alert('Error', `Failed to download PDF: ${batch.customName || batch.id}. Skipping...`);
               continue;
             }
@@ -611,7 +648,7 @@ export default function ExportsScreen() {
           pages.forEach((page) => mergedPdf.addPage(page));
           
         } catch (error) {
-          console.error(`Failed to read or merge PDF ${batch.id}:`, error);
+          debug.error(`Failed to read or merge PDF ${batch.id}:`, error);
           Alert.alert('Error', `Failed to read PDF: ${batch.customName || batch.id}. Skipping...`);
         }
       }
@@ -662,14 +699,14 @@ export default function ExportsScreen() {
             }
           }
         } catch (error) {
-          console.error('Failed to clean up merged PDF file:', error);
+          debug.error('Failed to clean up merged PDF file:', error);
         }
       }, 10000); // Clean up after 10 seconds
 
       setSelectionMode(false);
       setSelectedBatchIds(new Set());
     } catch (error) {
-      console.error('Batch sharing failed:', error);
+      debug.error('Batch sharing failed:', error);
       Alert.alert('Sharing Failed', 'Failed to merge or share PDF files. Please try again.');
     } finally {
       setIsBatchSharing(false);
@@ -820,6 +857,9 @@ export default function ExportsScreen() {
     const remainingMinutes = item.totalMinutes % 60;
     const createdDate = new Date(item.createdAt);
     const isSelected = selectedBatchIds.has(item.id);
+    
+    // Get the shortened display name (without person's name)
+    const displayName = getExportDisplayName(item, profile);
 
     return (
       <TouchableOpacity
@@ -836,7 +876,7 @@ export default function ExportsScreen() {
         <View style={styles.exportHeader}>
           {selectionMode && (
             <TouchableOpacity 
-              style={styles.selectionButton}
+              style={styles.selectionCheckboxButton}
               onPress={() => handleToggleBatchSelection(item.id)}
             >
               <Ionicons 
@@ -848,7 +888,7 @@ export default function ExportsScreen() {
           )}
           <View style={[styles.exportInfo, selectionMode && styles.exportInfoWithCheckbox]}>
             <Text style={[styles.exportTitle, isDark && styles.darkText]}>
-              {item.customName || `Export #${item.id.split('_')[1]}`}
+              {displayName}
             </Text>
             <Text style={[styles.exportDate, isDark && styles.darkText]}>
               {createdDate.toLocaleDateString('en-AU', {
@@ -891,7 +931,7 @@ export default function ExportsScreen() {
                     <TouchableOpacity
                       style={[styles.cardActionButton, styles.editButton]}
                       onPress={() => {
-                        console.log('[EXPORTS] Edit button pressed for batch:', item.id);
+                        debug.debug('Edit button pressed for batch:', item.id);
                         handleEditName(item);
                       }}
                     >
@@ -900,7 +940,7 @@ export default function ExportsScreen() {
                     <TouchableOpacity
                       style={[styles.cardActionButton, styles.deleteButton]}
                       onPress={() => {
-                        console.log('[EXPORTS] Delete button pressed for batch:', item.id);
+                        debug.debug('Delete button pressed for batch:', item.id);
                         handleDeleteBatch(item);
                       }}
                     >
@@ -1703,7 +1743,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a2e',
     borderColor: '#007AFF',
   },
-  selectionButton: {
+  selectionCheckboxButton: {
     marginRight: 12,
     padding: 4,
     borderRadius: 20,
@@ -1717,13 +1757,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   darkSelectionBar: {
     backgroundColor: '#1c1c1e',
-    borderBottomColor: '#333',
+    borderColor: '#333',
   },
   selectionButton: {
     paddingVertical: 6,

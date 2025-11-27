@@ -1,15 +1,12 @@
 import 'react-native-reanimated';
 import React, { useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useAuthStore } from '../lib/state/authStore';
 
-const isDev = process.env.NODE_ENV !== 'production';
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log(...args);
-  }
-};
+import { createScopedLogger } from '../lib/utils/logger';
+
+const debug = createScopedLogger('Index');
 
 export default function Index() {
   const router = useRouter();
@@ -57,16 +54,25 @@ export default function Index() {
   if (isLoading) {
     debug('[app/index] Showing loading spinner');
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color="#fff" />
       </View>
     );
   }
 
   // Show loading spinner while navigating (prevents flash of wrong screen)
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-      <ActivityIndicator />
+    <View style={styles.container}>
+      <ActivityIndicator size="large" color="#fff" />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0B2239',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

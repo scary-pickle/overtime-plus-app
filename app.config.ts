@@ -18,7 +18,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ],
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.overtimeplus.app'
+    bundleIdentifier: 'com.overtimeplus.app',
+    infoPlist: {
+      NSUserNotificationUsageDescription: 'Overtime+ uses notifications to remind you when your rostered shift ends and to send snoozed reminders.'
+    }
   },
   android: {
     allowBackup: false,
@@ -38,8 +41,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'expo-notifications',
       {
         icon: './assets/notification-icon.png',
-        color: '#ffffff',
-        sounds: ['./assets/notification.wav']
+        color: '#ffffff'
       }
     ],
     [
@@ -55,7 +57,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       origin: false
     },
     eas: {
-      projectId: 'your-project-id'
+      // Linked EAS project ID created by `eas build:configure`
+      projectId: 'ab788c8c-812d-4a78-a620-4f1131f759de',
     },
     revenuecat: {
       iosApiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS,

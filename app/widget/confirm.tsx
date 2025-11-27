@@ -10,12 +10,14 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useLogsStore } from '../../lib/state/logsStore';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('WidgetConfirm');
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useAuthStore } from '../../lib/state/authStore';
 import { getCurrentTime, getCurrentDate } from '../../lib/time';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
-import { updateWidgetStatus } from '../../lib/widget/widgetStatusUpdater';
 import { OvertimeLog } from '../../types';
 
 export default function WidgetConfirmScreen() {
@@ -66,7 +68,7 @@ export default function WidgetConfirmScreen() {
         return;
       }
     } catch (error) {
-      console.error('Error loading active shift:', error);
+      debug.error('Error loading active shift:', error);
       Alert.alert(
         'Error',
         'Failed to load shift information.',
@@ -120,9 +122,6 @@ export default function WidgetConfirmScreen() {
       };
 
       await addLog(draftLog);
-      
-      // Update widget status
-      await updateWidgetStatus();
 
       const message = roster 
         ? `Shift started at ${currentActualTime}` 
@@ -141,7 +140,7 @@ export default function WidgetConfirmScreen() {
         ]
       );
     } catch (error) {
-      console.error('Error starting shift:', error);
+      debug.error('Error starting shift:', error);
       Alert.alert('Error', 'Failed to start shift. Please try again.');
     }
   };

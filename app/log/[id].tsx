@@ -23,6 +23,9 @@ import { NAButton } from '../../components/NAButton';
 import { computeMinutes, formatMinutes, getCurrentDate, getCurrentTime, isFinishAfterStart } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
 import { OvertimeLog } from '../../types';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('EditLog');
 
 const CATEGORIES = [
   'Overtime',
@@ -120,7 +123,7 @@ export default function EditLogScreen() {
       );
       setMinutesCalculation(calculation);
     } catch (error) {
-      console.error('Calculation error:', error);
+      debug.error('Calculation error:', error);
     } finally {
       setIsCalculating(false);
     }
@@ -186,7 +189,7 @@ export default function EditLogScreen() {
     // Use profile's employeeInitial directly if initials from store is empty
     const logInitials = initials || profile?.employeeInitial || '';
     
-    console.log('Updating log with initials:', { 
+    debug.debug('Updating log with initials:', { 
       initials, 
       profile: !!profile, 
       profileInitial: profile?.employeeInitial,

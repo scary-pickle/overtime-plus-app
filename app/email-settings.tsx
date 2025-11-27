@@ -18,6 +18,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProfileStore } from '../lib/state/profileStore';
 import { useAuthStore } from '../lib/state/authStore';
 import { getDefaultEmailTemplate } from '../lib/email/emailService';
+import { createScopedLogger } from '../lib/utils/logger';
+
+const debug = createScopedLogger('EmailSettings');
 
 export default function EmailSettingsScreen() {
   const router = useRouter();
@@ -28,6 +31,7 @@ export default function EmailSettingsScreen() {
   const { user } = useAuthStore();
   const { profile, saveProfile, isLoading } = useProfileStore();
   const [email, setEmail] = useState('');
+  const [recipientEmail, setRecipientEmail] = useState('');
   const [emailTemplate, setEmailTemplate] = useState('');
   const [emailSubmissionMethod, setEmailSubmissionMethod] = useState<'apple-mail' | 'share-sheet'>('share-sheet');
   const [isSaving, setIsSaving] = useState(false);
@@ -39,6 +43,7 @@ export default function EmailSettingsScreen() {
   useEffect(() => {
     if (profile) {
       setEmail(profile.email || '');
+      setRecipientEmail(profile.recipientEmail || '');
       setEmailTemplate(profile.emailTemplate || getDefaultEmailTemplate());
       setEmailSubmissionMethod(profile.emailSubmissionMethod || 'share-sheet');
     }
@@ -53,12 +58,19 @@ export default function EmailSettingsScreen() {
       Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
+    
+    // Recipient email is optional, but if provided, must be valid
+    if (recipientEmail && recipientEmail.trim() && !emailRegex.test(recipientEmail)) {
+      Alert.alert('Invalid Recipient Email', 'Please enter a valid recipient email address or leave it empty.');
+      return;
+    }
 
     setIsSaving(true);
     try {
       const updatedProfile = {
         ...profile,
         email: email.trim(),
+        recipientEmail: recipientEmail.trim() || undefined,
         emailTemplate: emailTemplate.trim() || undefined,
         emailSubmissionMethod
       };
@@ -89,8 +101,7 @@ export default function EmailSettingsScreen() {
   const handlePreviewTemplate = () => {
     const previewText = emailTemplate
       .replace(/{User Name}/g, profile?.fullName || 'John Smith')
-      .replace(/{Date}/g, new Date().toLocaleDateString('en-AU'))
-      .replace(/{Total Hours}/g, '2.5');
+      .replace(/{Date}/g, new Date().toLocaleDateString('en-AU'));
     
     Alert.alert(
       'Email Preview',
@@ -120,7 +131,7 @@ export default function EmailSettingsScreen() {
           [{ text: 'OK' }]
         );
       } catch (error) {
-        console.error('Failed to save submission method:', error);
+        debug.error('Failed to save submission method:', error);
         Alert.alert('Error', 'Failed to save your preference. Please try again.');
       }
     }
@@ -188,16 +199,35 @@ export default function EmailSettingsScreen() {
         
         <View style={[styles.section, isDark && styles.darkSection]}>
           <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-            Email Address
+            Your Email Address
           </Text>
           <Text style={[styles.sectionDescription, isDark && styles.darkText]}>
-            Your Queensland Health email address for sending AVAC forms
+            Your Queensland Health email address
           </Text>
           <TextInput
             style={[styles.textInput, isDark && styles.darkTextInput]}
             value={email}
             onChangeText={setEmail}
             placeholder="your.name@health.qld.gov.au"
+            placeholderTextColor={isDark ? '#666' : '#999'}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
+        <View style={[styles.section, isDark && styles.darkSection]}>
+          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+            AVAC Recipient Email
+          </Text>
+          <Text style={[styles.sectionDescription, isDark && styles.darkText]}>
+            Email address where AVAC forms will be sent. If left empty, you can enter the recipient when you open your email app.
+          </Text>
+          <TextInput
+            style={[styles.textInput, isDark && styles.darkTextInput]}
+            value={recipientEmail}
+            onChangeText={setRecipientEmail}
+            placeholder="recipient@health.qld.gov.au (optional)"
             placeholderTextColor={isDark ? '#666' : '#999'}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -292,7 +322,7 @@ export default function EmailSettingsScreen() {
             </View>
           </View>
           <Text style={[styles.sectionDescription, isDark && styles.darkText]}>
-            Customize the email message sent with your AVAC forms. Use {'{User Name}'}, {'{Date}'}, and {'{Total Hours}'} as variables.
+            Customize the email message sent with your AVAC forms. Use {'{User Name}'} and {'{Date}'} as variables.
           </Text>
           <TextInput
             ref={templateInputRef}

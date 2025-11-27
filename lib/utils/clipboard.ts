@@ -8,7 +8,7 @@ import { createScopedLogger } from './logger';
 
 const debug = createScopedLogger('clipboard');
 
-let clearClipboardTimeout: NodeJS.Timeout | null = null;
+let clearClipboardTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Sets clipboard content and automatically clears it after the specified delay
@@ -53,7 +53,7 @@ export async function clearClipboard(): Promise<void> {
   try {
     await Clipboard.setStringAsync('');
   } catch (error) {
-    console.warn('[clipboard] Failed to clear clipboard:', error);
+    debug.warn('Failed to clear clipboard:', error);
   }
 }
 

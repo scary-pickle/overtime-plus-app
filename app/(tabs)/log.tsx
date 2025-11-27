@@ -150,22 +150,59 @@ export default function LogScreen() {
     }
   };
 
-  const handleExportReady = () => {
-    // Check if delegate information is complete
-    if (!profile?.delegateName || !profile?.delegatePosition || !profile?.delegatePhone || !profile?.delegateAreaCode) {
+  const ensureProfileReadyForExport = () => {
+    if (!profile) {
       Alert.alert(
-        'Delegate Information Required',
-        'Delegate information is required to generate AVAC forms. Please complete your delegate details in your profile.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Go to Profile', 
-            onPress: () => {
-              router.push('/(tabs)/profile');
-            }
-          }
-        ]
+        'Profile Required',
+        'Please complete your profile details before exporting AVAC forms.',
+        [{ text: 'OK' }]
       );
+      return false;
+    }
+
+    const missingDelegateInfo = !profile.delegateName?.trim() ||
+      !profile.delegatePosition?.trim() ||
+      !profile.delegatePhone?.trim() ||
+      !profile.delegateAreaCode?.trim();
+
+    const missingOrgUnitNo = !profile.orgUnitNo || profile.orgUnitNo.trim().length === 0;
+
+    if (!missingDelegateInfo && !missingOrgUnitNo) {
+      return true;
+    }
+
+    let title = 'Profile Details Required';
+    let message = '';
+
+    if (missingDelegateInfo && missingOrgUnitNo) {
+      message = 'Delegate information and organisation unit number are required to generate AVAC forms. Please complete these details in your profile.';
+    } else if (missingDelegateInfo) {
+      title = 'Delegate Information Required';
+      message = 'Delegate information is required to generate AVAC forms. Please complete your delegate details in your profile.';
+    } else {
+      title = 'Organisation Unit Number Required';
+      message = 'Your organisation unit number is required to generate AVAC forms. Please add it to your profile.';
+    }
+
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Go to Profile',
+          onPress: () => {
+            router.push('/(tabs)/profile');
+          }
+        }
+      ]
+    );
+
+    return false;
+  };
+
+  const handleExportReady = () => {
+    if (!ensureProfileReadyForExport()) {
       return;
     }
     const readyLogs = getReadyLogs();
@@ -208,21 +245,7 @@ export default function LogScreen() {
       return;
     }
 
-    // Check if delegate information is complete
-    if (!profile?.delegateName || !profile?.delegatePosition || !profile?.delegatePhone || !profile?.delegateAreaCode) {
-      Alert.alert(
-        'Delegate Information Required',
-        'Delegate information is required to generate AVAC forms. Please complete your delegate details in your profile.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Go to Profile', 
-            onPress: () => {
-              router.push('/(tabs)/profile');
-            }
-          }
-        ]
-      );
+    if (!ensureProfileReadyForExport()) {
       return;
     }
 
@@ -622,10 +645,10 @@ export default function LogScreen() {
       {isSelectionMode && (
         <View style={[styles.selectionBar, isDark && styles.darkSelectionBar]}>
           <TouchableOpacity
-            style={styles.selectionButton}
+            style={styles.selectionBarButton}
             onPress={handleSelectAll}
           >
-            <Text style={[styles.selectionButtonText, isDark && styles.selectionButtonTextDark]}>
+            <Text style={[styles.selectionBarButtonText, isDark && styles.selectionBarButtonTextDark]}>
               {(() => {
                 const filtered = getFilteredLogs();
                 const selectableLogs = filtered.filter(log => log.status === 'ready' || log.status === 'exported');
@@ -666,11 +689,11 @@ export default function LogScreen() {
             {!isSelectionMode ? (
               <View style={styles.selectionControls}>
                 <TouchableOpacity
-                  style={[styles.selectionButton, isDark && styles.darkSelectionButton]}
+                  style={[styles.selectionActionButton, isDark && styles.darkSelectionActionButton]}
                   onPress={() => setIsSelectionMode(true)}
                 >
                   <Ionicons name="checkmark-circle" size={20} color="#007AFF" />
-                  <Text style={[styles.selectionButtonText, isDark && styles.darkSelectionButtonText]}>
+                  <Text style={[styles.selectionActionButtonText, isDark && styles.darkSelectionActionButtonText]}>
                     Select Logs
                   </Text>
                 </TouchableOpacity>
@@ -1335,7 +1358,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
-  selectionButton: {
+  selectionActionButton: {
     backgroundColor: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -1346,16 +1369,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#007AFF',
   },
-  darkSelectionButton: {
+  darkSelectionActionButton: {
     backgroundColor: '#1c1c1e',
     borderColor: '#007AFF',
   },
-  selectionButtonText: {
+  selectionActionButtonText: {
     color: '#007AFF',
     fontSize: 14,
     fontWeight: '600',
   },
-  darkSelectionButtonText: {
+  darkSelectionActionButtonText: {
     color: '#007AFF',
   },
   actionButton: {
@@ -1526,16 +1549,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#1c1c1e',
     borderBottomColor: '#333',
   },
-  selectionButton: {
+  selectionBarButton: {
     paddingVertical: 6,
     paddingHorizontal: 12,
   },
-  selectionButtonText: {
+  selectionBarButtonText: {
     fontSize: 16,
     color: '#007AFF',
     fontWeight: '600',
   },
-  selectionButtonTextDark: {
+  selectionBarButtonTextDark: {
     color: '#0A84FF',
   },
   selectionCount: {

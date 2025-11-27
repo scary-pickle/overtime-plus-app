@@ -14,6 +14,9 @@ import {
   getLogsInRange,
   sumMinutes,
 } from '../../lib/analytics';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('Analytics');
 
 type RangeMode = 'month' | 'week' | 'custom';
 
@@ -61,7 +64,7 @@ export default function AnalyticsScreen() {
   // Filter logs and compute series - include ALL logs regardless of status
   const filtered = useMemo(() => {
     const result = getLogsInRange(logs, activeRange);
-    console.log('Analytics Debug:', {
+    debug.debug('Analytics Debug:', {
       totalLogs: logs.length,
       activeRange,
       filteredCount: result.length,

@@ -1,10 +1,12 @@
 import { create } from 'zustand';
-import { supabase } from '../supabase';
+import { supabase, supabaseEnabled } from '../supabase';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../auth/validation';
 import { toFriendlyAuthMessage } from '../auth/errors';
 import { useOnboardingStore } from './onboardingStore';
 import { useSubscriptionStore } from './subscriptionStore';
 import { revenuecatClient } from '../subscription/revenuecat';
+import { database } from '../db/sqlite';
+import { profileStorage } from '../storage/profile';
 import * as SecureStore from 'expo-secure-store';
 import { createScopedLogger, maskEmail, maskUserId } from '../utils/logger';
 
@@ -20,11 +22,13 @@ interface AuthState {
   pendingEmail: string | null;
   pendingPassword: string | null;
   hasCompletedOnboarding: boolean;
+  isDeletingAccount: boolean;
 
   checkSession: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<'success' | 'verify' | 'error'>;
   signUp: (email: string, password: string) => Promise<boolean>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   requestEmailOtp: (email: string, shouldCreateUser?: boolean) => Promise<boolean>;
   verifyEmailOtp: (email: string, token: string) => Promise<'success' | 'error'>;
   completeOnboarding: () => Promise<void>;
@@ -40,6 +44,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   pendingEmail: null,
   pendingPassword: null,
   hasCompletedOnboarding: false,
+  isDeletingAccount: false,
 
   clearError: () => set({ error: null }),
 
@@ -651,6 +656,94 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const onboardingStore = useOnboardingStore.getState();
     await onboardingStore.completeOnboarding(user?.id);
     set({ hasCompletedOnboarding: true });
+  },
+
+  deleteAccount: async () => {
+    const { user } = get();
+    const userId = user?.id || null;
+    const now = new Date().toISOString();
+    set({ isDeletingAccount: true, error: null });
+
+    try {
+      // Flag cloud data for deletion (best-effort, non-blocking)
+      if (supabaseEnabled && userId) {
+        try {
+          await (supabase as any).from('profiles').update({ account_deleted_at: now }).eq('user_id', userId);
+        } catch (error) {
+          debug.error('[deleteAccount] Failed to mark profile deleted in Supabase', error);
+        }
+
+        const tables = ['overtime_logs', 'usual_shifts', 'export_batches'] as const;
+        for (const table of tables) {
+          try {
+            await (supabase as any).from(table).update({ deleted_at: now }).eq('user_id', userId);
+          } catch (error) {
+            debug.error(`[deleteAccount] Failed to flag ${table} rows for deletion`, error);
+          }
+        }
+      }
+
+      // Sign out from RevenueCat to clear entitlement state
+      try {
+        await revenuecatClient.logOut();
+      } catch (error) {
+        debug.error('[deleteAccount] RevenueCat logout failed (non-fatal)', error);
+      }
+
+      // Wipe local profile and cached data
+      try {
+        await profileStorage.deleteProfile(userId);
+      } catch (error) {
+        debug.error('[deleteAccount] Failed to delete local profile', error);
+      }
+
+      try {
+        await database.init();
+        await database.clearAllData();
+        await database.clearAuthSessions();
+        await database.clearLegacyData();
+      } catch (error) {
+        debug.error('[deleteAccount] Failed to clear local database', error);
+      }
+
+      // Reset onboarding flag locally (and remotely if possible)
+      try {
+        const onboardingStore = useOnboardingStore.getState();
+        await onboardingStore.resetOnboarding(userId);
+      } catch (error) {
+        debug.error('[deleteAccount] Failed to reset onboarding flags', error);
+      }
+
+      // Sign out of Supabase and clear stored IDs
+      try {
+        // @ts-ignore
+        await (supabase as any).auth.signOut();
+      } catch (error) {
+        debug.error('[deleteAccount] Supabase signOut failed (non-fatal)', error);
+      }
+      await SecureStore.deleteItemAsync(CURRENT_USER_ID_KEY);
+
+      // Reset subscription state
+      const subscriptionStore = useSubscriptionStore.getState();
+      subscriptionStore.reset();
+
+      set({
+        user: null,
+        session: null,
+        emailVerified: false,
+        hasCompletedOnboarding: false,
+        pendingEmail: null,
+        pendingPassword: null,
+        isLoading: false,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to delete account';
+      debug.error('[deleteAccount] Failed', e);
+      set({ isLoading: false, error: toFriendlyAuthMessage(msg) });
+      throw e;
+    } finally {
+      set({ isDeletingAccount: false });
+    }
   },
 
   signOut: async () => {

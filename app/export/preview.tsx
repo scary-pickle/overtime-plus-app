@@ -23,6 +23,9 @@ import { buildSMOAVAC } from '../../lib/pdf/buildSMOAVAC';
 import { formatMinutes } from '../../lib/time';
 import { isCloudURL } from '../../lib/storage/pdfStorage';
 import InAppPDFViewer from '../../components/InAppPDFViewer';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('ExportPreview');
 
 export default function ExportPreviewScreen() {
   const router = useRouter();
@@ -52,28 +55,65 @@ export default function ExportPreviewScreen() {
     generatePDF();
   }, []);
 
+  const ensureProfileReadyForExport = () => {
+    if (!profile) {
+      Alert.alert(
+        'Profile Required',
+        'Please complete your profile details before exporting AVAC forms.',
+        [{ text: 'OK' }]
+      );
+      return false;
+    }
+
+    const missingDelegateInfo = !profile.delegateName?.trim() ||
+      !profile.delegatePosition?.trim() ||
+      !profile.delegatePhone?.trim() ||
+      !profile.delegateAreaCode?.trim();
+
+    const missingOrgUnitNo = !profile.orgUnitNo || profile.orgUnitNo.trim().length === 0;
+
+    if (!missingDelegateInfo && !missingOrgUnitNo) {
+      return true;
+    }
+
+    let title = 'Profile Details Required';
+    let message = '';
+
+    if (missingDelegateInfo && missingOrgUnitNo) {
+      message = 'Delegate information and organisation unit number are required to generate AVAC forms. Please complete these details in your profile.';
+    } else if (missingDelegateInfo) {
+      title = 'Delegate Information Required';
+      message = 'Delegate information is required to generate AVAC forms. Please complete your delegate details in your profile.';
+    } else {
+      title = 'Organisation Unit Number Required';
+      message = 'Your organisation unit number is required to generate AVAC forms. Please add it to your profile.';
+    }
+
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Go to Profile', 
+          onPress: () => {
+            router.replace('/(tabs)/profile');
+          }
+        }
+      ]
+    );
+
+    return false;
+  };
+
   const generatePDF = async (regenerate = false) => {
     if (!profile) {
       setError('Profile not found');
       return;
     }
 
-    // Check if delegate information is complete
-    if (!profile.delegateName || !profile.delegatePosition || !profile.delegatePhone || !profile.delegateAreaCode) {
-      Alert.alert(
-        'Delegate Information Required',
-        'Delegate information is required to generate AVAC forms. Please complete your delegate details in your profile.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Go to Profile', 
-            onPress: () => {
-              router.replace('/(tabs)/profile');
-            }
-          }
-        ]
-      );
-      setError('Delegate information is required to generate PDFs');
+    if (!ensureProfileReadyForExport()) {
+      setError('Profile details are required to generate PDFs');
       return;
     }
 
@@ -106,7 +146,7 @@ export default function ExportPreviewScreen() {
       } else {
         // When regenerating, if we can't find logs, just return silently
         // Don't set error or regenerate PDF
-        console.log('[ExportPreview] No logs found for regeneration, skipping');
+        debug.debug('No logs found for regeneration, skipping');
         return;
       }
       return;
@@ -158,10 +198,10 @@ export default function ExportPreviewScreen() {
         if (userId) {
           exportSync.uploadExportBatch(updatedBatch, userId)
             .then(() => {
-              console.log('[ExportPreview] PDF uploaded to cloud storage successfully');
+              debug.debug('PDF uploaded to cloud storage successfully');
             })
             .catch(err => {
-              console.error('[ExportPreview] PDF upload to cloud storage failed (non-fatal):', err);
+              debug.error('PDF upload to cloud storage failed (non-fatal):', err);
             });
         }
       } else if (exportBatch) {
@@ -174,17 +214,17 @@ export default function ExportPreviewScreen() {
         if (userId) {
           exportSync.uploadExportBatch(updatedBatch, userId)
             .then(() => {
-              console.log('[ExportPreview] PDF re-uploaded to cloud storage successfully');
+              debug.debug('PDF re-uploaded to cloud storage successfully');
             })
             .catch(err => {
-              console.error('[ExportPreview] PDF re-upload to cloud storage failed (non-fatal):', err);
+              debug.error('PDF re-upload to cloud storage failed (non-fatal):', err);
             });
         }
       }
       
-      console.log('PDF generated successfully:', pdfUri);
+      debug.debug('PDF generated successfully:', pdfUri);
     } catch (error) {
-      console.error('PDF generation failed:', error);
+      debug.error('PDF generation failed:', error);
       setError('Failed to generate PDF. Please try again.');
     } finally {
       setIsGenerating(false);
@@ -202,7 +242,7 @@ export default function ExportPreviewScreen() {
       setExportBatch(updatedBatch);
       // Update in database (fire and forget)
       updateExportBatch(updatedBatch, userId).catch(err => {
-        console.error('Failed to update batch name:', err);
+        debug.error('Failed to update batch name:', err);
         // Revert on error
         setExportBatch(exportBatch);
       });
@@ -222,7 +262,7 @@ export default function ExportPreviewScreen() {
         Alert.alert('Sharing not available', 'Sharing is not available on this device.');
       }
     } catch (error) {
-      console.error('Sharing failed:', error);
+      debug.error('Sharing failed:', error);
       Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
     }
   };
@@ -234,13 +274,13 @@ export default function ExportPreviewScreen() {
 
     // Only get info for local files, not cloud URLs
     if (isCloudURL(pdfUri)) {
-      console.log('[Preview] Skipping file info for cloud URL');
+      debug.debug('Skipping file info for cloud URL');
       return null;
     }
-    
+
     // Check if it's a local file path
     if (!pdfUri.startsWith('file://') && !pdfUri.startsWith('/')) {
-      console.log('[Preview] Skipping file info for non-local file');
+      debug.debug('Skipping file info for non-local file');
       return null;
     }
 
@@ -248,7 +288,7 @@ export default function ExportPreviewScreen() {
       const info = await getInfoAsync(pdfUri);
       return info;
     } catch (error) {
-      console.error('Failed to get PDF info:', error);
+      debug.error('Failed to get PDF info:', error);
       return null;
     }
   };

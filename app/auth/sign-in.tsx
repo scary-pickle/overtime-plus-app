@@ -3,12 +3,9 @@ import { View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet, useC
 import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 
-const isDev = process.env.NODE_ENV !== 'production';
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log(...args);
-  }
-};
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('SignIn');
 
 export default function SignIn() {
   debug('[sign-in] component render');

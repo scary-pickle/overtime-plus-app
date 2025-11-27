@@ -26,7 +26,7 @@ interface SyncOperation {
 class SyncQueue {
   private queue: SyncOperation[] = [];
   private isProcessing = false;
-  private retryTimeout: NodeJS.Timeout | null = null;
+  private retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
   async init() {
     try {

@@ -13,6 +13,7 @@ interface ShiftsCalendarViewProps {
   onDayPress?: (date: string, shifts: UsualShift[]) => void;
   selectedDate?: string | null;
   isDark?: boolean;
+  viewMode?: 'month' | 'week';
 }
 
 interface DayInfo {
@@ -31,17 +32,39 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: isDarkProp }: ShiftsCalendarViewProps) {
+export function ShiftsCalendarView({
+  shifts,
+  onDayPress,
+  selectedDate,
+  isDark: isDarkProp,
+  viewMode = 'month',
+}: ShiftsCalendarViewProps) {
   const colorScheme = useColorScheme();
   const isDark = isDarkProp ?? colorScheme === 'dark';
   
   const [isVisible, setIsVisible] = useState(true); // Open by default
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarDays, setCalendarDays] = useState<DayInfo[]>([]);
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => getStartOfWeek(new Date()));
+  const [weekDays, setWeekDays] = useState<DayInfo[]>([]);
 
   useEffect(() => {
     generateCalendarDays();
   }, [currentDate, shifts]);
+
+  useEffect(() => {
+    generateWeekDays(currentWeekStart);
+  }, [currentWeekStart, shifts]);
+
+  useEffect(() => {
+    if (viewMode !== 'week') return;
+    if (selectedDate) {
+      const targetDate = new Date(selectedDate + 'T00:00:00');
+      setCurrentWeekStart(getStartOfWeek(targetDate));
+    } else {
+      setCurrentWeekStart(getStartOfWeek(new Date()));
+    }
+  }, [viewMode, selectedDate]);
 
   // Helper to get date string in local timezone (avoid UTC conversion issues)
   const getLocalDateString = (date: Date): string => {
@@ -50,6 +73,14 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
     const day = date.getDate().toString().padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
+
+  function getStartOfWeek(date: Date): Date {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const day = start.getDay();
+    start.setDate(start.getDate() - day);
+    return start;
+  }
 
   const getWeekIndex = (date: Date): 1 | 2 => {
     const year = date.getFullYear();
@@ -87,6 +118,22 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
     });
   };
 
+  const buildDayInfo = (date: Date, options?: { isCurrentMonth?: boolean }): DayInfo => {
+    const dateStr = getLocalDateString(date);
+    const todayStr = getLocalDateString(new Date());
+    const dayShifts = getShiftsForDate(date);
+    
+    return {
+      date: dateStr,
+      day: date.getDate(),
+      isCurrentMonth: options?.isCurrentMonth ?? true,
+      isToday: dateStr === todayStr,
+      shifts: dayShifts,
+      hasActiveShift: dayShifts.some(s => !s.activeTo || s.activeTo >= todayStr),
+      hasInactiveShift: dayShifts.some(s => s.activeTo && s.activeTo < todayStr),
+    };
+  };
+
   const generateCalendarDays = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -104,62 +151,37 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
     const prevMonthDays = prevMonthLastDay.getDate();
     
     const days: DayInfo[] = [];
-    const today = new Date();
-    const todayStr = getLocalDateString(today);
     
     // Add previous month days
     for (let i = firstDayOfWeek - 1; i >= 0; i--) {
       const date = new Date(year, month - 1, prevMonthDays - i);
-      const dateStr = getLocalDateString(date);
-      const dayShifts = getShiftsForDate(date);
-      
-      days.push({
-        date: dateStr,
-        day: prevMonthDays - i,
-        isCurrentMonth: false,
-        isToday: dateStr === todayStr,
-        shifts: dayShifts,
-        hasActiveShift: dayShifts.some(s => !s.activeTo || s.activeTo >= todayStr),
-        hasInactiveShift: dayShifts.some(s => s.activeTo && s.activeTo < todayStr),
-      });
+      days.push(buildDayInfo(date, { isCurrentMonth: false }));
     }
     
     // Add current month days
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      const dateStr = getLocalDateString(date);
-      const dayShifts = getShiftsForDate(date);
-      
-      days.push({
-        date: dateStr,
-        day,
-        isCurrentMonth: true,
-        isToday: dateStr === todayStr,
-        shifts: dayShifts,
-        hasActiveShift: dayShifts.some(s => !s.activeTo || s.activeTo >= todayStr),
-        hasInactiveShift: dayShifts.some(s => s.activeTo && s.activeTo < todayStr),
-      });
+      days.push(buildDayInfo(date, { isCurrentMonth: true }));
     }
     
     // Add next month days to complete the grid
     const remainingDays = 42 - days.length; // 6 rows * 7 days
     for (let day = 1; day <= remainingDays; day++) {
       const date = new Date(year, month + 1, day);
-      const dateStr = getLocalDateString(date);
-      const dayShifts = getShiftsForDate(date);
-      
-      days.push({
-        date: dateStr,
-        day,
-        isCurrentMonth: false,
-        isToday: dateStr === todayStr,
-        shifts: dayShifts,
-        hasActiveShift: dayShifts.some(s => !s.activeTo || s.activeTo >= todayStr),
-        hasInactiveShift: dayShifts.some(s => s.activeTo && s.activeTo < todayStr),
-      });
+      days.push(buildDayInfo(date, { isCurrentMonth: false }));
     }
     
     setCalendarDays(days);
+  };
+
+  const generateWeekDays = (startDate: Date) => {
+    const days: DayInfo[] = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
+      days.push(buildDayInfo(date));
+    }
+    setWeekDays(days);
   };
 
   const navigateMonth = (direction: 'prev' | 'next') => {
@@ -170,9 +192,18 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
     }
   };
 
+  const navigateWeek = (direction: 'prev' | 'next') => {
+    setCurrentWeekStart(prev => {
+      const next = new Date(prev);
+      next.setDate(prev.getDate() + (direction === 'next' ? 7 : -7));
+      return next;
+    });
+  };
+
   const goToToday = () => {
     const today = new Date();
     setCurrentDate(today);
+    setCurrentWeekStart(getStartOfWeek(today));
     
     // Get today's date string and shifts
     const todayStr = getLocalDateString(today);
@@ -185,6 +216,13 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
       // Even if no shifts, still select today to show "no shifts" message
       onDayPress(todayStr, []);
     }
+  };
+
+  const formatWeekRange = (startDate: Date): string => {
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+    return `${startDate.toLocaleDateString('en-US', options)} - ${endDate.toLocaleDateString('en-US', options)}`;
   };
 
   const togglePicker = () => {
@@ -221,6 +259,21 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
 
     return (
       <View style={styles.indicatorsContainer}>
+        {dayInfo.hasActiveShift && (
+          <View style={[styles.indicator, styles.activeIndicator]} />
+        )}
+        {dayInfo.hasInactiveShift && (
+          <View style={[styles.indicator, styles.inactiveIndicator]} />
+        )}
+      </View>
+    );
+  };
+
+  const renderWeekIndicators = (dayInfo: DayInfo) => {
+    if (dayInfo.shifts.length === 0) return null;
+    
+    return (
+      <View style={styles.weekIndicators}>
         {dayInfo.hasActiveShift && (
           <View style={[styles.indicator, styles.activeIndicator]} />
         )}
@@ -274,8 +327,8 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
         </TouchableOpacity>
       </View>
 
-      {/* Calendar View */}
-      {isVisible && (
+      {/* Monthly Calendar View */}
+      {isVisible && viewMode === 'month' && (
         <View style={[styles.calendarContainer, isDark && styles.darkCalendarContainer]}>
           {/* Header */}
           <View style={[styles.header, isDark && styles.darkHeader]}>
@@ -368,6 +421,92 @@ export function ShiftsCalendarView({ shifts, onDayPress, selectedDate, isDark: i
                       <Text style={styles.multiShiftText}>{dayInfo.shifts.length}</Text>
                     </View>
                   )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      {/* Weekly Calendar View */}
+      {isVisible && viewMode === 'week' && (
+        <View style={[styles.calendarContainer, isDark && styles.darkCalendarContainer]}>
+          <View style={[styles.weekHeader, isDark && styles.darkHeader]}>
+            <TouchableOpacity
+              style={[styles.navButton, isDark && styles.darkNavButton]}
+              onPress={() => navigateWeek('prev')}
+            >
+              <Text style={[styles.navButtonText, isDark && styles.darkText]}>‹</Text>
+            </TouchableOpacity>
+            <Text style={[styles.weekRangeText, isDark && styles.darkText]}>
+              {formatWeekRange(currentWeekStart)}
+            </Text>
+            <TouchableOpacity
+              style={[styles.navButton, isDark && styles.darkNavButton]}
+              onPress={() => navigateWeek('next')}
+            >
+              <Text style={[styles.navButtonText, isDark && styles.darkText]}>›</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.todayButton, isDark && styles.darkTodayButton]}
+            onPress={goToToday}
+          >
+            <Text style={[styles.todayButtonText, isDark && styles.darkTodayButtonText]}>
+              Go to Today
+            </Text>
+          </TouchableOpacity>
+
+          {/* Legend */}
+          <View style={[styles.legend, isDark && styles.darkLegend]}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIndicator, styles.activeIndicator]} />
+              <Text style={[styles.legendText, isDark && styles.darkText]}>Active</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendIndicator, styles.inactiveIndicator]} />
+              <Text style={[styles.legendText, isDark && styles.darkText]}>Inactive</Text>
+            </View>
+          </View>
+
+          <View style={styles.weekDayRow}>
+            {weekDays.map((dayInfo, index) => {
+              const hasShifts = dayInfo.shifts.length > 0;
+              const isSelected = selectedDate === dayInfo.date;
+              const dayLabel = DAYS_OF_WEEK[new Date(dayInfo.date + 'T00:00:00').getDay()];
+
+              return (
+                <TouchableOpacity
+                  key={`${dayInfo.date}-${index}`}
+                  style={[
+                    styles.weekDayCell,
+                    dayInfo.isToday && styles.weekTodayCell,
+                    isSelected && styles.weekSelectedCell,
+                    !hasShifts && styles.weekDisabledCell,
+                  ]}
+                  onPress={() => handleDayPress(dayInfo)}
+                  disabled={!hasShifts}
+                >
+                  <Text
+                    style={[
+                      styles.weekDayName,
+                      isDark && styles.darkDayText,
+                      isSelected && styles.weekSelectedDayName,
+                    ]}
+                  >
+                    {dayLabel}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.weekDayNumber,
+                      isDark && styles.darkDayText,
+                      isSelected && styles.weekSelectedDayNumber,
+                    ]}
+                  >
+                    {dayInfo.day}
+                  </Text>
+                  {renderWeekIndicators(dayInfo)}
                 </TouchableOpacity>
               );
             })}
@@ -635,6 +774,65 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 9,
     fontWeight: '700',
+  },
+  weekHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  weekRangeText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  weekDayRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 16,
+  },
+  weekDayCell: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  weekTodayCell: {
+    borderWidth: 2,
+    borderColor: '#007AFF',
+  },
+  weekSelectedCell: {
+    backgroundColor: '#007AFF',
+  },
+  weekDisabledCell: {
+    opacity: 0.4,
+  },
+  weekDayName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+  },
+  weekSelectedDayName: {
+    color: '#fff',
+  },
+  weekDayNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    marginTop: 4,
+  },
+  weekSelectedDayNumber: {
+    color: '#fff',
+  },
+  weekIndicators: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 6,
+    justifyContent: 'center',
   },
 });
 

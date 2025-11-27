@@ -130,26 +130,31 @@ export async function uploadPDFToStorage(
  * Download PDF from Supabase Storage to local cache
  * @param cloudUrl - Cloud URL or storage path
  * @param batchId - Export batch ID
+ * @param preferredFileName - Optional preferred filename (without path). If not provided, uses batchId.pdf
  * @returns Local file path
  */
 export async function downloadPDFFromStorage(
   cloudUrl: string,
-  batchId: string
+  batchId: string,
+  preferredFileName?: string
 ): Promise<string> {
   if (!supabaseEnabled) {
     throw new Error('Supabase not enabled');
   }
 
   try {
-    // First, check if PDF already exists in local cache
-    const fileName = `${batchId}.pdf`;
+    // Use preferred filename if provided, otherwise use batchId
+    const fileName = preferredFileName || `${batchId}.pdf`;
+    // Ensure filename ends with .pdf
+    const finalFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+    
     // Use Paths.cache.uri like other parts of the codebase
     const cacheDir = Paths?.cache?.uri;
     if (!cacheDir) {
       throw new Error('Cache directory not available');
     }
     // Ensure cacheDir ends with a slash
-    const localCachePath = cacheDir.endsWith('/') ? `${cacheDir}${fileName}` : `${cacheDir}/${fileName}`;
+    const localCachePath = cacheDir.endsWith('/') ? `${cacheDir}${finalFileName}` : `${cacheDir}/${finalFileName}`;
     
     try {
       const { getInfoAsync } = await import('expo-file-system/legacy');
@@ -238,8 +243,8 @@ export async function downloadPDFFromStorage(
             throw new Error('Cache directory not available');
           }
           const finalLocalCachePath = finalCacheDir.endsWith('/') 
-            ? `${finalCacheDir}${fileName}` 
-            : `${finalCacheDir}/${fileName}`;
+            ? `${finalCacheDir}${finalFileName}` 
+            : `${finalCacheDir}/${finalFileName}`;
           
           await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
           return finalLocalCachePath;
@@ -339,8 +344,8 @@ export async function downloadPDFFromStorage(
       throw new Error('Cache directory not available');
     }
     const finalLocalCachePath = finalCacheDir.endsWith('/') 
-      ? `${finalCacheDir}${fileName}` 
-      : `${finalCacheDir}/${fileName}`;
+      ? `${finalCacheDir}${finalFileName}` 
+      : `${finalCacheDir}/${finalFileName}`;
     
     await writeAsStringAsync(finalLocalCachePath, base64String, { encoding: 'base64' });
     if (isDevLoggingEnabled) {

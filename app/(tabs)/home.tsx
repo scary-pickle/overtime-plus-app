@@ -21,9 +21,11 @@ import { getRosterForDate } from '../../lib/roster';
 import { LateBadge } from '../../components/LateBadge';
 import { EmptyState } from '../../components/EmptyState';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
-import { updateWidgetStatus } from '../../lib/widget/widgetStatusUpdater';
 import { OvertimeLog } from '../../types';
+import { createScopedLogger } from '../../lib/utils/logger';
 // Analytics charts preview removed from Home; link provided on Weekly card instead
+
+const debug = createScopedLogger('home');
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -92,7 +94,7 @@ export default function HomeScreen() {
         
         // Check if draft is stale (from a previous day)
         if (activeDraft.date < today) {
-          console.log('Stale draft detected, clearing active shift');
+          debug.debug('Stale draft detected, clearing active shift');
           await markDraftAsStale(activeDraft.id);
           setActiveShiftDraft(null);
         } else {
@@ -159,7 +161,7 @@ export default function HomeScreen() {
         setTodayLoggedShift(hasLogged ? loggedShift : null);
       }
     } catch (error) {
-      console.error('Error refreshing data:', error);
+      debug.error('Error refreshing data:', error);
     } finally {
       setRefreshing(false);
     }
@@ -239,9 +241,6 @@ export default function HomeScreen() {
 
       await addLog(draftLog);
       setActiveShiftDraft(draftLog);
-      
-      // Update widget status
-      await updateWidgetStatus();
 
       const message = roster 
         ? `Shift started at ${currentActualTime}` 
@@ -249,7 +248,7 @@ export default function HomeScreen() {
       
       Alert.alert('Shift Started', message);
     } catch (error) {
-      console.error('Error starting shift:', error);
+      debug.error('Error starting shift:', error);
       Alert.alert('Error', 'Failed to start shift. Please try again.');
     }
   };
@@ -424,7 +423,7 @@ export default function HomeScreen() {
         }
       }
     } catch (error) {
-      console.error('Error ending shift:', error);
+      debug.error('Error ending shift:', error);
       Alert.alert('Error', 'Failed to end shift. Please try again.');
     }
   };
@@ -509,6 +508,7 @@ export default function HomeScreen() {
                 Rostered: {todayRoster.rosteredStart} - {todayRoster.rosteredFinish}
               </Text>
               <LateBadge 
+                rosteredStart={todayRoster.rosteredStart}
                 rosteredFinish={todayRoster.rosteredFinish}
                 isLogged={hasLoggedToday}
                 style={styles.lateBadge}

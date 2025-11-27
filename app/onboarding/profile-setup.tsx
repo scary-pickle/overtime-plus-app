@@ -22,6 +22,9 @@ import { HospitalDropdown } from '../../components/HospitalDropdown';
 import { DepartmentDropdown } from '../../components/DepartmentDropdown';
 import { QUEENSLAND_HOSPITALS, getDepartmentsForHospital, getDelegateForDepartment } from '../../lib/data/hospitalDepartments';
 import { profileStorage } from '../../lib/storage/profile';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('OnboardingProfileSetup');
 
 export default function OnboardingProfileSetup() {
   const router = useRouter();
@@ -167,7 +170,7 @@ export default function OnboardingProfileSetup() {
       await saveProfile(profileData, user?.id);
       router.push('/onboarding/complete');
     } catch (error) {
-      console.error('Error saving profile:', error);
+      debug.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');
     }
   };
@@ -294,7 +297,7 @@ export default function OnboardingProfileSetup() {
 
           <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
-              Organisation Unit No <Text style={styles.required}>*</Text>
+              Organisation Unit No (Optional)
             </Text>
             <TextInput
               style={[styles.input, isDark && styles.darkInput]}
@@ -303,6 +306,9 @@ export default function OnboardingProfileSetup() {
               placeholder="Enter org unit number"
               placeholderTextColor={isDark ? '#666' : '#999'}
             />
+            <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
+              You can skip this for now. We'll remind you before exporting AVAC forms.
+            </Text>
           </View>
 
           <View style={styles.field}>
@@ -600,6 +606,7 @@ const styles = StyleSheet.create({
     color: '#cfe0f7',
   },
 });
+
 
 
 

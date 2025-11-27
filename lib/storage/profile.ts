@@ -180,7 +180,7 @@ export class ProfileStorage {
   isProfileComplete(profile: Profile): boolean {
     // Base required fields for all users (excluding delegate info)
     const baseRequiredFields: (keyof Profile)[] = [
-      'fullName', 'payrollNumber', 'orgUnitNo', 'orgUnitName', 'location',
+      'fullName', 'payrollNumber', 'orgUnitName', 'location',
       'employeeInitial', 'email', 'isSMO'
     ];
 
@@ -203,7 +203,7 @@ export class ProfileStorage {
   getMissingFields(profile: Profile): { field: keyof Profile; label: string; section: string }[] {
     // Base required fields for all users (excluding delegate info)
     const baseRequiredFields: (keyof Profile)[] = [
-      'fullName', 'payrollNumber', 'orgUnitNo', 'orgUnitName', 'location',
+      'fullName', 'payrollNumber', 'orgUnitName', 'location',
       'employeeInitial', 'email', 'isSMO'
     ];
 

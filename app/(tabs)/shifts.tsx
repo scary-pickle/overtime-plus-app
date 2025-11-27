@@ -13,11 +13,15 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('Shifts');
 import { useAuthStore } from '../../lib/state/authStore';
 import { ShiftCard } from '../../components/ShiftCard';
 import { EmptyState } from '../../components/EmptyState';
 import { ShiftsCalendarView } from '../../components/ShiftsCalendarView';
 import { UsualShift } from '../../types';
+import { formatDateToISO } from '../../lib/time';
 
 export default function ShiftsScreen() {
   const router = useRouter();
@@ -28,9 +32,11 @@ export default function ShiftsScreen() {
   const { shifts, deleteShift, loadShifts } = useShiftsStore();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [calendarViewMode, setCalendarViewMode] = useState<'month' | 'week'>('month');
+  const [isViewModeMenuOpen, setIsViewModeMenuOpen] = useState(false);
 
   useEffect(() => {
-    console.log('🔄 ShiftsScreen: Loading shifts...');
+    debug.debug('Loading shifts...');
     loadShifts(user?.id);
   }, [user?.id]);
 
@@ -41,12 +47,12 @@ export default function ShiftsScreen() {
   };
 
   const handleAddShift = () => {
-    console.log('➕ ShiftsScreen: Add shift button pressed');
+    debug.debug('Add shift button pressed');
     router.push('/shifts/new');
   };
 
   const handleEditShift = (shift: UsualShift) => {
-    console.log('✏️ ShiftsScreen: Edit shift pressed:', {
+    debug.debug('Edit shift pressed:', {
       id: shift.id,
       label: shift.label,
       day: shift.dayOfWeek,
@@ -56,7 +62,7 @@ export default function ShiftsScreen() {
   };
 
   const handleDeleteShift = (shift: UsualShift) => {
-    console.log('🗑️ ShiftsScreen: Delete shift requested:', {
+    debug.debug('Delete shift requested:', {
       id: shift.id,
       label: shift.label,
       day: shift.dayOfWeek
@@ -70,7 +76,7 @@ export default function ShiftsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            console.log('✅ ShiftsScreen: Confirming delete for shift:', shift.id);
+            debug.debug('Confirming delete for shift:', shift.id);
             deleteShift(shift.id);
           },
         },
@@ -98,7 +104,7 @@ export default function ShiftsScreen() {
       checkDate.setDate(today.getDate() + i);
       
       if (checkDate.getDay() === dayOfWeek) {
-        const dateStr = checkDate.toISOString().split('T')[0];
+        const dateStr = formatDateToISO(checkDate);
         
         // Check if shift is active on this date
         if (shift.activeFrom <= dateStr && (!shift.activeTo || shift.activeTo >= dateStr)) {
@@ -135,7 +141,7 @@ export default function ShiftsScreen() {
   };
 
   const getActiveShifts = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatDateToISO(new Date());
     const activeShifts = shifts.filter(shift => 
       shift.activeFrom <= today && 
       (!shift.activeTo || shift.activeTo >= today)
@@ -151,7 +157,7 @@ export default function ShiftsScreen() {
   };
 
   const getInactiveShifts = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatDateToISO(new Date());
     return shifts.filter(shift => 
       shift.activeTo && shift.activeTo < today
     );
@@ -183,7 +189,7 @@ export default function ShiftsScreen() {
   const allInactiveShifts = getInactiveShifts();
 
   // Filter shifts if a date is selected
-  const activeShifts = selectedDate 
+  let activeShifts = selectedDate 
     ? getShiftsForSelectedDate(selectedDate).filter(shift => 
         shift.activeFrom <= selectedDate && 
         (!shift.activeTo || shift.activeTo >= selectedDate)
@@ -197,7 +203,7 @@ export default function ShiftsScreen() {
     : allInactiveShifts;
 
   // Calculate the next shift once for all items
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatDateToISO(new Date());
   const nextShifts = activeShifts
     .map(shift => ({
       shift,
@@ -207,6 +213,20 @@ export default function ShiftsScreen() {
     .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
   
   const nextShiftId = nextShifts.length > 0 ? nextShifts[0].shift.id : null;
+
+  // Sort active shifts: next shift first, then by day of week
+  if (!selectedDate && nextShiftId) {
+    activeShifts = [...activeShifts].sort((a, b) => {
+      // Put the next shift first
+      if (a.id === nextShiftId) return -1;
+      if (b.id === nextShiftId) return 1;
+      
+      // Then sort the rest by day of week (Monday = 1, Tuesday = 2, ..., Sunday = 0)
+      const dayA = a.dayOfWeek === 0 ? 7 : a.dayOfWeek;
+      const dayB = b.dayOfWeek === 0 ? 7 : b.dayOfWeek;
+      return dayA - dayB;
+    });
+  }
 
   const renderShiftItem = ({ item }: { item: UsualShift }) => {
     // When a date is selected, show that date as the occurrence (since we're filtering for that date)
@@ -286,9 +306,69 @@ export default function ShiftsScreen() {
         ListHeaderComponent={
           <View style={styles.content}>
             {/* Header */}
-            <Text style={[styles.title, isDark && styles.darkText]}>
-              Shifts
-            </Text>
+            <View style={styles.headerRow}>
+              <Text style={[styles.title, isDark && styles.darkText]}>
+                Shifts
+              </Text>
+              <View style={styles.viewModeContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.viewModeChip,
+                    isDark && styles.darkViewModeChip,
+                    isViewModeMenuOpen && styles.viewModeChipOpen,
+                  ]}
+                  onPress={() => setIsViewModeMenuOpen(prev => !prev)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.viewModeChipText}>
+                    {calendarViewMode === 'month' ? 'Monthly' : 'Weekly'}
+                  </Text>
+                  <Ionicons
+                    name={isViewModeMenuOpen ? 'chevron-up' : 'chevron-down'}
+                    size={16}
+                    color="#007AFF"
+                  />
+                </TouchableOpacity>
+                {isViewModeMenuOpen && (
+                  <View style={[styles.viewModeMenu, isDark && styles.darkViewModeMenu]}>
+                    <TouchableOpacity
+                      style={styles.viewModeMenuItem}
+                      onPress={() => {
+                        setCalendarViewMode('month');
+                        setIsViewModeMenuOpen(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.viewModeMenuText,
+                        calendarViewMode === 'month' && styles.viewModeMenuTextActive,
+                      ]}>
+                        Monthly
+                      </Text>
+                      {calendarViewMode === 'month' && (
+                        <Ionicons name="checkmark" size={16} color="#007AFF" />
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.viewModeMenuItem}
+                      onPress={() => {
+                        setCalendarViewMode('week');
+                        setIsViewModeMenuOpen(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.viewModeMenuText,
+                        calendarViewMode === 'week' && styles.viewModeMenuTextActive,
+                      ]}>
+                        Weekly
+                      </Text>
+                      {calendarViewMode === 'week' && (
+                        <Ionicons name="checkmark" size={16} color="#007AFF" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
 
             {/* Calendar Picker */}
             <View style={styles.calendarSection}>
@@ -297,6 +377,7 @@ export default function ShiftsScreen() {
                 onDayPress={handleCalendarDayPress}
                 selectedDate={selectedDate}
                 isDark={isDark}
+                viewMode={calendarViewMode}
               />
             </View>
 
@@ -374,11 +455,80 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 16,
   },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   darkText: {
     color: '#fff',
   },
   calendarSection: {
     marginBottom: 8,
+  },
+  viewModeContainer: {
+    position: 'relative',
+  },
+  viewModeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#dfe2e6',
+  },
+  darkViewModeChip: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#2c2c2e',
+  },
+  viewModeChipOpen: {
+    borderColor: '#007AFF',
+  },
+  viewModeChipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  viewModeMenu: {
+    position: 'absolute',
+    top: 38,
+    right: 0,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 8,
+    width: 140,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+    zIndex: 10,
+  },
+  darkViewModeMenu: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
+  },
+  viewModeMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  viewModeMenuText: {
+    fontSize: 14,
+    color: '#555',
+    fontWeight: '500',
+  },
+  viewModeMenuTextActive: {
+    color: '#007AFF',
+    fontWeight: '600',
   },
   listContainer: {
     paddingBottom: 80,

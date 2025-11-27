@@ -59,7 +59,7 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
     isSMO: 'Employee Details',
   };
 
-  // Required fields (excluding delegate info)
+  // Required fields (excluding delegate info and organisation unit number)
   const requiredFields: (keyof Profile)[] = [
     'fullName',
     'payrollNumber',
@@ -67,7 +67,6 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
     'employeeInitial',
     'location', // hospital
     'orgUnitName', // department
-    'orgUnitNo',
     'isSMO',
   ];
 
@@ -103,6 +102,7 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
     missingFields,
   };
 }
+
 
 
 

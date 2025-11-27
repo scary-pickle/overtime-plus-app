@@ -14,13 +14,16 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import type { PurchasesPackage } from 'react-native-purchases';
+import { PACKAGE_TYPE, type PurchasesPackage } from 'react-native-purchases';
 import { useSubscriptionStore } from '../../lib/state/subscriptionStore';
 import {
   getManageSubscriptionUrl,
   SubscriptionAccessReason,
 } from '../../lib/utils/subscription';
 import { LegacyPaywallAcknowledgmentModal } from '../../components/LegacyPaywallAcknowledgmentModal';
+
+const privacyPolicyUrl = process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL;
+const termsUrl = process.env.EXPO_PUBLIC_TERMS_URL;
 
 const STATUS_COPY: Record<SubscriptionAccessReason, { label: string; detail: string }> = {
   'paywall-disabled': {
@@ -154,6 +157,16 @@ const PaywallScreen = () => {
     refresh();
   };
 
+  const openExternal = (url: string | undefined | null, label: string) => {
+    if (!url) {
+      Alert.alert(`${label} unavailable`, `${label} URL is not configured yet.`);
+      return;
+    }
+    Linking.openURL(url).catch(() => {
+      Alert.alert(`${label}`, `Unable to open the ${label.toLowerCase()}.`);
+    });
+  };
+
   return (
     <>
       <LegacyPaywallAcknowledgmentModal
@@ -163,169 +176,262 @@ const PaywallScreen = () => {
       />
       <ScrollView
         style={[styles.container, isDark && styles.darkContainer]}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={isDark ? '#fff' : '#000'} />
         }
       >
-      <View style={styles.content}>
-        <View style={[styles.statusCard, isDark && styles.darkCard]}>
-          <View style={styles.statusHeader}>
-            <Ionicons name="card-outline" size={22} color={isDark ? '#fff' : '#111'} />
-            <View style={{ marginLeft: 12 }}>
-              <Text style={[styles.statusTitle, isDark && styles.darkText]}>
-                {statusCopy.label}
-              </Text>
-              <Text style={[styles.statusSubtitle, isDark && styles.darkSubtitle]}>
-                {statusCopy.detail}
-              </Text>
+        <View style={styles.content}>
+          {/* Hero Section */}
+          <View style={styles.heroSection}>
+            <View style={[styles.heroIconContainer, isDark && styles.darkHeroIconContainer]}>
+              <Ionicons name="sparkles" size={32} color="#007AFF" />
             </View>
-          </View>
-          {access.reason === 'trial' && typeof trialDaysRemaining === 'number' && (
-            <Text style={[styles.statusMeta, isDark && styles.darkSubtitle]}>
-              Trial ends in {trialDaysRemaining} day{trialDaysRemaining === 1 ? '' : 's'}.
+            <Text style={[styles.heroTitle, isDark && styles.darkText]}>
+              {statusCopy.label}
             </Text>
-          )}
-          {access.reason === 'grace' && typeof graceDaysRemaining === 'number' && (
-            <Text style={[styles.statusMeta, isDark && styles.darkSubtitle]}>
-              Grace period ends in {graceDaysRemaining} day{graceDaysRemaining === 1 ? '' : 's'}.
+            <Text style={[styles.heroSubtitle, isDark && styles.darkSubtitle]}>
+              {statusCopy.detail}
             </Text>
-          )}
-          {snapshot?.subscriptionExpiresAt && (
-            <Text style={[styles.statusMeta, isDark && styles.darkSubtitle]}>
-              Renews / expires {formatDate(snapshot.subscriptionExpiresAt)}
-            </Text>
-          )}
-          {snapshot?.legacyFreeAccess && (
-            <Text style={[styles.statusMeta, styles.legacyCopy]}>
-              Legacy beta access is active until you acknowledge the paywall.
-            </Text>
-          )}
-        </View>
-
-        <View style={[styles.calloutRow, isDark && styles.darkCard]}>
-          <Ionicons name="time-outline" size={20} color="#ffb74d" />
-          <Text style={[styles.calloutText, isDark && styles.darkText]}>
-            Cancellation during trial removes access immediately. Cancelling during a paid period keeps access until the cycle ends, followed by 7 days of export-only grace.
-          </Text>
-        </View>
-
-        {trialEligible ? (
-          <View style={[styles.calloutRow, isDark && styles.darkCard]}>
-            <Ionicons name="sparkles-outline" size={20} color="#00c853" />
-            <Text style={[styles.calloutText, isDark && styles.darkText]}>
-              You are eligible for a 1-month free trial. Billing begins only after the trial ends.
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.calloutRow, isDark && styles.darkCard]}>
-            <Ionicons name="information-circle-outline" size={20} color="#ff7043" />
-            <Text style={[styles.calloutText, isDark && styles.darkText]}>
-              Free trials are unavailable for this account. You can subscribe to regain access instantly.
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-            Choose a plan
-          </Text>
-          {cohort !== undefined && (
-            <Text style={[styles.sectionSubtitle, isDark && styles.darkSubtitle]}>
-              Rollout cohort: {cohort}% {rolloutTarget ? `(${rolloutTarget})` : ''}
-            </Text>
-          )}
-        </View>
-
-        {packages.length === 0 && (
-          <View style={[styles.emptyState, isDark && styles.darkCard]}>
-            <Text style={[styles.emptyStateText, isDark && styles.darkSubtitle]}>
-              No offerings loaded from RevenueCat yet. Configure offerings in the dashboard or refresh once products are synced.
-            </Text>
-            <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
-              <Text style={styles.refreshButtonText}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {packages.map((pkg) => {
-          const product = (pkg as any).product || (pkg as any).storeProduct || {};
-          const price = product.priceString || product.formattedPrice || '';
-          const title = product.title || pkg.identifier;
-          const description = product.description || '';
-
-          return (
-            <View key={pkg.identifier} style={[styles.packageCard, isDark && styles.darkCard]}>
-              <View style={styles.packageHeader}>
-                <View>
-                  <Text style={[styles.packageTitle, isDark && styles.darkText]}>{title}</Text>
-                  <Text style={[styles.packagePrice, isDark && styles.darkSubtitle]}>{price}</Text>
-                </View>
-                <View style={styles.packageBadge}>
-                  <Text style={styles.packageBadgeText}>
-                    {pkg.packageType.toLowerCase()}
-                  </Text>
-                </View>
-              </View>
-              {description ? (
-                <Text style={[styles.packageDescription, isDark && styles.darkSubtitle]}>
-                  {description}
+            {access.reason === 'trial' && typeof trialDaysRemaining === 'number' && (
+              <View style={[styles.badge, styles.trialBadge]}>
+                <Ionicons name="time-outline" size={14} color="#10B981" />
+                <Text style={styles.badgeText}>
+                  {trialDaysRemaining} day{trialDaysRemaining === 1 ? '' : 's'} remaining
                 </Text>
-              ) : null}
-              <TouchableOpacity
-                style={[
-                  styles.primaryButton,
-                  (pendingPackage === pkg.identifier) && styles.buttonLoading,
-                ]}
-                onPress={() => handlePurchase(pkg.identifier)}
-                disabled={pendingPackage === pkg.identifier}
-                activeOpacity={0.8}
-              >
-                {pendingPackage === pkg.identifier ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.primaryButtonText}>
-                    {trialEligible ? 'Start Free Trial' : 'Subscribe'}
-                  </Text>
-                )}
-              </TouchableOpacity>
-              <Text style={[styles.packageFooter, isDark && styles.darkSubtitle]}>
-                Trial converts to paid automatically. Cancel anytime from your store account.
-              </Text>
-            </View>
-          );
-        })}
-
-        <View style={[styles.actionsRow, isDark && styles.darkCard]}>
-          <TouchableOpacity
-            style={[styles.secondaryButton, restoring && styles.buttonLoading]}
-            onPress={handleRestore}
-            disabled={restoring}
-          >
-            {restoring ? (
-              <ActivityIndicator color={isDark ? '#fff' : '#111'} />
-            ) : (
-              <Text style={[styles.secondaryButtonText, isDark && styles.darkText]}>
-                Restore Purchases
+              </View>
+            )}
+            {access.reason === 'grace' && typeof graceDaysRemaining === 'number' && (
+              <View style={[styles.badge, styles.graceBadge]}>
+                <Ionicons name="warning-outline" size={14} color="#FFA500" />
+                <Text style={styles.graceBadgeText}>
+                  {graceDaysRemaining} day{graceDaysRemaining === 1 ? '' : 's'} of grace period remaining
+                </Text>
+              </View>
+            )}
+            {snapshot?.subscriptionExpiresAt && (
+              <Text style={[styles.heroMeta, isDark && styles.darkSubtitle]}>
+                Renews {formatDate(snapshot.subscriptionExpiresAt)}
               </Text>
             )}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.linkButton} onPress={openManageSubscriptions}>
-            <Text style={styles.linkButtonText}>{manageLabel}</Text>
-          </TouchableOpacity>
-        </View>
+          </View>
 
-        <View style={[styles.footerCard, isDark && styles.darkCard]}>
-          <Text style={[styles.footerTitle, isDark && styles.darkText]}>Need to export data?</Text>
-          <Text style={[styles.footerCopy, isDark && styles.darkSubtitle]}>
-            During the 7-day grace period exports remain available so you can download your logs before the account locks. 
-            Contact support if you need help recovering access.
-          </Text>
-          <TouchableOpacity style={styles.linkButton} onPress={() => router.push('/(tabs)/profile')}>
-            <Text style={styles.linkButtonText}>Back to app</Text>
-          </TouchableOpacity>
+          {/* Info Cards */}
+          {trialEligible && (
+            <View style={[styles.infoCard, isDark && styles.darkCard, styles.successCard]}>
+              <View style={styles.infoCardHeader}>
+                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                <Text style={[styles.infoCardTitle, isDark && styles.darkText]}>
+                  Free Trial Available
+                </Text>
+              </View>
+              <Text style={[styles.infoCardText, isDark && styles.darkSubtitle]}>
+                Start your 1-month free trial today. Billing begins only after the trial ends.
+              </Text>
+            </View>
+          )}
+
+          {!trialEligible && access.reason === 'none' && (
+            <View style={[styles.infoCard, isDark && styles.darkCard]}>
+              <View style={styles.infoCardHeader}>
+                <Ionicons name="information-circle" size={20} color="#007AFF" />
+                <Text style={[styles.infoCardTitle, isDark && styles.darkText]}>
+                  Subscription Required
+                </Text>
+              </View>
+              <Text style={[styles.infoCardText, isDark && styles.darkSubtitle]}>
+                Subscribe to regain full access to Overtime+ features.
+              </Text>
+            </View>
+          )}
+
+          <View style={[styles.infoCard, isDark && styles.darkCard]}>
+            <View style={styles.infoCardHeader}>
+              <Ionicons name="time-outline" size={20} color="#FFA500" />
+              <Text style={[styles.infoCardTitle, isDark && styles.darkText]}>
+                Cancellation Policy
+              </Text>
+            </View>
+            <Text style={[styles.infoCardText, isDark && styles.darkSubtitle]}>
+              Cancelling during trial removes access immediately. Cancelling during a paid period keeps access until the cycle ends, followed by 7 days of export-only grace.
+            </Text>
+          </View>
+
+          {/* Plans Section */}
+          {packages.length > 0 && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+                  Choose Your Plan
+                </Text>
+                {cohort !== undefined && (
+                  <Text style={[styles.sectionSubtitle, isDark && styles.darkSubtitle]}>
+                    Rollout cohort: {cohort}% {rolloutTarget ? `(${rolloutTarget})` : ''}
+                  </Text>
+                )}
+              </View>
+
+              {packages.map((pkg, index) => {
+                const product = (pkg as any).product || (pkg as any).storeProduct || {};
+                const price = product.priceString || product.formattedPrice || '';
+                const title = product.title || pkg.identifier;
+                const description = product.description || '';
+                const isYearly = pkg.packageType === PACKAGE_TYPE.ANNUAL;
+                const isPopular = isYearly; // Mark yearly as popular
+
+                return (
+                  <TouchableOpacity
+                    key={pkg.identifier}
+                    style={[
+                      styles.packageCard,
+                      isDark && styles.darkCard,
+                      isPopular && styles.popularCard,
+                      isPopular && isDark && styles.darkPopularCard,
+                    ]}
+                    onPress={() => handlePurchase(pkg.identifier)}
+                    disabled={pendingPackage === pkg.identifier}
+                    activeOpacity={0.9}
+                  >
+                    {isPopular && (
+                      <View style={styles.popularBadge}>
+                        <Text style={styles.popularBadgeText}>Best Value</Text>
+                      </View>
+                    )}
+                    <View style={styles.packageHeader}>
+                      <View style={styles.packageTitleContainer}>
+                        <Text style={[styles.packageTitle, isDark && styles.darkText]}>
+                          {isYearly ? 'Annual' : 'Monthly'}
+                        </Text>
+                        <Text style={[styles.packagePrice, isDark && styles.darkText]}>
+                          {price}
+                        </Text>
+                        {isYearly && (
+                          <Text style={[styles.packageSavings, isDark && styles.darkSubtitle]}>
+                            Save compared to monthly
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    {description ? (
+                      <Text style={[styles.packageDescription, isDark && styles.darkSubtitle]}>
+                        {description}
+                      </Text>
+                    ) : null}
+                    <TouchableOpacity
+                      style={[
+                        styles.primaryButton,
+                        isPopular && styles.primaryButtonPopular,
+                        (pendingPackage === pkg.identifier) && styles.buttonLoading,
+                      ]}
+                      onPress={() => handlePurchase(pkg.identifier)}
+                      disabled={pendingPackage === pkg.identifier}
+                      activeOpacity={0.8}
+                    >
+                      {pendingPackage === pkg.identifier ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.primaryButtonText}>
+                          {trialEligible ? 'Start Free Trial' : 'Subscribe'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                    <Text style={[styles.packageFooter, isDark && styles.darkSubtitle]}>
+                      {trialEligible ? 'Free trial, then ' : ''}{price} per {isYearly ? 'year' : 'month'}. Cancel anytime.
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
+
+          {packages.length === 0 && (
+            <View style={[styles.emptyState, isDark && styles.darkCard]}>
+              <Ionicons name="refresh-outline" size={48} color={isDark ? '#666' : '#999'} />
+              <Text style={[styles.emptyStateTitle, isDark && styles.darkText]}>
+                Loading Plans
+              </Text>
+              <Text style={[styles.emptyStateText, isDark && styles.darkSubtitle]}>
+                No offerings loaded from RevenueCat yet. Configure offerings in the dashboard or refresh once products are synced.
+              </Text>
+              <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
+                <Ionicons name="refresh" size={18} color="#fff" style={{ marginRight: 6 }} />
+                <Text style={styles.refreshButtonText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Actions */}
+          <View style={styles.actionsSection}>
+            <TouchableOpacity
+              style={[styles.secondaryButton, isDark && styles.darkSecondaryButton, restoring && styles.buttonLoading]}
+              onPress={handleRestore}
+              disabled={restoring}
+              activeOpacity={0.7}
+            >
+              {restoring ? (
+                <ActivityIndicator color={isDark ? '#fff' : '#111'} />
+              ) : (
+                <>
+                  <Ionicons name="refresh-outline" size={18} color={isDark ? '#fff' : '#111'} style={{ marginRight: 8 }} />
+                  <Text style={[styles.secondaryButtonText, isDark && styles.darkText]}>
+                    Restore Purchases
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.linkButton} onPress={openManageSubscriptions} activeOpacity={0.7}>
+              <Ionicons name="settings-outline" size={16} color="#007AFF" style={{ marginRight: 6 }} />
+              <Text style={styles.linkButtonText}>{manageLabel}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Legal & Billing */}
+          <View style={[styles.legalCard, isDark && styles.darkCard]}>
+            <View style={styles.legalHeader}>
+              <Ionicons name="shield-checkmark-outline" size={20} color={isDark ? '#fff' : '#111'} />
+              <Text style={[styles.legalTitle, isDark && styles.darkText]}>Billing & Legal</Text>
+            </View>
+            <Text style={[styles.legalCopy, isDark && styles.darkSubtitle]}>
+              Payment is charged to your Apple ID/Google Play account at confirmation. Subscriptions auto-renew unless you cancel at least 24 hours before the end of the current period. Manage or cancel anytime in your App Store/Play Store settings. Free trials convert to paid if not canceled 24 hours before trial ends; unused trial time is forfeited when purchasing.
+            </Text>
+            <View style={styles.legalLinks}>
+              <TouchableOpacity
+                style={styles.linkPill}
+                onPress={() => openExternal(privacyPolicyUrl, 'Privacy Policy')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.linkPillText}>Privacy Policy</Text>
+                <Ionicons name="open-outline" size={16} color="#007AFF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.linkPill}
+                onPress={() => openExternal(termsUrl, 'Terms of Service')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.linkPillText}>Terms of Service</Text>
+                <Ionicons name="open-outline" size={16} color="#007AFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Footer */}
+          <View style={[styles.footerCard, isDark && styles.darkCard]}>
+            <Ionicons name="document-text-outline" size={24} color={isDark ? '#007AFF' : '#007AFF'} />
+            <Text style={[styles.footerTitle, isDark && styles.darkText]}>Need to export data?</Text>
+            <Text style={[styles.footerCopy, isDark && styles.darkSubtitle]}>
+              During the 7-day grace period, exports remain available so you can download your logs before the account locks.
+            </Text>
+            <TouchableOpacity 
+              style={styles.footerLink} 
+              onPress={() => router.push('/(tabs)/profile')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.footerLinkText}>Back to app</Text>
+              <Ionicons name="arrow-forward" size={16} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
     </>
   );
 };
@@ -336,210 +442,395 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
   },
   darkContainer: {
-    backgroundColor: '#121212',
+    backgroundColor: '#000',
+  },
+  scrollContent: {
+    paddingBottom: 40,
   },
   content: {
     padding: 20,
-    paddingBottom: 40,
   },
-  statusCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
+  // Hero Section
+  heroSection: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  heroIconContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#E3F2FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  darkHeroIconContainer: {
+    backgroundColor: '#1C1C1E',
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: -0.5,
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 22,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
+    paddingHorizontal: 20,
   },
-  darkCard: {
-    backgroundColor: '#1e1e1e',
-    borderColor: '#2c2c2c',
+  heroMeta: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
   },
-  statusHeader: {
+  badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 8,
+    gap: 6,
   },
-  statusTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  trialBadge: {
+    backgroundColor: '#F0FDF4',
+  },
+  graceBadge: {
+    backgroundColor: '#FFF7ED',
+  },
+  badgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#10B981',
+  },
+  graceBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFA500',
+  },
+  // Info Cards
+  infoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  darkCard: {
+    backgroundColor: '#1c1c1e',
+    shadowOpacity: 0.2,
+  },
+  successCard: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#10B981',
+  },
+  infoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  infoCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#111',
   },
-  statusSubtitle: {
+  infoCardText: {
     fontSize: 14,
-    color: '#555',
-    marginTop: 4,
-  },
-  darkText: {
-    color: '#fff',
-  },
-  darkSubtitle: {
-    color: '#ccc',
-  },
-  statusMeta: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#444',
-  },
-  legacyCopy: {
-    color: '#FFB300',
-    fontWeight: '600',
-  },
-  calloutRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    gap: 12,
-    marginBottom: 12,
-  },
-  calloutText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#333',
+    color: '#666',
     lineHeight: 20,
   },
+  // Section Header
   sectionHeader: {
-    marginTop: 24,
-    marginBottom: 8,
+    marginTop: 32,
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: '700',
     color: '#111',
+    letterSpacing: -0.5,
   },
   sectionSubtitle: {
     fontSize: 13,
     color: '#666',
     marginTop: 4,
   },
+  // Package Cards
   packageCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
+    position: 'relative',
   },
-  packageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  packageTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  packagePrice: {
-    fontSize: 14,
-    color: '#555',
-    marginTop: 4,
-  },
-  packageBadge: {
-    borderWidth: 1,
+  popularCard: {
     borderColor: '#007AFF',
-    borderRadius: 20,
+    borderWidth: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  darkPopularCard: {
+    borderColor: '#007AFF',
+    backgroundColor: '#1c1c1e',
+  },
+  popularBadge: {
+    position: 'absolute',
+    top: -10,
+    right: 20,
+    backgroundColor: '#007AFF',
     paddingHorizontal: 12,
     paddingVertical: 4,
+    borderRadius: 12,
   },
-  packageBadgeText: {
-    color: '#007AFF',
-    fontSize: 12,
+  popularBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  packageHeader: {
+    marginBottom: 12,
+  },
+  packageTitleContainer: {
+    marginBottom: 4,
+  },
+  packageTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  packagePrice: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 4,
+    letterSpacing: -0.5,
+  },
+  packageSavings: {
+    fontSize: 13,
+    color: '#10B981',
     fontWeight: '600',
-    textTransform: 'capitalize',
+    marginTop: 4,
   },
   packageDescription: {
     fontSize: 14,
-    color: '#555',
+    color: '#666',
     lineHeight: 20,
-    marginBottom: 12,
+    marginBottom: 20,
   },
   primaryButton: {
     backgroundColor: '#007AFF',
-    borderRadius: 10,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    shadowColor: '#007AFF',
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  primaryButtonPopular: {
+    backgroundColor: '#007AFF',
   },
   primaryButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
+    letterSpacing: 0.3,
   },
   buttonLoading: {
     opacity: 0.6,
   },
   packageFooter: {
     fontSize: 12,
-    color: '#777',
-    marginTop: 10,
+    color: '#999',
+    textAlign: 'center',
+    lineHeight: 16,
   },
-  actionsRow: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
+  // Actions
+  actionsSection: {
     marginTop: 8,
     gap: 12,
   },
   secondaryButton: {
     backgroundColor: '#f1f1f1',
-    borderRadius: 10,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  darkSecondaryButton: {
+    backgroundColor: '#2c2c2e',
   },
   secondaryButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#222',
+    color: '#111',
   },
   linkButton: {
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   linkButtonText: {
     color: '#007AFF',
+    fontSize: 15,
     fontWeight: '600',
   },
+  // Footer
   footerCard: {
-    marginTop: 24,
-    padding: 16,
+    marginTop: 32,
+    padding: 20,
     borderRadius: 16,
     backgroundColor: '#fff',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
   },
   footerTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
+    marginTop: 12,
     marginBottom: 8,
+    textAlign: 'center',
   },
   footerCopy: {
     fontSize: 14,
-    color: '#555',
+    color: '#666',
     lineHeight: 20,
-    marginBottom: 12,
+    textAlign: 'center',
+    marginBottom: 16,
   },
+  footerLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  footerLinkText: {
+    color: '#007AFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  // Legal
+  legalCard: {
+    marginTop: 24,
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  legalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  legalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111',
+  },
+  legalCopy: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
+  },
+  legalLinks: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+    flexWrap: 'wrap',
+  },
+  linkPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: '#E8F0FE',
+  },
+  linkPillText: {
+    color: '#007AFF',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  // Empty State
   emptyState: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 16,
+    padding: 32,
     alignItems: 'center',
     marginBottom: 16,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111',
+    marginTop: 16,
+    marginBottom: 8,
   },
   emptyStateText: {
     textAlign: 'center',
     color: '#666',
     lineHeight: 20,
-    marginBottom: 12,
+    marginBottom: 20,
+    fontSize: 14,
   },
   refreshButton: {
     backgroundColor: '#007AFF',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   refreshButtonText: {
     color: '#fff',
     fontWeight: '600',
+    fontSize: 15,
+  },
+  // Text Colors
+  darkText: {
+    color: '#fff',
+  },
+  darkSubtitle: {
+    color: '#aaa',
   },
 });
 

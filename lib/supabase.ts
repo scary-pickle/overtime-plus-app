@@ -11,6 +11,8 @@ import { database } from './db/sqlite';
 import { profileStorage } from './storage/profile';
 import { createScopedLogger, maskUserId, maskEmail, maskName } from './utils/logger';
 
+const debug = createScopedLogger('supabase');
+
 // Check for Supabase configuration
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -40,8 +42,6 @@ if (SUPABASE_URL && !SUPABASE_URL.startsWith('https://') && !isLocalhost) {
 
 export const supabaseEnabled = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 export const templateOTAEnabled = (process.env.EXPO_PUBLIC_TEMPLATE_OTA === 'true');
-
-const debug = createScopedLogger('supabase');
 
 debug.debug('Supabase enabled:', supabaseEnabled);
 
@@ -254,12 +254,26 @@ export const auth = {
  * Helper function to get a valid access token, refreshing if necessary
  * This is critical for direct REST API calls which don't benefit from autoRefreshToken
  */
+// Cache the access token to avoid repeated SecureStore reads
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+const TOKEN_CACHE_TTL = 5000; // Cache for 5 seconds
+
+// Clear token cache when session changes
+export function clearTokenCache() {
+  cachedAccessToken = null;
+}
+
 async function getValidAccessToken(): Promise<string | null> {
   if (!supabaseEnabled) {
     return null;
   }
 
   try {
+    // Check cache first (avoid repeated SecureStore reads)
+    if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now()) {
+      return cachedAccessToken.token;
+    }
+
     // Get session from auth store first
     const { useAuthStore } = await import('./state/authStore');
     const authState = useAuthStore.getState();
@@ -308,6 +322,8 @@ async function getValidAccessToken(): Promise<string | null> {
             // Update auth store with new session
             const { useAuthStore } = await import('./state/authStore');
             useAuthStore.setState({ session: refreshData.session, user: refreshData.session.user });
+            // Cache the new token
+            cachedAccessToken = { token: refreshData.session.access_token, expiresAt: Date.now() + TOKEN_CACHE_TTL };
             return refreshData.session.access_token;
           }
         }
@@ -323,10 +339,16 @@ async function getValidAccessToken(): Promise<string | null> {
       if (!refreshError && refreshData?.session?.access_token) {
         const { useAuthStore } = await import('./state/authStore');
         useAuthStore.setState({ session: refreshData.session, user: refreshData.session.user });
+        // Cache the new token
+        cachedAccessToken = { token: refreshData.session.access_token, expiresAt: Date.now() + TOKEN_CACHE_TTL };
         return refreshData.session.access_token;
       }
     }
     
+    // Cache the token before returning
+    if (session.access_token) {
+      cachedAccessToken = { token: session.access_token, expiresAt: Date.now() + TOKEN_CACHE_TTL };
+    }
     return session.access_token;
   } catch (error) {
     debug.error('[getValidAccessToken] Error getting valid access token:', error);
@@ -390,6 +412,8 @@ async function authenticatedFetch(
         if (!refreshError && refreshData?.session?.access_token) {
           // Update auth store
           useAuthStore.setState({ session: refreshData.session, user: refreshData.session.user });
+          // Update cache
+          cachedAccessToken = { token: refreshData.session.access_token, expiresAt: Date.now() + TOKEN_CACHE_TTL };
           
           // Retry the request with new token
           const newHeaders = {
@@ -1050,36 +1074,11 @@ export const shiftsSync = {
     }
 
     try {
-      // Get session from auth store
-      const { useAuthStore } = await import('./state/authStore');
-      const authState = useAuthStore.getState();
-      let sessionToUse = authState.session;
-      
-      // If not in auth store, try getSession() (but don't wait long)
-      if (!sessionToUse) {
-        // @ts-ignore
-        const result = await (supabase as any).auth.getSession();
-        sessionToUse = result?.data?.session;
-      }
-      
-      if (!sessionToUse?.access_token) {
-        debug.debug('[shiftsSync.uploadShift] No session available, cannot upload shift');
-        throw new Error('No active session - please sign in again');
-      }
-
-      const accessToken = sessionToUse.access_token;
-      const apiKey = SUPABASE_ANON_KEY;
-      
-      // Check if shift already exists using direct REST API
+      // Check if shift already exists using authenticated REST API
       const checkUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${shift.id}&notes=eq.usual_shift_pattern&deleted_at=is.null&select=id&limit=1`;
       
-      const checkResponse = await fetch(checkUrl, {
+      const checkResponse = await authenticatedFetch(checkUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
       
       let existingId: string | null = null;
@@ -1107,12 +1106,9 @@ export const shiftsSync = {
         // Update existing shift
         debug.debug('[shiftsSync.uploadShift] Updating existing shift', { existingId, shiftId: shift.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingId}&select=*`;
-        response = await fetch(updateUrl, {
+        response = await authenticatedFetch(updateUrl, {
           method: 'PATCH',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(shiftData),
@@ -1121,12 +1117,9 @@ export const shiftsSync = {
         // Insert new shift
         debug.debug('[shiftsSync.uploadShift] Inserting new shift', { shiftId: shift.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/shifts?select=*`;
-        response = await fetch(insertUrl, {
+        response = await authenticatedFetch(insertUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(shiftData),
@@ -2153,10 +2146,15 @@ export const sync = {
         
         // Download cloud PDFs to local cache for offline access
         const { downloadPDFFromStorage, isCloudURL } = await import('./storage/pdfStorage');
+        const { getExportFileName } = await import('./utils/exportFilename');
+        // Get profile for filename generation (optional - will fall back to batch ID if not available)
+        const profile = remoteProfile || localProfile || null;
         for (const batch of remoteBatches) {
           if (batch.pdfUri && isCloudURL(batch.pdfUri)) {
             try {
-              await downloadPDFFromStorage(batch.pdfUri, batch.id);
+              // Get the preferred filename from export batch
+              const preferredFileName = getExportFileName(batch, profile);
+              await downloadPDFFromStorage(batch.pdfUri, batch.id, preferredFileName);
               debug.debug('[sync.fullSync] Downloaded PDF to local cache:', batch.id);
             } catch (error) {
               debug.error('[sync.fullSync] Failed to download PDF to cache:', batch.id, error);
@@ -2284,7 +2282,7 @@ export const sync = {
       
       return true;
     } catch (error) {
-      console.error('[sync.checkConnection] Connection check failed:', error);
+      debug.error('Connection check failed:', error);
       return false;
     }
   },

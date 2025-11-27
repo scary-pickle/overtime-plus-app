@@ -1,4 +1,7 @@
 import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib';
+import { createScopedLogger } from '../utils/logger';
+
+const debug = createScopedLogger('buildAVAC');
 
 /**
  * Sanitize text for PDF rendering by removing problematic characters
@@ -141,7 +144,7 @@ function drawTextInBox(page: any, text: string, box: { x: number; y: number; wid
     options.maxFontSize || 12
   );
   
-  console.log(`📝 Drawing text "${sanitizedText}" with smart fitting:`, {
+  debug.debug(`Drawing text "${sanitizedText}" with smart fitting:`, {
     fontSize: textInfo.size,
     lines: textInfo.lines.length,
     fits: textInfo.fits
@@ -193,12 +196,12 @@ async function tryLoadOTATemplate(): Promise<ArrayBuffer | null> {
     if (result.pdfPath) {
       const buf = await loadCachedPDFArrayBuffer(result.pdfPath);
       if (buf && buf.byteLength > 10000) {
-        console.log('[AVAC] Using OTA template version:', result.version);
+        debug.debug('Using OTA template version:', result.version);
         return buf;
       }
     }
   } catch (e) {
-    console.warn('[AVAC] OTA template load failed (non-fatal):', e);
+    debug.warn('OTA template load failed (non-fatal):', e);
   }
   return null;
 }
@@ -222,22 +225,22 @@ async function copyTemplateToCache(): Promise<void> {
     const fileInfo = await getInfoAsync(templatePath);
     
     if (!fileInfo.exists) {
-      console.log('Template not found in cache, attempting to copy from assets...');
+      debug.debug('Template not found in cache, attempting to copy from assets...');
       
       try {
         // Load the template asset using the proper Expo Asset approach
         const templateAsset = Asset.fromModule(AVAC_TEMPLATE_ASSET);
-        console.log('Template asset created:', templateAsset);
+        debug.debug('Template asset created:', templateAsset);
         
         // Download the asset if needed
         if (!templateAsset.downloaded) {
-          console.log('Downloading template asset...');
-          console.log('Template asset URI:', templateAsset.uri);
-          console.log('Template asset hash:', templateAsset.hash);
+          debug.debug('Downloading template asset...');
+          debug.debug('Template asset URI:', templateAsset.uri);
+          debug.debug('Template asset hash:', templateAsset.hash);
           try {
             // If it's a development server URL, try fetching directly first
             if (templateAsset.uri && (templateAsset.uri.startsWith('http://') || templateAsset.uri.startsWith('https://'))) {
-              console.log('Attempting direct fetch from development server...');
+              debug.debug('Attempting direct fetch from development server...');
               try {
               // Fix the URL encoding issue - Metro is generating incorrectly encoded paths
               let fetchUri = templateAsset.uri;
@@ -285,13 +288,13 @@ async function copyTemplateToCache(): Promise<void> {
                     // Update the URL with the fixed path
                     url.searchParams.set('unstable_path', decodedPath);
                     fetchUri = url.toString();
-                    console.log('Fixed URL encoding, trying:', fetchUri);
+                    debug.debug('Fixed URL encoding, trying:', fetchUri);
                   }
                 } catch (urlError) {
                   // If URL parsing fails, try manual fix
                   if (fetchUri.includes('unstable_path=.%2Fassets%2Fpdf')) {
                     fetchUri = fetchUri.replace('unstable_path=.%2Fassets%2Fpdf', 'unstable_path=assets/pdf');
-                    console.log('Manually fixed URL encoding, trying:', fetchUri);
+                    debug.debug('Manually fixed URL encoding, trying:', fetchUri);
                   }
                 }
               }
@@ -307,67 +310,67 @@ async function copyTemplateToCache(): Promise<void> {
                     await writeAsStringAsync(tempPath, base64, { encoding: 'base64' });
                     // Copy to final location
                     await copyAsync({ from: tempPath, to: templatePath });
-                    console.log('Template downloaded successfully via direct fetch');
+                    debug.debug('Template downloaded successfully via direct fetch');
                     return; // Success - exit early
                   } else {
-                    console.warn('Direct fetch returned file too small:', arrayBuffer.byteLength);
-                    // Try to read the response text to see what we got
-                    const text = await response.text();
-                    console.warn('Response text (first 200 chars):', text.substring(0, 200));
+                  debug.warn('Direct fetch returned file too small:', arrayBuffer.byteLength);
+                  // Try to read the response text to see what we got
+                  const text = await response.text();
+                  debug.warn('Response text (first 200 chars):', text.substring(0, 200));
                   }
                 } else {
-                  console.warn('Direct fetch failed with status:', response.status);
-                  const text = await response.text().catch(() => '');
-                  console.warn('Error response:', text.substring(0, 200));
+                debug.warn('Direct fetch failed with status:', response.status);
+                const text = await response.text().catch(() => '');
+                debug.warn('Error response:', text.substring(0, 200));
                 }
               } catch (fetchError) {
-                console.warn('Direct fetch failed, trying Asset.downloadAsync:', fetchError);
+                debug.warn('Direct fetch failed, trying Asset.downloadAsync:', fetchError);
               }
             }
             
             // Fall back to Asset.downloadAsync
             await templateAsset.downloadAsync();
-            console.log('Template asset download completed');
+            debug.debug('Template asset download completed');
           } catch (downloadError) {
-            console.error('Template asset download failed:', downloadError);
+            debug.error('Template asset download failed:', downloadError);
             throw downloadError;
           }
         }
         
-        console.log('Template asset downloaded, localUri:', templateAsset.localUri);
-        console.log('Template asset URI:', templateAsset.uri);
-        console.log('Template asset hash:', templateAsset.hash);
+        debug.debug('Template asset downloaded, localUri:', templateAsset.localUri);
+        debug.debug('Template asset URI:', templateAsset.uri);
+        debug.debug('Template asset hash:', templateAsset.hash);
         
         if (templateAsset.localUri) {
           // Validate the downloaded file before copying
           try {
             const downloadedFileInfo = await getInfoAsync(templateAsset.localUri);
-            console.log('Downloaded template file info:', downloadedFileInfo);
+            debug.debug('Downloaded template file info:', downloadedFileInfo);
             
             if (downloadedFileInfo.exists && downloadedFileInfo.size) {
               const MIN_FILE_SIZE = 10000; // 10KB minimum
               if (downloadedFileInfo.size < MIN_FILE_SIZE) {
-                console.warn(`Downloaded template file too small (${downloadedFileInfo.size} bytes), likely corrupted. Skipping copy.`);
-                console.warn('Template asset URI:', templateAsset.uri);
-                console.warn('Template asset hash:', templateAsset.hash);
+                debug.warn(`Downloaded template file too small (${downloadedFileInfo.size} bytes), likely corrupted. Skipping copy.`);
+                debug.warn('Template asset URI:', templateAsset.uri);
+                debug.warn('Template asset hash:', templateAsset.hash);
                 // Try to read the file to see what it contains
                 try {
                   const fileContent = await readAsStringAsync(templateAsset.localUri, { encoding: 'utf8' });
-                  console.warn('File content (first 200 chars):', fileContent.substring(0, 200));
+                  debug.warn('File content (first 200 chars):', fileContent.substring(0, 200));
                 } catch (readError) {
-                  console.warn('Could not read file content:', readError);
+                  debug.warn('Could not read file content:', readError);
                 }
                 throw new Error(`Downloaded file too small: ${downloadedFileInfo.size} bytes`);
               }
               
               // Copy the template to cache using the proper copyAsync syntax
-              console.log('Copying template to cache...');
+              debug.debug('Copying template to cache...');
               await copyAsync({ from: templateAsset.localUri, to: templatePath });
               
               // Verify the copied file
               const copiedFileInfo = await getInfoAsync(templatePath);
               if (copiedFileInfo.exists && copiedFileInfo.size && copiedFileInfo.size >= MIN_FILE_SIZE) {
-                console.log('Template copied to cache successfully, size:', copiedFileInfo.size);
+                debug.debug('Template copied to cache successfully, size:', copiedFileInfo.size);
               } else {
                 throw new Error('Copied file validation failed');
               }
@@ -375,27 +378,27 @@ async function copyTemplateToCache(): Promise<void> {
               throw new Error('Downloaded file does not exist or has no size');
             }
           } catch (validationError) {
-            console.warn('Template validation failed, skipping copy:', validationError);
+            debug.warn('Template validation failed, skipping copy:', validationError);
             throw validationError;
           }
         } else {
-          console.log('Template asset localUri not available');
-          console.log('Asset details:', {
+        debug.debug('Template asset localUri not available');
+        debug.debug('Asset details:', {
             downloaded: templateAsset.downloaded,
             localUri: templateAsset.localUri,
             uri: templateAsset.uri
           });
         }
       } catch (assetError) {
-        console.error('Asset loading failed:', assetError);
-        console.log('Asset loading error details:', assetError);
+      debug.error('Asset loading failed:', assetError);
+      debug.debug('Asset loading error details:', assetError);
       }
     } else {
-      console.log('Template already exists in cache');
+      debug.debug('Template already exists in cache');
     }
   } catch (error) {
-    console.error('Failed to copy template:', error);
-    console.log('Copy template error details:', error);
+    debug.error('Failed to copy template:', error);
+    debug.debug('Copy template error details:', error);
   }
 }
 
@@ -405,7 +408,7 @@ async function copyTemplateToCache(): Promise<void> {
  */
 async function loadAVACTemplate(): Promise<ArrayBuffer> {
   try {
-    console.log('Attempting to load AVAC template...');
+    debug.debug('Attempting to load AVAC template...');
 
     // OTA path first if enabled
     const otaBuf = await tryLoadOTATemplate();
@@ -424,18 +427,18 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
         throw new Error('Skipping bundle read in development mode');
       }
       
-      console.log('Attempting to read asset directly from bundle...');
+      debug.debug('Attempting to read asset directly from bundle...');
       // Use dynamic import to avoid loading react-native modules that might cause errors
-      const reactNative = await import('react-native');
-      if (reactNative && typeof reactNative.resolveAssetSource === 'function') {
-        const assetSource = reactNative.resolveAssetSource(AVAC_TEMPLATE_ASSET);
+      const { Image } = await import('react-native');
+      if (Image && typeof Image.resolveAssetSource === 'function') {
+        const assetSource = Image.resolveAssetSource(AVAC_TEMPLATE_ASSET);
         
         if (assetSource && assetSource.uri) {
-          console.log('Asset source resolved:', assetSource);
+          debug.debug('Asset source resolved:', assetSource);
           
           // If it's a local file path (production build), read it directly
           if (assetSource.uri.startsWith('file://') || assetSource.uri.startsWith('/')) {
-            console.log('Reading asset from local file path:', assetSource.uri);
+            debug.debug('Reading asset from local file path:', assetSource.uri);
             const base64Data = await readAsStringAsync(assetSource.uri, { encoding: 'base64' });
             const MIN_BASE64_SIZE = 13000;
             
@@ -445,23 +448,20 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
               for (let i = 0; i < binaryString.length; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
               }
-              console.log('AVAC template loaded successfully from bundle, size:', bytes.length);
+              debug.debug('AVAC template loaded successfully from bundle, size:', bytes.length);
               return bytes.buffer;
             }
           }
           // If it's a remote URL, try fetching it
           else if (assetSource.uri.startsWith('http://') || assetSource.uri.startsWith('https://')) {
-            console.log('Fetching asset from remote URL:', assetSource.uri);
+            debug.debug('Fetching asset from remote URL:', assetSource.uri);
             const response = await fetch(assetSource.uri);
             if (response.ok) {
               const blob = await response.blob();
               const arrayBuffer = await blob.arrayBuffer();
               if (arrayBuffer.byteLength > 10000) {
-                const bytes = new Uint8Array(arrayBuffer.byteLength);
-                for (let i = 0; i < arrayBuffer.byteLength; i++) {
-                  bytes[i] = arrayBuffer[i];
-                }
-                console.log('AVAC template loaded successfully from remote URL, size:', bytes.length);
+                const bytes = new Uint8Array(arrayBuffer);
+                debug.debug('AVAC template loaded successfully from remote URL, size:', bytes.length);
                 return bytes.buffer;
               }
             }
@@ -479,7 +479,7 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
     const cacheFileInfo = await getInfoAsync(templatePath);
     
     if (cacheFileInfo.exists && cacheFileInfo.size && cacheFileInfo.size >= 10000) {
-      console.log('Template found in cache, loading from cache...');
+      debug.debug('Template found in cache, loading from cache...');
       const base64Data = await readAsStringAsync(templatePath, { encoding: 'base64' });
       const MIN_BASE64_SIZE = 13000;
       
@@ -501,7 +501,7 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
       // After copying, try loading from cache again
       const newCacheFileInfo = await getInfoAsync(templatePath);
       if (newCacheFileInfo.exists && newCacheFileInfo.size && newCacheFileInfo.size >= 10000) {
-        console.log('Template copied to cache, loading from cache...');
+        debug.debug('Template copied to cache, loading from cache...');
         const base64Data = await readAsStringAsync(templatePath, { encoding: 'base64' });
         const MIN_BASE64_SIZE = 13000;
         
@@ -511,29 +511,29 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
-          console.log('AVAC template loaded successfully from cache after copy, size:', bytes.length);
+          debug.debug('AVAC template loaded successfully from cache after copy, size:', bytes.length);
           return bytes.buffer;
         }
       }
     } catch (copyError) {
-      console.warn('Failed to copy template to cache (non-fatal):', copyError);
+      debug.warn('Failed to copy template to cache (non-fatal):', copyError);
       // Continue anyway - we'll try other methods
     }
     
     // Try the new AVAC template first using Asset system
     try {
-      console.log('Loading AVAC template using Asset system...');
+      debug.debug('Loading AVAC template using Asset system...');
       const templateAsset = Asset.fromModule(AVAC_TEMPLATE_ASSET);
       
-      console.log('Template asset URI:', templateAsset.uri);
-      console.log('Template asset hash:', templateAsset.hash);
+      debug.debug('Template asset URI:', templateAsset.uri);
+      debug.debug('Template asset hash:', templateAsset.hash);
       
       if (!templateAsset.downloaded) {
-        console.log('Downloading template asset...');
+        debug.debug('Downloading template asset...');
         try {
           // If it's a development server URL, try fetching directly first
           if (templateAsset.uri && (templateAsset.uri.startsWith('http://') || templateAsset.uri.startsWith('https://'))) {
-            console.log('Attempting direct fetch from development server...');
+            debug.debug('Attempting direct fetch from development server...');
             try {
               // Fix the URL encoding issue - Metro is generating incorrectly encoded paths
               let fetchUri = templateAsset.uri;
@@ -581,13 +581,13 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
                     // Update the URL with the fixed path
                     url.searchParams.set('unstable_path', decodedPath);
                     fetchUri = url.toString();
-                    console.log('Fixed URL encoding, trying:', fetchUri);
+                    debug.debug('Fixed URL encoding, trying:', fetchUri);
                   }
                 } catch (urlError) {
                   // If URL parsing fails, try manual fix
                   if (fetchUri.includes('unstable_path=.%2Fassets%2Fpdf')) {
                     fetchUri = fetchUri.replace('unstable_path=.%2Fassets%2Fpdf', 'unstable_path=assets/pdf');
-                    console.log('Manually fixed URL encoding, trying:', fetchUri);
+                    debug.debug('Manually fixed URL encoding, trying:', fetchUri);
                   }
                 }
               }
@@ -598,31 +598,28 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
                 const arrayBuffer = await blob.arrayBuffer();
                 if (arrayBuffer.byteLength > 10000) {
                   // Valid PDF - convert to base64 and return
-                  const bytes = new Uint8Array(arrayBuffer.byteLength);
-                  for (let i = 0; i < arrayBuffer.byteLength; i++) {
-                    bytes[i] = arrayBuffer[i];
-                  }
-                  console.log('Template loaded successfully via direct fetch, size:', bytes.length);
+                  const bytes = new Uint8Array(arrayBuffer);
+                  debug.debug('Template loaded successfully via direct fetch, size:', bytes.length);
                   return bytes.buffer;
                 } else {
-                  console.warn('Direct fetch returned file too small:', arrayBuffer.byteLength);
+                  debug.warn('Direct fetch returned file too small:', arrayBuffer.byteLength);
                   // Try to read the response text to see what we got
                   const text = await response.text();
-                  console.warn('Response text (first 200 chars):', text.substring(0, 200));
+                  debug.warn('Response text (first 200 chars):', text.substring(0, 200));
                 }
               } else {
-                console.warn('Direct fetch failed with status:', response.status);
+                debug.warn('Direct fetch failed with status:', response.status);
                 const text = await response.text().catch(() => '');
-                console.warn('Error response:', text.substring(0, 200));
+                debug.warn('Error response:', text.substring(0, 200));
               }
             } catch (fetchError) {
-              console.warn('Direct fetch failed, trying Asset.downloadAsync:', fetchError);
+              debug.warn('Direct fetch failed, trying Asset.downloadAsync:', fetchError);
             }
           }
           
           // Fall back to Asset.downloadAsync
           await templateAsset.downloadAsync();
-          console.log('Template asset download completed');
+          debug.debug('Template asset download completed');
         } catch (downloadError) {
           console.error('Template asset download failed:', downloadError);
           throw downloadError;

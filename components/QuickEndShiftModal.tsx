@@ -15,7 +15,6 @@ import { OvertimeLog } from '../types';
 import { useProfileStore } from '../lib/state/profileStore';
 import { useLogsStore, validateLogForReady } from '../lib/state/logsStore';
 import { computeMinutes, formatMinutes, getCurrentTime, getShiftStartDate, getCurrentDate } from '../lib/time';
-import { updateWidgetStatus } from '../lib/widget/widgetStatusUpdater';
 import { TimeInput } from './TimeInput';
 import { SharedTimePickerProvider } from './SharedTimePicker';
 import { NAButton } from './NAButton';
@@ -243,9 +242,6 @@ export function QuickEndShiftModal({
       if (draftLog.isActiveShift) {
         await clearActiveShift(draftLog.id);
       }
-      
-      // Update widget status
-      await updateWidgetStatus();
 
       Alert.alert('Success', 'Shift logged successfully!', [
         { text: 'OK', onPress: () => {

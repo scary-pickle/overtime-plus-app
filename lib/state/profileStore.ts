@@ -30,6 +30,13 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   error: null,
 
   loadProfile: async (userId?: string | null) => {
+    // Prevent concurrent loads for the same userId
+    const current = get();
+    if (current.isLoading) {
+      devLog.debug('Profile load already in progress, skipping duplicate call');
+      return;
+    }
+    
     set({ isLoading: true, error: null });
     try {
       // Clear legacy profile if we have a userId (new authenticated user)

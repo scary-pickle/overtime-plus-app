@@ -30,13 +30,14 @@ const isNativeModuleAvailable = (): boolean => {
   // Skip if running in Expo Go (native modules not available)
   try {
     const executionEnvironment = Constants.executionEnvironment;
-    if (executionEnvironment === Constants.ExecutionEnvironment.StoreClient) {
+    // Check if ExecutionEnvironment enum exists before comparing
+    if (Constants.ExecutionEnvironment && executionEnvironment === Constants.ExecutionEnvironment.StoreClient) {
       // Expo Go - native modules not available
       return false;
     }
   } catch (error) {
     // Constants might not be available in all environments
-    return false;
+    // Continue to check native module availability
   }
   
   // Check if NativeModules is available and if Purchases native module exists
@@ -84,11 +85,16 @@ const getPurchasesModule = async () => {
     // Check if native module is available before attempting import
     if (!isNativeModuleAvailable()) {
       if (__DEV__ && !moduleLoadAttempted) {
-        const env = Constants.executionEnvironment;
-        logger.debug('RevenueCat native module not available', {
-          executionEnvironment: env,
-          isExpoGo: env === Constants.ExecutionEnvironment.StoreClient,
-        });
+        try {
+          const env = Constants.executionEnvironment;
+          const isExpoGo = Constants.ExecutionEnvironment && env === Constants.ExecutionEnvironment.StoreClient;
+          logger.debug('RevenueCat native module not available', {
+            executionEnvironment: env,
+            isExpoGo,
+          });
+        } catch (e) {
+          logger.debug('RevenueCat native module not available (could not check execution environment)');
+        }
       }
       moduleLoadFailed = true;
       return null;
@@ -246,8 +252,42 @@ export const revenuecatClient = {
       if (!Purchases) return null;
       
       return await Purchases.getOfferings();
-    } catch (error) {
-      logger.error('Failed to fetch RevenueCat offerings', error);
+    } catch (error: any) {
+      // Check if this is a configuration error (expected during setup)
+      const errorCode = error?.code || error?.userInfo?.readableErrorCode || error?.userInfo?.rc_root_error?.code;
+      const errorMessage = error?.message || '';
+      
+      const isNoProductsError = 
+        errorMessage.includes('no products registered') ||
+        errorMessage.includes('no products set up');
+      
+      const isProductsNotFetchableError = 
+        errorMessage.includes('could not be fetched from App Store Connect') ||
+        errorMessage.includes('could not be fetched from') ||
+        errorMessage.includes('StoreKit Configuration file');
+      
+      const isConfigurationError = 
+        errorCode === 23 || 
+        errorCode === 'CONFIGURATION_ERROR' ||
+        isNoProductsError ||
+        isProductsNotFetchableError;
+      
+      if (isConfigurationError) {
+        // This is expected during initial setup - log as debug with helpful context
+        if (isProductsNotFetchableError) {
+          logger.debug('RevenueCat products cannot be fetched from App Store Connect', {
+            message: errorMessage.substring(0, 150),
+            hint: 'Products may not exist in App Store Connect yet, or StoreKit Configuration file needed for testing',
+          });
+        } else {
+          logger.debug('RevenueCat offerings not configured yet - products need to be set up in dashboard', {
+            message: errorMessage.substring(0, 100),
+          });
+        }
+      } else {
+        // Other errors should be logged as errors
+        logger.error('Failed to fetch RevenueCat offerings', error);
+      }
       return null;
     }
   },
@@ -332,12 +372,25 @@ async function findPackageByIdentifier(
     offering.availablePackages.forEach((pkg) => packages.push(pkg));
   });
 
-  return (
-    packages.find(
-      (pkg) =>
-        pkg.identifier === identifier ||
-        pkg.product?.identifier === identifier ||
-        pkg.product?.productIdentifier === identifier
-    ) || null
-  );
+  const matchesIdentifier = (pkg: PurchasesPackage, target: string) => {
+    if (pkg.identifier === target) {
+      return true;
+    }
+    if (pkg.product?.identifier === target) {
+      return true;
+    }
+    const anyPkg = pkg as any;
+    if (anyPkg.product?.productIdentifier === target) {
+      return true;
+    }
+    if (anyPkg.storeProduct?.identifier === target) {
+      return true;
+    }
+    if (anyPkg.storeProduct?.productIdentifier === target) {
+      return true;
+    }
+    return false;
+  };
+
+  return packages.find(pkg => matchesIdentifier(pkg, identifier)) || null;
 }

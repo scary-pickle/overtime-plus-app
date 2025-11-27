@@ -30,11 +30,13 @@ import { useSyncStore } from '../../lib/state/syncStore';
 import { useSubscriptionStore } from '../../lib/state/subscriptionStore';
 import { getManageSubscriptionUrl } from '../../lib/utils/subscription';
 
-const devLog = (...args: any[]) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(...args);
-  }
-};
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('Profile');
+
+const FEEDBACK_EMAIL = 'overtimeplusapp@proton.me';
+const PRIVACY_POLICY_URL = process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL;
+const TERMS_URL = process.env.EXPO_PUBLIC_TERMS_URL;
 
 const subscriptionStatusCopy = (reason: string): { title: string; detail: string } => {
   switch (reason) {
@@ -305,7 +307,7 @@ function FieldInputUncontrolled({
   const renderCount = useRef(0);
   
   renderCount.current += 1;
-  devLog(`[FieldInput-${fieldKey}] Render #${renderCount.current}`, {
+  debug.debug(`[FieldInput-${fieldKey}] Render #${renderCount.current}`, {
     localValue,
     initialValue,
     isEditing,
@@ -313,7 +315,7 @@ function FieldInputUncontrolled({
 
   // Update local value when initial value changes from parent (but not on first render during typing)
   useEffect(() => {
-    devLog(`[FieldInput-${fieldKey}] useEffect triggered`, {
+    debug.debug(`[FieldInput-${fieldKey}] useEffect triggered`, {
       isFirstRender: isFirstRender.current,
       initialValue,
       localValue,
@@ -326,7 +328,7 @@ function FieldInputUncontrolled({
   }, [initialValue, fieldKey, localValue]);
 
   const handleChange = (text: string) => {
-    devLog(`[FieldInput-${fieldKey}] handleChange called`, { text });
+    debug.debug(`[FieldInput-${fieldKey}] handleChange called`, { text });
     setLocalValue(text);
     onChangeText(text);
   };
@@ -397,7 +399,7 @@ const FieldInput = React.memo(FieldInputUncontrolled, (prevProps, nextProps) => 
     prevProps.required === nextProps.required &&
     prevProps.onChangeText === nextProps.onChangeText;
   
-  devLog(`[FieldInput-${nextProps.fieldKey}] memo comparison`, {
+    debug.debug(`[FieldInput-${nextProps.fieldKey}] memo comparison`, {
     shouldSkipRender,
     initialValueChanged: prevProps.initialValue !== nextProps.initialValue,
     isEditingChanged: prevProps.isEditing !== nextProps.isEditing,
@@ -524,7 +526,7 @@ export default function ProfileScreen() {
   // Auto-enable edit mode if there's no profile (new user)
   const [isEditing, setIsEditing] = useState(() => !profile);
   
-  devLog(`[ProfileScreen] Render #${renderCount.current}`, {
+  debug.debug(`[ProfileScreen] Render #${renderCount.current}`, {
     isEditing,
     hasProfile: !!profile,
     formDataKeys: Object.keys(formData),
@@ -536,10 +538,46 @@ export default function ProfileScreen() {
   const [isSMO, setIsSMO] = useState(false);
   const [customHospitals, setCustomHospitals] = useState<string[]>([]);
   const [customDepartments, setCustomDepartments] = useState<string[]>([]);
+
+  const handleFeedbackPress = async () => {
+    const subject = encodeURIComponent('Overtime+ Feedback or Bug Report');
+    const body = encodeURIComponent(
+      'Thanks for helping us improve Overtime+!\n\nPlease describe the issue or feedback here (include steps, screenshots, or device details if possible).'
+    );
+    const mailtoUrl = `mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${body}`;
+
+    try {
+      const canOpen = await Linking.canOpenURL(mailtoUrl);
+      if (!canOpen) {
+        Alert.alert(
+          'Email Unavailable',
+          'No email account is configured on this device. Please email us at overtimeplusapp@proton.me.'
+        );
+        return;
+      }
+
+      await Linking.openURL(mailtoUrl);
+    } catch (error) {
+      Alert.alert(
+        'Something Went Wrong',
+        'We could not open your email app. Please email us directly at overtimeplusapp@proton.me.'
+      );
+    }
+  };
+
+  const openLegalLink = (url: string | undefined | null, label: string) => {
+    if (!url) {
+      Alert.alert(`${label} unavailable`, `${label} URL is not configured yet.`);
+      return;
+    }
+    Linking.openURL(url).catch(() => {
+      Alert.alert(label, `Unable to open the ${label.toLowerCase()}.`);
+    });
+  };
   
   // Track if user is currently typing to prevent interrupting updates
   const isTypingRef = useRef(false);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Section expand/collapse state - auto-expand first section if no profile
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
@@ -580,20 +618,20 @@ export default function ProfileScreen() {
 
   // Only update formData from profile when NOT editing and NOT typing to prevent keyboard dismissal
   useEffect(() => {
-    devLog(`[ProfileScreen] profile/isEditing useEffect`, {
+    debug.debug(`[ProfileScreen] profile/isEditing useEffect`, {
       hasProfile: !!profile,
       isEditing,
       isTyping: isTypingRef.current,
     });
     if (profile && !isEditing && !isTypingRef.current) {
-      devLog(`[ProfileScreen] Updating formData from profile`);
+      debug.debug(`[ProfileScreen] Updating formData from profile`);
       setFormData(profile);
       setSelectedHospital(profile.location || '');
       setIsSMO(profile.isSMO || false);
     } else if (!profile) {
       // If no profile, enable edit mode automatically and expand first section
       if (!isEditing) {
-        devLog(`[ProfileScreen] No profile found, enabling edit mode`);
+        debug.debug(`[ProfileScreen] No profile found, enabling edit mode`);
         setIsEditing(true);
       }
       // Auto-expand first section if not already expanded
@@ -611,7 +649,7 @@ export default function ProfileScreen() {
         };
       });
     } else {
-      devLog(`[ProfileScreen] Skipping formData update (editing or typing)`);
+      debug.debug(`[ProfileScreen] Skipping formData update (editing or typing)`);
     }
     // Don't update while editing or typing - let the user's changes persist
   }, [profile, isEditing]);
@@ -665,12 +703,12 @@ export default function ProfileScreen() {
       isSMO: isSMO,
     };
 
-    devLog('Form data before saving:', {
+    debug.debug('Form data before saving:', {
       hasEmployeeInitial: !!formData.employeeInitial,
       employeeInitial: formData.employeeInitial
     });
     
-    devLog('Profile data being saved:', {
+    debug.debug('Profile data being saved:', {
       hasEmployeeInitial: !!formData.employeeInitial,
       employeeInitial: formData.employeeInitial,
       allFields: Object.keys(profileData)
@@ -679,10 +717,10 @@ export default function ProfileScreen() {
     try {
       await saveProfile(profileData, user?.id);
       setIsEditing(false);
-      devLog('Profile saved successfully, profileData:', profileData);
+      debug.debug('Profile saved successfully, profileData:', profileData);
       Alert.alert('Success', 'Profile saved successfully!');
     } catch (error) {
-      console.error('Error saving profile:', error);
+      debug.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');
     }
   };
@@ -699,7 +737,7 @@ export default function ProfileScreen() {
 
   const toggleSection = (sectionKey: string, animationValue: Animated.Value) => {
     const isExpanded = expandedSections[sectionKey];
-    devLog(`[ProfileScreen] toggleSection called`, { sectionKey, isExpanded, willExpand: !isExpanded });
+    debug.debug(`[ProfileScreen] toggleSection called`, { sectionKey, isExpanded, willExpand: !isExpanded });
     const willExpand = !isExpanded;
     setExpandedSections(prev => ({
       ...prev,
@@ -739,22 +777,28 @@ export default function ProfileScreen() {
     return names.map(name => name.charAt(0)).join('').toUpperCase().substring(0, 3);
   };
 
+  const canEditFullName = !profile;
+
   const handleFullNameChange = React.useCallback((value: string) => {
-    devLog(`[ProfileScreen] handleFullNameChange called`, { value });
+    if (!canEditFullName) {
+      debug.debug('[ProfileScreen] handleFullNameChange blocked (locked to verified email)');
+      return;
+    }
+    debug.debug(`[ProfileScreen] handleFullNameChange called`, { value });
     setFormData(prev => {
       const updated = { ...prev, fullName: value };
       // Auto-generate employee initial from full name
       if (value.trim()) {
         updated.employeeInitial = generateEmployeeInitial(value);
       }
-      devLog(`[ProfileScreen] handleFullNameChange updating formData`, { updated });
+      debug.debug(`[ProfileScreen] handleFullNameChange updating formData`, { updated });
       return updated;
     });
-  }, []);
+  }, [canEditFullName]);
 
   // Use useCallback to stabilize the updateField function
   const updateField = React.useCallback((field: keyof Profile, value: string) => {
-    devLog(`[ProfileScreen] updateField called`, { field, value });
+    debug.debug(`[ProfileScreen] updateField called`, { field, value });
     isTypingRef.current = true;
     
     // Clear existing timeout
@@ -764,13 +808,13 @@ export default function ProfileScreen() {
     
     // Set flag to false after user stops typing (300ms of no input)
     typingTimeoutRef.current = setTimeout(() => {
-      devLog(`[ProfileScreen] typing timeout expired for field: ${field}`);
+      debug.debug(`[ProfileScreen] typing timeout expired for field: ${field}`);
       isTypingRef.current = false;
     }, 300);
     
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
-      devLog(`[ProfileScreen] setFormData updating`, { field, value, newData });
+      debug.debug(`[ProfileScreen] setFormData updating`, { field, value, newData });
       return newData;
     });
   }, []);
@@ -814,7 +858,7 @@ export default function ProfileScreen() {
   };
 
   const fieldHandlers = React.useMemo(() => {
-    devLog('[ProfileScreen] fieldHandlers being created');
+    debug.debug('[ProfileScreen] fieldHandlers being created');
     return {
       payrollNumber: (value: string) => updateField('payrollNumber', value),
       payLevel: (value: string) => updateField('payLevel', value),
@@ -990,8 +1034,27 @@ export default function ProfileScreen() {
             initialValue={formData.fullName || ''}
             onChangeText={handleFullNameChange}
             isDark={isDark}
-            isEditing={isEditing}
+            isEditing={isEditing && canEditFullName}
           />
+          {!canEditFullName && (
+            <View style={[
+              styles.lockedFieldNotice,
+              isDark && styles.darkLockedFieldNotice,
+            ]}>
+              <Ionicons
+                name="lock-closed-outline"
+                size={16}
+                color={isDark ? '#ffb74d' : '#f57c00'}
+                style={styles.lockedFieldIcon}
+              />
+              <Text style={[
+                styles.lockedFieldText,
+                isDark && styles.darkLockedFieldText,
+              ]}>
+                Your full name is locked to your verified QLD Health email. Contact support if it needs updating.
+              </Text>
+            </View>
+          )}
           <FieldInput
             fieldKey="payrollNumber"
             label="Payroll Number"
@@ -1305,6 +1368,36 @@ export default function ProfileScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => openLegalLink(PRIVACY_POLICY_URL, 'Privacy Policy')}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Privacy Policy
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                View how we handle your data
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => openLegalLink(TERMS_URL, 'Terms of Service')}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Terms of Service
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Review usage terms
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
           
           <TouchableOpacity
             style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
@@ -1319,6 +1412,21 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={handleFeedbackPress}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Report a Bug or Give Feedback
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Email our team at overtimeplusapp@proton.me
+              </Text>
+            </View>
+            <Ionicons name="chatbubbles-outline" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
           
           <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
@@ -1375,6 +1483,34 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => {
+              Alert.alert(
+                'Delete account',
+                'This will delete your account, synced data, and local data on this device. This cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Continue',
+                    style: 'destructive',
+                    onPress: () => router.push('/delete-account')
+                  }
+                ]
+              );
+            }}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel, { color: '#dc2626' }]}>
+                Delete Account
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Permanently remove account and data
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#f87171' : '#dc2626'} />
           </TouchableOpacity>
         </CollapsibleSection>
 
@@ -1552,6 +1688,32 @@ const styles = StyleSheet.create({
   disabledInput: {
     backgroundColor: '#f5f5f5',
     color: '#666',
+  },
+  lockedFieldNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#fff8e1',
+    borderWidth: 1,
+    borderColor: '#ffe0b2',
+    marginTop: -4,
+    marginBottom: 16,
+  },
+  darkLockedFieldNotice: {
+    backgroundColor: '#3d2b1f',
+    borderColor: '#5c4033',
+  },
+  lockedFieldIcon: {
+    marginRight: 8,
+  },
+  lockedFieldText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#7a4f01',
+  },
+  darkLockedFieldText: {
+    color: '#ffddb0',
   },
   settingRow: {
     flexDirection: 'row',

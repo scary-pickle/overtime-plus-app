@@ -16,6 +16,9 @@ import { NAButton } from '../../../components/NAButton';
 import { SharedTimePickerProvider } from '../../../components/SharedTimePicker';
 import { TimeInput } from '../../../components/TimeInput';
 import { LogTemplate } from '../../../types';
+import { createScopedLogger } from '../../../lib/utils/logger';
+
+const debug = createScopedLogger('LogTemplateNew');
 
 const CATEGORIES = [
   'Overtime',
@@ -105,7 +108,7 @@ export default function NewTemplateScreen() {
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (error) {
-      console.error('Template creation error:', error);
+      debug.error('Template creation error:', error);
       Alert.alert('Error', `Failed to create template: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
     }
   };

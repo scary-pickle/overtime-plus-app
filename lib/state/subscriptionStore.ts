@@ -142,12 +142,22 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => {
         return;
       }
 
+      // Prevent concurrent refreshes - if already refreshing, skip
+      const current = get();
+      if (current.refreshing) {
+        logger.debug('Already refreshing subscription, skipping duplicate call');
+        return;
+      }
+
       applyState({ refreshing: true });
-      await Promise.allSettled([
-        get().refreshFromSupabase(id),
-        get().refreshRevenueCat(id),
-      ]);
-      applyState({ refreshing: false, initialized: true });
+      try {
+        await Promise.allSettled([
+          get().refreshFromSupabase(id),
+          get().refreshRevenueCat(id),
+        ]);
+      } finally {
+        applyState({ refreshing: false, initialized: true });
+      }
     },
 
     refreshFromSupabase: async (userId?: string | null) => {

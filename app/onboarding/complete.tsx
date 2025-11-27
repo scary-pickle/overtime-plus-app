@@ -3,6 +3,9 @@ import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-na
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../lib/state/authStore';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('OnboardingComplete');
 
 export default function OnboardingComplete() {
   const router = useRouter();
@@ -13,7 +16,7 @@ export default function OnboardingComplete() {
       await completeOnboarding();
       router.replace('/(tabs)/home');
     } catch (error) {
-      console.error('Error completing onboarding:', error);
+      debug.error('Error completing onboarding:', error);
       // Still redirect even if there's an error
       router.replace('/(tabs)/home');
     }
@@ -127,6 +130,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
 
 
 

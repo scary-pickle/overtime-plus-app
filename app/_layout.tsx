@@ -18,6 +18,9 @@ import { purgeLegacyAuthStorage } from '../lib/auth/migrateAuthStorage';
 import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useSubscriptionStore } from '../lib/state/subscriptionStore';
+import { createScopedLogger } from '../lib/utils/logger';
+
+const debug = createScopedLogger('App');
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -38,10 +41,10 @@ export default function RootLayout() {
       // Local tables back offline data; purge any legacy auth tokens from SQLite
       try {
         await database.init();
-        console.log('Database initialized');
+        debug.debug('Database initialized');
         await purgeLegacyAuthStorage();
       } catch (error) {
-        console.error('Failed to initialize database:', error);
+        debug.error('Failed to initialize database:', error);
         return;
       }
       
@@ -51,13 +54,13 @@ export default function RootLayout() {
         const sessionCount = await database.countAuthSessions();
         if (process.env.NODE_ENV !== 'production') {
           const allKeys = await database.getAllAuthSessionKeys();
-          console.log('[authStore.checkSession] 🔍 Database state BEFORE checkSession:', {
+          debug.debug('[authStore.checkSession] 🔍 Database state BEFORE checkSession:', {
             sessionCount,
             keys: allKeys
           });
         }
       } catch (dbError) {
-        console.error('[authStore.checkSession] Failed to check database state:', dbError);
+        debug.error('[authStore.checkSession] Failed to check database state:', dbError);
       }
       
       await checkSession();
@@ -77,7 +80,8 @@ export default function RootLayout() {
     } else {
       resetSubscription();
     }
-  }, [user?.id, emailVerified, initializeSubscription, resetSubscription]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, emailVerified]);
 
   useEffect(() => {
     if (!user?.id || !emailVerified || !subscriptionInitialized) {
@@ -94,12 +98,14 @@ export default function RootLayout() {
       return;
     }
     
+    // Only auto-redirect TO paywall if user needs to see it
+    // Don't redirect AWAY from paywall - allow users to manually view it
     if (shouldShowPaywall && !onPaywallScreen) {
       router.replace('/subscription/paywall');
-    } else if (!shouldShowPaywall && onPaywallScreen) {
-      router.replace('/(tabs)/home');
     }
-  }, [shouldShowPaywall, subscriptionInitialized, pathname, router, user?.id, emailVerified]);
+    // Removed: else if (!shouldShowPaywall && onPaywallScreen) - allow manual navigation
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldShowPaywall, subscriptionInitialized, pathname, user?.id, emailVerified]);
 
   const initializeApp = async () => {
     try {
@@ -107,7 +113,7 @@ export default function RootLayout() {
 
       // Initialize sync queue
       await syncQueue.init();
-      console.log('Sync queue initialized');
+      debug.debug('Sync queue initialized');
 
       // Request notification permissions
       await notificationManager.requestPermissions();
@@ -136,10 +142,10 @@ export default function RootLayout() {
           const result = await cleanupOldItems(user.id);
           const total = result.logsDeleted + result.shiftsDeleted + result.batchesDeleted;
           if (total > 0) {
-            console.log(`[App] Auto-cleaned up ${total} old deleted item(s)`);
+            debug.debug(`Auto-cleaned up ${total} old deleted item(s)`);
           }
         } catch (error) {
-          console.error('[App] Failed to cleanup old deleted items:', error);
+          debug.error('Failed to cleanup old deleted items:', error);
         }
       }
 
@@ -147,24 +153,24 @@ export default function RootLayout() {
       try {
         const deletedCount = await cleanupOldPDFs();
         if (deletedCount > 0) {
-          console.log(`[App] Cleaned up ${deletedCount} old PDF file(s) from cache`);
+          debug.debug(`Cleaned up ${deletedCount} old PDF file(s) from cache`);
         }
       } catch (error) {
-        console.error('[App] Failed to cleanup old PDF cache:', error);
+        debug.error('Failed to cleanup old PDF cache:', error);
       }
 
       // Check and refresh OTA templates (runs for all users, not just authenticated)
       // Templates are public and should be available even without login
       if (templateOTAEnabled) {
-        console.log('[App] Checking for OTA template updates...');
+        debug.debug('Checking for OTA template updates...');
         templatesSync.checkAndUpdate().catch((err) => {
-          console.error('[App] Template OTA sync failed:', err);
+          debug.error('Template OTA sync failed:', err);
         });
       }
 
-      console.log('App initialized successfully');
+      debug.debug('App initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize app:', error);
+      debug.error('Failed to initialize app:', error);
     }
   };
 
@@ -172,6 +178,7 @@ export default function RootLayout() {
     <ErrorBoundary>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       <Stack>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="auth/welcome" options={{ headerShown: false }} />
         <Stack.Screen name="auth/sign-in" options={{ headerShown: false }} />
         <Stack.Screen name="auth/sign-up" options={{ headerShown: false }} />
@@ -269,6 +276,14 @@ export default function RootLayout() {
           name="clear-data" 
           options={{ 
             title: 'Clear Test Data',
+            presentation: 'modal',
+            headerShown: false 
+          }} 
+        />
+        <Stack.Screen 
+          name="delete-account" 
+          options={{ 
+            title: 'Delete Account',
             presentation: 'modal',
             headerShown: false 
           }} 

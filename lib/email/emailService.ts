@@ -2,7 +2,6 @@ import * as MailComposer from 'expo-mail-composer';
 import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 import { Profile, ExportBatch } from '../../types';
-import { getDelegateForDepartment } from '../data/hospitalDepartments';
 import { createScopedLogger } from '../utils/logger';
 import { isCloudURL, downloadPDFFromStorage } from '../storage/pdfStorage';
 
@@ -33,33 +32,6 @@ export function parseEmailTemplate(template: string, variables: Record<string, s
 }
 
 /**
- * Get recipient email for a specific hospital and department
- * First tries Supabase, falls back to local data
- */
-export async function getRecipientForDepartment(hospital: string, department: string): Promise<{
-  email: string;
-  name?: string;
-} | null> {
-  try {
-    // TODO: Implement Supabase lookup when backend is ready
-    // For now, use local fallback data
-    const delegate = getDelegateForDepartment(hospital, department);
-    
-    if (delegate) {
-      return {
-        email: delegate.delegateEmail || '', // Will be added to hospitalDepartments.ts
-        name: delegate.delegateName
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    debug.error('Error fetching recipient:', error);
-    return null;
-  }
-}
-
-/**
  * Compose AVAC email with template and variables
  */
 export function composeAVACEmail(
@@ -77,15 +49,10 @@ export function composeAVACEmail(
   // Use custom template or default
   const template = profile.emailTemplate || DEFAULT_EMAIL_TEMPLATE;
   
-  // Calculate total hours from export batch or default to 0
-  const totalMinutes = exportBatch?.totalMinutes || 0;
-  const totalHours = Math.floor(totalMinutes / 60);
-  
   // Prepare template variables
   const variables = {
     'User Name': profile.fullName,
     'Date': new Date().toLocaleDateString('en-AU'),
-    'Total Hours': totalHours.toString(),
   };
   
   // Parse template
@@ -95,7 +62,7 @@ export function composeAVACEmail(
   const subject = `AVAC Submission - ${profile.fullName}`;
   
   return {
-    recipients: [recipientEmail],
+    recipients: recipientEmail ? [recipientEmail] : [],
     subject,
     body,
     attachments: [pdfUri]
@@ -112,35 +79,22 @@ export async function sendAVACEmailViaMailto(profile: Profile, exportBatch?: Exp
   needsAttachment?: boolean;
 }> {
   try {
-    // Get recipient based on hospital and department
-    const recipient = await getRecipientForDepartment(profile.location, profile.orgUnitName);
-    if (!recipient || !recipient.email) {
-      return {
-        success: false,
-        error: `No recipient email found for ${profile.orgUnitName} at ${profile.location}. Please contact your administrator or use the Share button instead.`
-      };
-    }
-    
     // Use custom template or default
     const template = profile.emailTemplate || DEFAULT_EMAIL_TEMPLATE;
-    
-    // Calculate total hours from export batch or default to 0
-    const totalMinutes = exportBatch?.totalMinutes || 0;
-    const totalHours = Math.floor(totalMinutes / 60);
     
     // Prepare template variables
     const variables = {
       'User Name': profile.fullName,
       'Date': new Date().toLocaleDateString('en-AU'),
-      'Total Hours': totalHours.toString(),
     };
     
     // Parse template
     const body = parseEmailTemplate(template, variables);
     const subject = `AVAC Submission - ${profile.fullName}`;
     
-    // Create mailto URL
-    const mailtoUrl = `mailto:${recipient.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    // Create mailto URL - include recipient if set, otherwise leave empty for user to fill
+    const recipientPart = profile.recipientEmail ? `${profile.recipientEmail}?` : '?';
+    const mailtoUrl = `mailto:${recipientPart}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     
     // Check if device can open mailto URLs
     const canOpen = await Linking.canOpenURL(mailtoUrl);
@@ -186,15 +140,6 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
       };
     }
     
-    // Get recipient based on hospital and department
-    const recipient = await getRecipientForDepartment(profile.location, profile.orgUnitName);
-    if (!recipient || !recipient.email) {
-      return {
-        success: false,
-        error: `No recipient email found for ${profile.orgUnitName} at ${profile.location}. Please contact your administrator or use the Share button instead.`
-      };
-    }
-    
     // Ensure PDF is a local file path (expo-mail-composer requires local paths)
     let localPdfUri = pdfUri;
     if (isCloudURL(pdfUri)) {
@@ -202,7 +147,14 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
         // Extract batchId from exportBatch or from URI
         const batchId = exportBatch?.id || pdfUri.split('/').pop()?.replace('.pdf', '') || 'unknown';
         debug.log('Downloading PDF from cloud storage for email attachment...');
-        localPdfUri = await downloadPDFFromStorage(pdfUri, batchId);
+        // Get the preferred filename from export batch if available
+        let preferredFileName: string | undefined;
+        if (exportBatch) {
+          const { getExportFileName } = await import('../utils/exportFilename');
+          // We don't have profile here, but getExportFileName will fall back to batch ID if no profile
+          preferredFileName = getExportFileName(exportBatch, null);
+        }
+        localPdfUri = await downloadPDFFromStorage(pdfUri, batchId, preferredFileName);
         debug.log('PDF downloaded to local path:', localPdfUri);
       } catch (downloadError) {
         debug.error('Failed to download PDF for email attachment:', downloadError);
@@ -241,10 +193,12 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
       };
     }
     
-    // Compose email
-    const emailData = composeAVACEmail(profile, localPdfUri, recipient.email, recipient.name, exportBatch);
+    // Compose email - use recipientEmail if set, otherwise leave recipients empty
+    const recipientEmail = profile.recipientEmail || '';
+    const emailData = composeAVACEmail(profile, localPdfUri, recipientEmail, undefined, exportBatch);
     
     // Open email composer (always opens Apple Mail)
+    // If no recipient email is set, recipients array will be empty so user can enter it
     const result = await MailComposer.composeAsync({
       recipients: emailData.recipients,
       subject: emailData.subject,
@@ -297,6 +251,7 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
 /**
  * Get recipient information for AVAC submission
  * Returns recipient email and formatted message for sharing
+ * Recipient email is optional - user can enter it in their email app
  */
 export async function getAVACRecipientInfo(profile: Profile, exportBatch?: ExportBatch): Promise<{
   success: boolean;
@@ -307,27 +262,13 @@ export async function getAVACRecipientInfo(profile: Profile, exportBatch?: Expor
   body?: string;
 }> {
   try {
-    // Get recipient based on hospital and department
-    const recipient = await getRecipientForDepartment(profile.location, profile.orgUnitName);
-    if (!recipient || !recipient.email) {
-      return {
-        success: false,
-        error: `No recipient email found for ${profile.orgUnitName} at ${profile.location}. Please contact your administrator or use the Share button instead.`
-      };
-    }
-    
     // Use custom template or default
     const template = profile.emailTemplate || DEFAULT_EMAIL_TEMPLATE;
-    
-    // Calculate total hours from export batch or default to 0
-    const totalMinutes = exportBatch?.totalMinutes || 0;
-    const totalHours = Math.floor(totalMinutes / 60);
     
     // Prepare template variables
     const variables = {
       'User Name': profile.fullName,
       'Date': new Date().toLocaleDateString('en-AU'),
-      'Total Hours': totalHours.toString(),
     };
     
     // Parse template
@@ -336,8 +277,8 @@ export async function getAVACRecipientInfo(profile: Profile, exportBatch?: Expor
     
     return {
       success: true,
-      recipientEmail: recipient.email,
-      recipientName: recipient.name,
+      recipientEmail: profile.recipientEmail,
+      recipientName: undefined,
       subject,
       body
     };

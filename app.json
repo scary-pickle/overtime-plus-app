@@ -42,6 +42,15 @@
         }
       ]
     ],
-    "scheme": "overtime-plus"
+    "scheme": "overtime-plus",
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "revenuecat": {},
+      "eas": {
+        "projectId": "ab788c8c-812d-4a78-a620-4f1131f759de"
+      }
+    }
   }
 }

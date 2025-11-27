@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   useColorScheme,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -13,9 +12,13 @@ import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
+import { TextInputModal } from '../../components/TextInputModal';
 import { validateShift } from '../../lib/roster';
 import { getPreviousISODate } from '../../lib/time';
 import { UsualShift } from '../../types';
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('EditShift');
 
 const SHIFT_TYPES = [
   { value: 'weekly', label: 'Weekly' },
@@ -55,6 +58,7 @@ export default function EditShiftScreen() {
   const [rosteredFinish, setRosteredFinish] = useState('');
   const [mealBreakMinutes, setMealBreakMinutes] = useState(0);
   const [showMealBreakPicker, setShowMealBreakPicker] = useState(false);
+  const [showLabelModal, setShowLabelModal] = useState(false);
   const [activeFrom, setActiveFrom] = useState('');
   const [activeTo, setActiveTo] = useState('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -109,8 +113,8 @@ export default function EditShiftScreen() {
   const handleUpdate = async () => {
     if (!shift) return;
 
-    console.log('💾 EditShiftScreen: Update button pressed');
-    console.log('📝 EditShiftScreen: Form data:', {
+    debug.debug('Update button pressed');
+    debug.debug('Form data:', {
       id: shift.id,
       label,
       type,
@@ -123,7 +127,7 @@ export default function EditShiftScreen() {
     });
 
     if (!validateForm()) {
-      console.log('❌ EditShiftScreen: Validation failed:', validationErrors);
+      debug.debug('Validation failed:', validationErrors);
       Alert.alert('Validation Error', validationErrors.join('\n'));
       return;
     }
@@ -142,21 +146,21 @@ export default function EditShiftScreen() {
     };
 
     try {
-      console.log('🔄 EditShiftScreen: Updating shift:', {
+      debug.debug('Updating shift:', {
         id: updatedShift.id,
         label: updatedShift.label,
         day: updatedShift.dayOfWeek,
         type: updatedShift.type
       });
       await updateShift(updatedShift);
-      console.log('✅ EditShiftScreen: Shift updated successfully');
+      debug.debug('Shift updated successfully');
       Alert.alert(
         'Success',
         'Shift pattern updated successfully!',
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
-      console.error('❌ EditShiftScreen: Failed to update shift:', error);
+      debug.error('Failed to update shift:', error);
       Alert.alert('Error', 'Failed to update shift pattern. Please try again.');
     }
   };
@@ -164,8 +168,8 @@ export default function EditShiftScreen() {
   const handleUpdateFuture = async () => {
     if (!shift) return;
 
-    console.log('💾 EditShiftScreen: Update Future button pressed');
-    console.log('📝 EditShiftScreen: Form data:', {
+    debug.debug('Update Future button pressed');
+    debug.debug('Form data:', {
       id: shift.id,
       label,
       type,
@@ -178,7 +182,7 @@ export default function EditShiftScreen() {
     });
 
     if (!validateForm()) {
-      console.log('❌ EditShiftScreen: Validation failed:', validationErrors);
+      debug.debug('Validation failed:', validationErrors);
       Alert.alert('Validation Error', validationErrors.join('\n'));
       return;
     }
@@ -212,7 +216,7 @@ export default function EditShiftScreen() {
           text: 'Update Future',
           onPress: async () => {
             try {
-              console.log('🔄 EditShiftScreen: Updating shift series:', {
+              debug.debug('Updating shift series:', {
                 originalId: shift.id,
                 effectiveFrom,
                 splitDate
@@ -240,14 +244,14 @@ export default function EditShiftScreen() {
               };
               await addShift(newShift);
 
-              console.log('✅ EditShiftScreen: Shift series updated successfully');
+              debug.debug('Shift series updated successfully');
               Alert.alert(
                 'Success',
                 'Updated this shift and all future occurrences successfully!',
                 [{ text: 'OK', onPress: () => router.back() }]
               );
             } catch (error) {
-              console.error('❌ EditShiftScreen: Failed to update shift series:', error);
+              debug.error('Failed to update shift series:', error);
               Alert.alert('Error', 'Failed to update shift series. Please try again.');
             }
           },
@@ -259,7 +263,7 @@ export default function EditShiftScreen() {
   const handleDelete = () => {
     if (!shift) return;
 
-    console.log('🗑️ EditShiftScreen: Delete button pressed for shift:', {
+    debug.debug('Delete button pressed for shift:', {
       id: shift.id,
       label: shift.label,
       day: shift.dayOfWeek
@@ -275,16 +279,16 @@ export default function EditShiftScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('🔄 EditShiftScreen: Confirming delete for shift:', shift.id);
+              debug.debug('Confirming delete for shift:', shift.id);
               await deleteShift(shift.id);
-              console.log('✅ EditShiftScreen: Shift deleted successfully');
+              debug.debug('Shift deleted successfully');
               Alert.alert(
                 'Success',
                 'Shift pattern deleted successfully!',
                 [{ text: 'OK', onPress: () => router.back() }]
               );
             } catch (error) {
-              console.error('❌ EditShiftScreen: Failed to delete shift:', error);
+              debug.error('Failed to delete shift:', error);
               Alert.alert('Error', 'Failed to delete shift pattern. Please try again.');
             }
           },
@@ -505,18 +509,7 @@ export default function EditShiftScreen() {
       </Text>
       <TouchableOpacity
         style={[styles.labelButton, isDark && styles.darkInput]}
-        onPress={() => {
-          Alert.prompt(
-            'Shift Label',
-            'Enter a name for this shift pattern:',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'OK', onPress: (text?: string) => setLabel(text || '') }
-            ],
-            'plain-text',
-            label
-          );
-        }}
+        onPress={() => setShowLabelModal(true)}
       >
         <Text style={[styles.labelText, isDark && styles.darkText]}>
           {label || 'Enter shift label...'}
@@ -596,6 +589,20 @@ export default function EditShiftScreen() {
         </View>
       </View>
     </ScrollView>
+    <TextInputModal
+      visible={showLabelModal}
+      title="Shift Label"
+      message="Enter a name for this shift pattern:"
+      placeholder="Enter shift label..."
+      initialValue={label}
+      onConfirm={(text) => {
+        setLabel(text);
+        setShowLabelModal(false);
+      }}
+      onCancel={() => setShowLabelModal(false)}
+      confirmText="OK"
+      cancelText="Cancel"
+    />
     </SharedTimePickerProvider>
   );
 }

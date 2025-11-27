@@ -4,12 +4,9 @@ import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../../lib/auth/validation';
 
-const isDev = process.env.NODE_ENV !== 'production';
-const debug = (...args: any[]) => {
-  if (isDev) {
-    console.log(...args);
-  }
-};
+import { createScopedLogger } from '../../lib/utils/logger';
+
+const debug = createScopedLogger('SignUp');
 
 export default function SignUp() {
   const router = useRouter();
