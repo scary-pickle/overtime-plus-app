@@ -49,7 +49,7 @@ export default function OnboardingWelcome() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B2239',
+    backgroundColor: '#2563EB',
   },
   content: {
     flex: 1,

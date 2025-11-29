@@ -5,8 +5,9 @@
 
 import { supabase, supabaseEnabled, getSupabaseConfig } from '../supabase';
 import { Paths } from 'expo-file-system';
-import { readAsStringAsync, writeAsStringAsync, getInfoAsync, uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
+import { readAsStringAsync, writeAsStringAsync, getInfoAsync, uploadAsync, deleteAsync, FileSystemUploadType } from 'expo-file-system/legacy';
 import { createScopedLogger } from '../utils/logger';
+import { ExportBatch } from '../../types';
 
 const debug = createScopedLogger('pdfStorage');
 
@@ -41,6 +42,25 @@ function extractStoragePath(uri: string): string | null {
     return uri;
   }
   return null;
+}
+
+function looksLikeLocalPath(uri: string): boolean {
+  return uri.startsWith('file://') || uri.startsWith('/') || uri.startsWith(Paths?.cache?.uri || '');
+}
+
+async function deleteLocalPdfIfExists(uri: string): Promise<void> {
+  if (!looksLikeLocalPath(uri)) return;
+  try {
+    const info = await getInfoAsync(uri);
+    if (info.exists) {
+      await deleteAsync(uri, { idempotent: true });
+      debug.debug('Deleted cached PDF', { uri: uri.substring(0, 80) });
+    }
+  } catch (err) {
+    if (isDevLoggingEnabled) {
+      debug.warn('Failed to delete cached PDF (non-fatal):', err);
+    }
+  }
 }
 
 /**
@@ -355,6 +375,50 @@ export async function downloadPDFFromStorage(
   } catch (error) {
     debug.error('Failed to download PDF from storage:', error);
     throw error;
+  }
+}
+
+/**
+ * Best-effort cleanup of local cached PDFs for given export batches.
+ * Does not throw; intended for account deletion or logout flows.
+ */
+export async function clearCachedPdfsForBatches(batches: ExportBatch[]): Promise<void> {
+  for (const batch of batches) {
+    if (batch.pdfUri) {
+      await deleteLocalPdfIfExists(batch.pdfUri);
+    }
+  }
+}
+
+/**
+ * Best-effort deletion of stored PDFs in Supabase Storage for given export batches.
+ * Requires Supabase to be enabled and storage module available; errors are logged and ignored.
+ */
+export async function deleteStoredPdfs(batches: ExportBatch[]): Promise<void> {
+  if (!supabaseEnabled || batches.length === 0) return;
+
+  const storagePaths = batches
+    .map(batch => extractStoragePath(batch.pdfUri || ''))
+    .filter((p): p is string => !!p);
+
+  if (storagePaths.length === 0) return;
+
+  try {
+    // @ts-ignore
+    const storage = (supabase as any).storage?.from?.(EXPORTS_BUCKET);
+    if (!storage) {
+      debug.warn('Supabase storage client not available; skipping remote PDF deletion');
+      return;
+    }
+    // Supabase remove expects array of paths relative to bucket
+    const { error } = await storage.remove(storagePaths);
+    if (error) {
+      debug.warn('Failed to delete PDFs from storage (non-fatal):', error);
+    } else {
+      debug.debug('Deleted PDFs from storage', { count: storagePaths.length });
+    }
+  } catch (error) {
+    debug.warn('Error deleting PDFs from storage (non-fatal):', error);
   }
 }
 

@@ -6,7 +6,7 @@ import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../../l
 
 import { createScopedLogger } from '../../lib/utils/logger';
 
-const debug = createScopedLogger('SignUp');
+const { debug } = createScopedLogger('SignUp');
 
 export default function SignUp() {
   const router = useRouter();

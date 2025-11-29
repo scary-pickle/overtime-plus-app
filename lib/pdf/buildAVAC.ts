@@ -201,7 +201,13 @@ async function tryLoadOTATemplate(): Promise<ArrayBuffer | null> {
       }
     }
   } catch (e) {
-    debug.warn('OTA template load failed (non-fatal):', e);
+    // Extract meaningful error information for logging
+    const errorInfo = e instanceof Error 
+      ? { message: e.message, name: e.name, stack: e.stack?.split('\n').slice(0, 3).join('\n') }
+      : { error: String(e) };
+    // Also check for CodedError properties (expo-router)
+    const codedErrorInfo = (e as any)?.code ? { code: (e as any).code } : {};
+    debug.warn('OTA template load failed (non-fatal):', { ...errorInfo, ...codedErrorInfo });
   }
   return null;
 }

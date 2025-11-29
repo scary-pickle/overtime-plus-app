@@ -12,6 +12,7 @@ import {
   TextInput,
   Modal,
   ScrollView,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -27,7 +28,7 @@ import { useProfileStore } from '../../lib/state/profileStore';
 import { useAuthStore } from '../../lib/state/authStore';
 import { formatMinutes } from '../../lib/time';
 import { ExportBatch } from '../../types';
-import { sendAVACEmail } from '../../lib/email/emailService';
+import { sendAVACEmail, sendAVACEmailWithAttachment, getAVACRecipientInfo } from '../../lib/email/emailService';
 import { createScopedLogger } from '../../lib/utils/logger';
 
 const debug = createScopedLogger('Exports');
@@ -49,7 +50,7 @@ export default function ExportsScreen() {
   const [editName, setEditName] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
-  const [expandedActionIds, setExpandedActionIds] = useState<Set<string>>(new Set());
+  const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
   const [submissionStatusFilter, setSubmissionStatusFilter] = useState<SubmissionStatusFilter>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [isFilterExpanded, setIsFilterExpanded] = useState(false);
@@ -74,10 +75,12 @@ export default function ExportsScreen() {
   };
 
 
-  const handleSubmissionStatusFilterChange = (status: SubmissionStatusFilter) => {
+  const handleSubmissionStatusFilterChange = (status: 'submitted' | 'notSubmitted') => {
     if (submissionStatusFilter === status) {
+      // Toggle off - deselect and show all
       setSubmissionStatusFilter('all');
     } else {
+      // Select the new filter
       setSubmissionStatusFilter(status);
     }
   };
@@ -88,6 +91,10 @@ export default function ExportsScreen() {
     } else {
       setDateFilter(filter);
     }
+  };
+
+  const getUnsubmittedBatches = () => {
+    return exportBatches.filter(batch => !batch.submittedAt);
   };
 
   const getFilteredBatches = () => {
@@ -150,10 +157,9 @@ export default function ExportsScreen() {
     return filtered;
   };
 
-  const renderFilterButton = (status: SubmissionStatusFilter, label: string) => {
-    const isActive = submissionStatusFilter === status && submissionStatusFilter !== 'all';
-    const count = status === 'all' ? exportBatches.length :
-                  status === 'submitted' ? exportBatches.filter(b => b.submittedAt).length :
+  const renderFilterButton = (status: 'submitted' | 'notSubmitted', label: string) => {
+    const isActive = submissionStatusFilter === status;
+    const count = status === 'submitted' ? exportBatches.filter(b => b.submittedAt).length :
                   exportBatches.filter(b => !b.submittedAt).length;
     
     return (
@@ -209,14 +215,6 @@ export default function ExportsScreen() {
     setRefreshing(false);
   };
 
-  const handleScroll = () => {
-    // Close any expanded menus when user scrolls
-    if (expandedActionIds.size > 0) {
-      debug.debug('Scroll detected - closing menus');
-      setExpandedActionIds(new Set());
-    }
-  };
-
   const handleViewPDF = (batch: ExportBatch) => {
     if (batch.pdfUri) {
       router.push(`/export/view?batchId=${batch.id}`);
@@ -268,16 +266,14 @@ export default function ExportsScreen() {
     debug.debug('handleDeleteBatch called', { batchId: batch.id });
     const batchId = batch.id;
 
-    // Close the expanded menu immediately to prevent dismiss overlay from interfering
-    debug.debug('Closing expanded menu for delete');
-    setExpandedActionIds(prev => {
+    // Close the expanded card if it's open
+    setExpandedCardIds(prev => {
       const next = new Set(prev);
       next.delete(batchId);
-      debug.debug('Expanded menu state updated, size:', next.size);
       return next;
     });
 
-    // Execute the alert immediately - it will show even if menu closes
+    // Execute the alert immediately
     debug.debug('Showing delete alert');
     Alert.alert(
       'Delete Export',
@@ -306,37 +302,20 @@ export default function ExportsScreen() {
     // Get the display name for editing (use customName if available, otherwise use shortened display name)
     const customName = batch.customName || getExportDisplayName(batch, profile);
     
-    // Set state first, then close menu - this ensures modal opens
+    // Set state first, then close card - this ensures modal opens
     debug.debug('Setting edit state', { batchId, customName });
     setEditingId(batchId);
     setEditName(customName);
     setShowEditModal(true);
     
-    // Close the expanded menu after modal state is set
-    debug.debug('Closing expanded menu for edit');
-    setExpandedActionIds(prev => {
+    // Close the expanded card after modal state is set
+    setExpandedCardIds(prev => {
       const next = new Set(prev);
       next.delete(batchId);
-      debug.debug('Expanded menu state updated, size:', next.size);
       return next;
     });
   };
 
-  const toggleExpandedActions = (batchId: string) => {
-    debug.debug('toggleExpandedActions called', { batchId });
-    setExpandedActionIds(prev => {
-      const next = new Set(prev);
-      if (next.has(batchId)) {
-        next.delete(batchId);
-        debug.debug('Closing menu for batch:', batchId);
-      } else {
-        next.add(batchId);
-        debug.debug('Opening menu for batch:', batchId);
-      }
-      debug.debug('Expanded menu size:', next.size);
-      return next;
-    });
-  };
 
   const handleSaveEdit = async () => {
     if (!editingId) return;
@@ -713,10 +692,7 @@ export default function ExportsScreen() {
     }
   }, [selectedBatchIds, exportBatches, submissionStatusFilter, dateFilter, handleSharePDF]);
 
-  const renderListHeader = () => (
-    <>
-      {/* Filter Dropdown - Expands Below Header */}
-      {isFilterExpanded && (
+  const renderFilterDropdown = () => (
         <View style={[styles.filterDropdown, isDark && styles.darkFilterDropdown]}>
           <ScrollView style={styles.filterDropdownContent} showsVerticalScrollIndicator={false}>
             {/* Submission Status Filters */}
@@ -729,7 +705,6 @@ export default function ExportsScreen() {
                 contentContainerStyle={styles.statusFilterScrollContent}
               >
                 <View style={styles.filterButtonRow}>
-                  {renderFilterButton('all', 'All')}
                   {renderFilterButton('submitted', 'Submitted')}
                   {renderFilterButton('notSubmitted', 'Not Submitted')}
                 </View>
@@ -821,10 +796,88 @@ export default function ExportsScreen() {
             )}
           </ScrollView>
         </View>
-      )}
+  );
 
-      {/* Selection Bar */}
-      {selectionMode && selectedBatchIds.size > 0 && (
+  const renderListHeader = () => (
+    <>
+      {/* Filter Dropdown - Show before submit section when not in selection mode */}
+      {!selectionMode && isFilterExpanded && renderFilterDropdown()}
+
+      {/* Submit Section - Show when there are unsubmitted exports */}
+      {(() => {
+        const unsubmittedBatches = getUnsubmittedBatches();
+        const hasUnsubmitted = unsubmittedBatches.length > 0;
+        
+        if (!selectionMode && hasUnsubmitted) {
+          // Initial state - show all unsubmitted
+          return (
+            <View style={[styles.submitContainer, isDark && styles.darkSubmitContainer]}>
+              <View style={styles.submitInfo}>
+                <Text style={[styles.submitTitle, isDark && styles.darkText]}>
+                  Ready to Submit
+                </Text>
+                <Text style={[styles.submitSubtitle, isDark && styles.darkSubmitSubtitle]}>
+                  {unsubmittedBatches.length} export{unsubmittedBatches.length !== 1 ? 's' : ''} ready for submission
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.submitButton, isDark && styles.darkSubmitButton]}
+                onPress={handleSubmitModeEnter}
+              >
+                <Ionicons name="send" size={20} color="#fff" />
+                <Text style={styles.submitButtonText}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+        
+        if (selectionMode && !hasUnsubmitted) {
+          // In selection mode with no unsubmitted exports - show message about resending
+          return (
+            <View style={[styles.resendContainer, isDark && styles.darkResendContainer]}>
+              <Text style={[styles.resendText, isDark && styles.darkResendText]}>
+                You are sending already submitted AVACs
+              </Text>
+            </View>
+          );
+        }
+        
+        return null;
+      })()}
+
+      {/* Selection Bar and Action Buttons */}
+      {selectionMode && (
+        <>
+          {/* Action Buttons - Show when any batches are selected */}
+          {selectedBatchIds.size > 0 && (
+            <View style={[styles.submitActionButtons, isDark && styles.darkSubmitActionButtons]}>
+              <Text style={[styles.submitActionInstructions, isDark && styles.darkSubmitActionInstructions]}>
+                Submit via one of these options:
+              </Text>
+              <View style={styles.submitActionButtonsRow}>
+                <TouchableOpacity
+                  style={[styles.submitActionButton, styles.emailActionButton]}
+                  onPress={async () => {
+                    await handleBatchEmailSubmit();
+                  }}
+                >
+                  <Ionicons name="mail-outline" size={18} color="#fff" />
+                  <Text style={styles.submitActionButtonText}>Submit via Email</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.submitActionButton, styles.shareActionButton]}
+                  onPress={async () => {
+                    await handleBatchShare();
+                  }}
+                >
+                  <Ionicons name="share-outline" size={18} color="#fff" />
+                  <Text style={styles.submitActionButtonText}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          
+          {/* Selection Bar - Show after action buttons */}
         <View style={[styles.selectionBar, isDark && styles.darkSelectionBar]}>
           <TouchableOpacity
             style={styles.selectionButton}
@@ -848,18 +901,674 @@ export default function ExportsScreen() {
             {selectedBatchIds.size} selected
           </Text>
         </View>
+          
+          {/* Filter Dropdown - Show after selection bar when in selection mode */}
+          {selectionMode && isFilterExpanded && renderFilterDropdown()}
+        </>
       )}
     </>
   );
+
+  const toggleCardExpansion = (batchId: string) => {
+    setExpandedCardIds(prev => {
+      const next = new Set(prev);
+      if (next.has(batchId)) {
+        next.delete(batchId);
+      } else {
+        next.add(batchId);
+      }
+      return next;
+    });
+  };
+
+  const handleCardPress = (item: ExportBatch) => {
+    if (selectionMode) {
+      handleToggleBatchSelection(item.id);
+    } else {
+      toggleCardExpansion(item.id);
+    }
+  };
+
+  const handleSubmitModeEnter = async () => {
+    // Simplified flow: directly open share sheet with email details copied
+    const unsubmittedBatches = getUnsubmittedBatches();
+    
+    if (unsubmittedBatches.length === 0) {
+      return;
+    }
+
+    if (!profile) {
+      Alert.alert('Profile Required', 'Please complete your profile before submitting AVAC forms.');
+      return;
+    }
+
+    if (!profile.email) {
+      Alert.alert('Email Required', 'Please add your email address in Settings before submitting AVAC forms.');
+      return;
+    }
+
+    // Check all batches have PDFs
+    const validBatches = unsubmittedBatches.filter(batch => batch.pdfUri);
+    if (validBatches.length === 0) {
+      Alert.alert('No Valid Exports', 'Selected exports do not have PDF files available.');
+      return;
+    }
+
+    setSubmittingId(validBatches[0].id);
+
+    try {
+      // Get email details for the first batch (or create a merged batch for multiple)
+      let pdfUri: string;
+      let batchForEmail: ExportBatch;
+
+      if (validBatches.length === 1) {
+        // Single batch - use it directly
+        pdfUri = validBatches[0].pdfUri!;
+        batchForEmail = validBatches[0];
+      } else {
+        // Multiple batches - merge them first
+        const mergedPdf = await PDFDocument.create();
+        const { getExportFileName } = await import('../../lib/utils/exportFilename');
+        
+        for (const batch of validBatches) {
+          try {
+            let localPdfUri = batch.pdfUri!;
+            const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+            
+            if (isCloudURL(batch.pdfUri!)) {
+              const preferredFileName = getExportFileName(batch, profile);
+              localPdfUri = await downloadPDFFromStorage(batch.pdfUri!, batch.id, preferredFileName);
+            }
+            
+            const pdfBase64 = await readAsStringAsync(localPdfUri, { encoding: 'base64' });
+            const binaryString = atob(pdfBase64);
+            const pdfBytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              pdfBytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            const pdfDoc = await PDFDocument.load(pdfBytes);
+            const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+            pages.forEach((page) => mergedPdf.addPage(page));
+          } catch (error) {
+            debug.error(`Failed to read or merge PDF ${batch.id}:`, error);
+          }
+        }
+
+        const mergedPdfBytes = await mergedPdf.save();
+        let base64String: string;
+        try {
+          const binaryString = String.fromCharCode(...mergedPdfBytes);
+          base64String = btoa(binaryString);
+        } catch (error) {
+          const chunks: string[] = [];
+          const chunkSize = 8192;
+          for (let i = 0; i < mergedPdfBytes.length; i += chunkSize) {
+            const chunk = mergedPdfBytes.slice(i, i + chunkSize);
+            chunks.push(String.fromCharCode(...chunk));
+          }
+          base64String = btoa(chunks.join(''));
+        }
+        
+        const mergedFileName = `AVAC_Merged_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
+        pdfUri = `${Paths.cache.uri}/${mergedFileName}`;
+        await writeAsStringAsync(pdfUri, base64String, { encoding: 'base64' });
+
+        // Create a merged batch object for email details
+        batchForEmail = {
+          id: `merged_${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          pdfUri: pdfUri,
+          countLogs: validBatches.reduce((sum, b) => sum + b.countLogs, 0),
+          totalMinutes: validBatches.reduce((sum, b) => sum + b.totalMinutes, 0),
+          customName: `Merged AVAC (${validBatches.length} exports)`,
+        };
+      }
+
+      // Get email details and copy to clipboard
+      const result = await sendAVACEmail(profile, pdfUri, batchForEmail);
+      
+      if (result.success) {
+        const emailParts: string[] = [];
+        if (result.recipientEmail) {
+          emailParts.push(`To: ${result.recipientEmail}`);
+        }
+        if (result.subject) {
+          emailParts.push(`Subject: ${result.subject}`);
+        }
+        if (result.body) {
+          emailParts.push(`\n${result.body}`);
+        }
+        const clipboardText = emailParts.join('\n');
+        
+        // Copy to clipboard if we have email details
+        if (clipboardText.trim()) {
+          await Clipboard.setStringAsync(clipboardText);
+        }
+
+        // Ensure PDF is a local file path before sharing
+        let localPdfPath = pdfUri;
+        const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+        const { getExportFileName } = await import('../../lib/utils/exportFilename');
+        
+        if (isCloudURL(pdfUri)) {
+          try {
+            const preferredFileName = getExportFileName(batchForEmail, profile);
+            localPdfPath = await downloadPDFFromStorage(pdfUri, batchForEmail.id, preferredFileName);
+          } catch (downloadError) {
+            debug.error('Failed to download PDF:', downloadError);
+            Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
+            setSubmittingId(null);
+            return;
+          }
+        } else if (validBatches.length > 1) {
+          // For merged PDFs, we need to ensure the file exists
+          const fileInfo = await getInfoAsync(localPdfPath);
+          if (!fileInfo.exists) {
+            Alert.alert('Error', 'Failed to create merged PDF. Please try again.');
+            setSubmittingId(null);
+            return;
+          }
+        }
+        
+        // Open share sheet with PDF attachment
+        if (await Sharing.isAvailableAsync()) {
+          const alertMessage = result.recipientEmail 
+            ? `✓ Email details copied to clipboard\n\nTo: ${result.recipientEmail}\n\nNext: Select your email app (e.g., Outlook), then paste (Cmd+V) the email details.`
+            : `✓ Email details copied to clipboard\n\nNext: Select your email app (e.g., Outlook), choose your recipient, then paste (Cmd+V) the email details.`;
+          
+          Alert.alert(
+            'Ready to Submit',
+            alertMessage,
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => setSubmittingId(null) },
+              {
+                text: 'Continue',
+                onPress: async () => {
+                  try {
+                    await Sharing.shareAsync(localPdfPath, {
+                      mimeType: 'application/pdf',
+                      dialogTitle: 'Share AVAC Form',
+                      UTI: 'com.adobe.pdf'
+                    });
+                    
+                    // Mark all batches as submitted after sharing
+                    for (const batch of validBatches) {
+                      await markBatchAsSubmitted(batch.id, 'email');
+                    }
+                    
+                    // Clean up merged PDF if created
+                    if (validBatches.length > 1 && localPdfPath.startsWith(Paths.cache.uri)) {
+                      setTimeout(async () => {
+                        try {
+                          const fileInfo = await getInfoAsync(localPdfPath);
+                          if (fileInfo.exists) {
+                            await deleteAsync(localPdfPath, { idempotent: true });
+                          }
+                        } catch (error) {
+                          debug.error('Failed to clean up merged PDF file:', error);
+                        }
+                      }, 10000);
+                    }
+                  } catch (shareError) {
+                    debug.error('Sharing failed:', shareError);
+                    Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
+                  } finally {
+                    setSubmittingId(null);
+                  }
+                }
+              }
+            ]
+          );
+        } else {
+          Alert.alert('Sharing not available', 'Sharing is not available on this device.');
+          setSubmittingId(null);
+        }
+      } else {
+        Alert.alert('Error', result.error || 'Failed to get recipient information. Please try again.');
+        setSubmittingId(null);
+      }
+    } catch (error) {
+      debug.error('Error submitting AVAC:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+      setSubmittingId(null);
+    }
+  };
+
+
+  const handleBatchEmailSubmit = useCallback(async () => {
+    if (selectedBatchIds.size === 0) return;
+
+    const filtered = getFilteredBatches();
+    const selectedBatches = filtered.filter(batch => 
+      selectedBatchIds.has(batch.id) && batch.pdfUri
+    );
+
+    if (selectedBatches.length === 0) {
+      Alert.alert('No Valid Exports', 'Selected exports do not have PDF files available.');
+      return;
+    }
+
+    // For selection mode, always prefer Apple Mail method
+    if (selectedBatches.length === 1) {
+      // Single file - try Apple Mail first, fallback to share sheet
+      const batch = selectedBatches[0];
+      if (!profile) {
+        Alert.alert('Profile Required', 'Please complete your profile before submitting AVAC forms.');
+        return;
+      }
+
+      if (!profile.email) {
+        Alert.alert('Email Required', 'Please add your email address in Settings before submitting AVAC forms.');
+        return;
+      }
+
+      if (!batch.pdfUri) {
+        Alert.alert('PDF Not Available', 'The PDF file is no longer available.');
+        return;
+      }
+
+      setSubmittingId(batch.id);
+      try {
+        // Try Apple Mail first
+        const appleMailResult = await sendAVACEmailWithAttachment(profile, batch.pdfUri, batch);
+        
+        if (appleMailResult.success) {
+          // Apple Mail worked - mark as submitted
+          await markBatchAsSubmitted(batch.id, 'email');
+          Alert.alert('Success', 'Email opened in Apple Mail with attachment and all details pre-filled. Please review and send.');
+          setSubmittingId(null);
+          setSelectionMode(false);
+          setSelectedBatchIds(new Set());
+          return;
+        }
+
+        // Apple Mail not available - fallback to share sheet method
+        const recipientInfo = await getAVACRecipientInfo(profile, batch);
+        
+        if (!recipientInfo.success) {
+          Alert.alert('Error', recipientInfo.error || 'Failed to get recipient information. Please try again.');
+          setSubmittingId(null);
+          return;
+        }
+
+        // Prepare email details for clipboard
+        const emailParts: string[] = [];
+        if (recipientInfo.recipientEmail) {
+          emailParts.push(`To: ${recipientInfo.recipientEmail}`);
+        }
+        if (recipientInfo.subject) {
+          emailParts.push(`Subject: ${recipientInfo.subject}`);
+        }
+        if (recipientInfo.body) {
+          emailParts.push(`\n${recipientInfo.body}`);
+        }
+        const clipboardText = emailParts.join('\n');
+        
+        // Copy to clipboard if we have email details
+        if (clipboardText.trim()) {
+          await Clipboard.setStringAsync(clipboardText);
+        }
+
+        // Ensure PDF is a local file path before sharing
+        let localPdfPath = batch.pdfUri;
+        const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+        const { getExportFileName } = await import('../../lib/utils/exportFilename');
+        
+        if (isCloudURL(batch.pdfUri)) {
+          try {
+            const preferredFileName = getExportFileName(batch, profile);
+            localPdfPath = await downloadPDFFromStorage(batch.pdfUri, batch.id, preferredFileName);
+          } catch (downloadError) {
+            debug.error('Failed to download PDF:', downloadError);
+            Alert.alert('Error', 'Failed to download PDF file. Please check your connection and try again.');
+            setSubmittingId(null);
+            return;
+          }
+        }
+
+        // Show alert with instructions
+        const alertMessage = recipientInfo.recipientEmail 
+          ? `✓ Email details copied to clipboard\n\nTo: ${recipientInfo.recipientEmail}\n\nNext: Select your email app (e.g., Outlook), then paste (Cmd+V) the email details.`
+          : `✓ Email details copied to clipboard\n\nNext: Select your email app (e.g., Outlook), choose your recipient, then paste (Cmd+V) the email details.`;
+        
+        Alert.alert(
+          'Ready to Email',
+          alertMessage,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => setSubmittingId(null) },
+            {
+              text: 'Continue',
+              onPress: async () => {
+                try {
+                  // Open share sheet with PDF attachment
+                  if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(localPdfPath, {
+                      mimeType: 'application/pdf',
+                      dialogTitle: 'Share AVAC via Email',
+                      UTI: 'com.adobe.pdf'
+                    });
+                    // Mark as submitted after sharing
+                    await markBatchAsSubmitted(batch.id, 'email');
+                  } else {
+                    Alert.alert('Sharing not available', 'Sharing is not available on this device.');
+                  }
+                } catch (shareError) {
+                  debug.error('Sharing failed:', shareError);
+                  Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
+                } finally {
+                  setSubmittingId(null);
+                  setSelectionMode(false);
+                  setSelectedBatchIds(new Set());
+                }
+              }
+            }
+          ]
+        );
+      } catch (error) {
+        debug.error('Error submitting AVAC:', error);
+        Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+        setSubmittingId(null);
+      }
+      return;
+    }
+
+    // Multiple files - merge PDFs into one and send it
+    setSubmittingId(selectedBatches[0].id); // Use first batch ID for loading state
+    try {
+      // Create a new PDF document to merge all PDFs into
+      const mergedPdf = await PDFDocument.create();
+      
+      // Read all PDF files and merge their pages into the merged PDF
+      const { getExportFileName } = await import('../../lib/utils/exportFilename');
+      const { profile } = useProfileStore.getState();
+      
+      for (const batch of selectedBatches) {
+        try {
+          // Handle cloud URLs - download to cache if needed
+          let pdfUri = batch.pdfUri;
+          const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+          
+          if (isCloudURL(batch.pdfUri)) {
+            try {
+              const preferredFileName = getExportFileName(batch, profile);
+              pdfUri = await downloadPDFFromStorage(batch.pdfUri, batch.id, preferredFileName);
+            } catch (error) {
+              debug.error(`Failed to download PDF ${batch.id} from cloud:`, error);
+              Alert.alert('Error', `Failed to download PDF: ${batch.customName || batch.id}. Skipping...`);
+              continue;
+            }
+          }
+          
+          // Read PDF file as base64
+          const pdfBase64 = await readAsStringAsync(pdfUri, {
+            encoding: 'base64',
+          });
+          
+          // Convert base64 to Uint8Array
+          const binaryString = atob(pdfBase64);
+          const pdfBytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            pdfBytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          // Load the PDF document
+          const pdfDoc = await PDFDocument.load(pdfBytes);
+          
+          // Copy all pages from this PDF to the merged PDF
+          const pages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
+          pages.forEach((page) => mergedPdf.addPage(page));
+          
+        } catch (error) {
+          debug.error(`Failed to read or merge PDF ${batch.id}:`, error);
+          Alert.alert('Error', `Failed to read PDF: ${batch.customName || batch.id}. Skipping...`);
+        }
+      }
+
+      // Generate the merged PDF bytes
+      const mergedPdfBytes = await mergedPdf.save();
+      
+      // Convert Uint8Array to base64 string
+      let base64String: string;
+      try {
+        const binaryString = String.fromCharCode(...mergedPdfBytes);
+        base64String = btoa(binaryString);
+      } catch (error) {
+        // Fallback for large files
+        const chunks: string[] = [];
+        const chunkSize = 8192;
+        for (let i = 0; i < mergedPdfBytes.length; i += chunkSize) {
+          const chunk = mergedPdfBytes.slice(i, i + chunkSize);
+          chunks.push(String.fromCharCode(...chunk));
+        }
+        base64String = btoa(chunks.join(''));
+      }
+      
+      // Save merged PDF file to temporary directory
+      const mergedFileName = `AVAC_Merged_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
+      const mergedPdfUri = `${Paths.cache.uri}/${mergedFileName}`;
+      
+      // Write merged PDF file
+      await writeAsStringAsync(mergedPdfUri, base64String, {
+        encoding: 'base64',
+      });
+
+      // Create a temporary export batch object for the merged PDF
+      const mergedBatch: ExportBatch = {
+        id: `merged_${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        pdfUri: mergedPdfUri,
+        countLogs: selectedBatches.reduce((sum, b) => sum + b.countLogs, 0),
+        totalMinutes: selectedBatches.reduce((sum, b) => sum + b.totalMinutes, 0),
+        customName: `Merged AVAC (${selectedBatches.length} exports)`,
+      };
+
+      // Try Apple Mail first (preferred method for selection mode)
+      const appleMailResult = await sendAVACEmailWithAttachment(profile, mergedPdfUri, mergedBatch);
+      
+      if (appleMailResult.success) {
+        // Apple Mail method - mark all as submitted
+        for (const batch of selectedBatches) {
+          await markBatchAsSubmitted(batch.id, 'email');
+        }
+        Alert.alert('Success', 'Email opened in Apple Mail with merged PDF attachment. Please review and send.');
+        setSubmittingId(null);
+        setSelectionMode(false);
+        setSelectedBatchIds(new Set());
+      } else {
+        // Apple Mail not available - fallback to share sheet method
+        const recipientInfo = await getAVACRecipientInfo(profile, mergedBatch);
+        
+        if (!recipientInfo.success) {
+          Alert.alert('Error', recipientInfo.error || 'Failed to get recipient information. Please try again.');
+          setSubmittingId(null);
+          return;
+        }
+
+        // Prepare email details for clipboard
+        const emailParts: string[] = [];
+        if (recipientInfo.recipientEmail) {
+          emailParts.push(`To: ${recipientInfo.recipientEmail}`);
+        }
+        if (recipientInfo.subject) {
+          emailParts.push(`Subject: ${recipientInfo.subject}`);
+        }
+        if (recipientInfo.body) {
+          emailParts.push(`\n${recipientInfo.body}`);
+        }
+        const clipboardText = emailParts.join('\n');
+        
+        // Copy to clipboard if we have email details
+        if (clipboardText.trim()) {
+          await Clipboard.setStringAsync(clipboardText);
+        }
+
+        // Ensure PDF is a local file path before sharing
+        let localPdfPath = mergedPdfUri;
+        const { isCloudURL, downloadPDFFromStorage } = await import('../../lib/storage/pdfStorage');
+        const { getExportFileName } = await import('../../lib/utils/exportFilename');
+        
+        // For merged PDFs, it should already be local, but verify
+        const fileInfo = await getInfoAsync(localPdfPath);
+        if (!fileInfo.exists) {
+          Alert.alert('Error', 'Failed to create merged PDF. Please try again.');
+          setSubmittingId(null);
+          return;
+        }
+
+        // Show alert with instructions
+        const alertMessage = recipientInfo.recipientEmail 
+          ? `✓ Email details copied to clipboard\n\nTo: ${recipientInfo.recipientEmail}\n\nNext: Select your email app (e.g., Outlook), then paste (Cmd+V) the email details.`
+          : `✓ Email details copied to clipboard\n\nNext: Select your email app (e.g., Outlook), choose your recipient, then paste (Cmd+V) the email details.`;
+        
+        Alert.alert(
+          'Ready to Email',
+          alertMessage,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => setSubmittingId(null) },
+            {
+              text: 'Continue',
+              onPress: async () => {
+                try {
+                  // Open share sheet with merged PDF attachment
+                  if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(localPdfPath, {
+                      mimeType: 'application/pdf',
+                      dialogTitle: 'Share Merged AVAC via Email',
+                      UTI: 'com.adobe.pdf'
+                    });
+                    // Mark all batches as submitted after sharing
+                    for (const batch of selectedBatches) {
+                      await markBatchAsSubmitted(batch.id, 'email');
+                    }
+                    setSelectionMode(false);
+                    setSelectedBatchIds(new Set());
+                  } else {
+                    Alert.alert('Sharing not available', 'Sharing is not available on this device.');
+                  }
+                } catch (shareError) {
+                  debug.error('Sharing failed:', shareError);
+                  Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
+                } finally {
+                  setSubmittingId(null);
+                }
+              }
+            }
+          ]
+        );
+      }
+
+      // Clean up merged PDF file after a delay
+      setTimeout(async () => {
+        try {
+          if (mergedPdfUri && (mergedPdfUri.startsWith('file://') || mergedPdfUri.startsWith('/'))) {
+            const fileInfo = await getInfoAsync(mergedPdfUri);
+            if (fileInfo.exists) {
+              await deleteAsync(mergedPdfUri, { idempotent: true });
+            }
+          }
+        } catch (error) {
+          debug.error('Failed to clean up merged PDF file:', error);
+        }
+      }, 10000); // Clean up after 10 seconds
+
+      setSelectionMode(false);
+      setSelectedBatchIds(new Set());
+    } catch (error) {
+      debug.error('Batch email submission failed:', error);
+      Alert.alert('Email Failed', 'Failed to merge or send PDF files. Please try again.');
+      setSubmittingId(null);
+    }
+  }, [selectedBatchIds, submissionStatusFilter, dateFilter, exportBatches, handleSubmitEmail]);
+
+  const handleBatchSubmit = useCallback(() => {
+    if (selectedBatchIds.size === 0) return;
+
+    const filtered = getFilteredBatches();
+    const selectedBatches = filtered.filter(batch => 
+      selectedBatchIds.has(batch.id) && batch.pdfUri
+    );
+
+    if (selectedBatches.length === 0) {
+      Alert.alert('No Valid Exports', 'Selected exports do not have PDF files available.');
+      return;
+    }
+
+    Alert.alert(
+      'Submit Exports',
+      `How would you like to submit ${selectedBatches.length} export${selectedBatches.length > 1 ? 's' : ''}?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Email',
+          onPress: async () => {
+            await handleBatchEmailSubmit();
+          },
+        },
+        {
+          text: 'Share',
+          onPress: async () => {
+            // Use existing batch share logic
+            await handleBatchShare();
+          },
+        },
+      ]
+    );
+  }, [selectedBatchIds, submissionStatusFilter, dateFilter, exportBatches, handleBatchEmailSubmit, handleBatchShare]);
+
+  const handleExpandPress = (e: any, batchId: string) => {
+    e.stopPropagation();
+    toggleCardExpansion(batchId);
+  };
 
   const renderExportItem = ({ item }: { item: ExportBatch }) => {
     const totalHours = Math.floor(item.totalMinutes / 60);
     const remainingMinutes = item.totalMinutes % 60;
     const createdDate = new Date(item.createdAt);
     const isSelected = selectedBatchIds.has(item.id);
+    const isExpanded = expandedCardIds.has(item.id);
     
     // Get the shortened display name (without person's name)
     const displayName = getExportDisplayName(item, profile);
+
+    const formatCompactDate = (dateString: string) => {
+      return new Date(dateString).toLocaleDateString('en-AU', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    };
+
+    const getSubtitleText = () => {
+      const parts: string[] = [];
+      parts.push(formatCompactDate(item.createdAt));
+      parts.push(`${item.countLogs} log${item.countLogs !== 1 ? 's' : ''}`);
+      parts.push(formatMinutes(item.totalMinutes));
+      return parts.join(' · ');
+    };
+
+    const getStatusBadge = () => {
+      if (item.submittedAt) {
+        return (
+          <View style={[styles.statusBadge, styles.submittedBadge]}>
+            <Ionicons name="checkmark-circle" size={14} color="#1e40af" />
+            <Text style={styles.submittedText}>Submitted</Text>
+          </View>
+        );
+      } else {
+        return (
+          <View style={[styles.statusBadge, styles.notSubmittedBadge]}>
+            <Ionicons name="ellipse" size={12} color="#a15c07" />
+            <Text style={styles.notSubmittedText}>Not submitted</Text>
+          </View>
+        );
+      }
+    };
 
     return (
       <TouchableOpacity
@@ -868,10 +1577,12 @@ export default function ExportsScreen() {
           isDark && styles.darkCard,
           selectionMode && isSelected && styles.selectedCard,
           selectionMode && isSelected && isDark && styles.darkSelectedCard,
+          selectionMode && !isSelected && styles.unselectedCard,
+          selectionMode && !isSelected && isDark && styles.darkUnselectedCard,
           selectionMode && styles.selectionCard,
         ]}
-        onPress={selectionMode ? () => handleToggleBatchSelection(item.id) : undefined}
-        activeOpacity={selectionMode ? 0.7 : 1}
+        onPress={() => handleCardPress(item)}
+        activeOpacity={0.7}
       >
         <View style={styles.exportHeader}>
           {selectionMode && (
@@ -886,125 +1597,173 @@ export default function ExportsScreen() {
               />
             </TouchableOpacity>
           )}
-          <View style={[styles.exportInfo, selectionMode && styles.exportInfoWithCheckbox]}>
+          
+          <View style={[styles.titleContainer, selectionMode && styles.exportInfoWithCheckbox]}>
             <Text style={[styles.exportTitle, isDark && styles.darkText]}>
               {displayName}
             </Text>
-            <Text style={[styles.exportDate, isDark && styles.darkText]}>
-              {createdDate.toLocaleDateString('en-AU', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </Text>
           </View>
-          {!selectionMode && (
-            <View style={styles.exportActions}>
-              <TouchableOpacity
-                style={[styles.cardActionButton, styles.submitButton]}
-                onPress={() => handleSubmitEmail(item)}
-                disabled={submittingId === item.id}
+          
+          <View style={styles.headerRight}>
+            {getStatusBadge()}
+            {!selectionMode && (
+              <TouchableOpacity 
+                style={styles.expandButton}
+                onPress={(e) => handleExpandPress(e, item.id)}
               >
-                {submittingId === item.id ? (
-                  <ActivityIndicator size={16} color="#fff" />
-                ) : (
-                  <Ionicons name="mail" size={16} color="#fff" />
-                )}
+                <Ionicons 
+                  name={isExpanded ? "chevron-up" : "chevron-down"} 
+                  size={18} 
+                  color={isDark ? "#999" : "#6b7280"} 
+                />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.cardActionButton, styles.shareButton]}
-                onPress={() => handleSharePDF(item)}
+            )}
+          </View>
+        </View>
+
+        <Text style={[styles.exportSubtitle, isDark && styles.darkSecondaryText]}>
+          {getSubtitleText()}
+        </Text>
+
+        {isExpanded && !selectionMode && (
+          <>
+            <View style={styles.expandedContent}>
+              <TouchableOpacity 
+                style={styles.viewLinkRow} 
+                onPress={() => handleViewPDF(item)}
               >
-                <Ionicons name="share" size={16} color="#fff" />
+                <Ionicons name="document-text" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.viewLinkText, isDark && styles.viewLinkTextDark]}>View PDF</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.cardActionButton, styles.moreButton]}
-                onPress={() => toggleExpandedActions(item.id)}
-              >
-                <Ionicons name={expandedActionIds.has(item.id) ? 'close' : 'ellipsis-vertical'} size={16} color="#fff" />
-              </TouchableOpacity>
-              {expandedActionIds.has(item.id) && (
-                <View style={styles.inlineOverlay} pointerEvents="auto">
-                  <View style={styles.inlineButtons} pointerEvents="auto">
-                    <TouchableOpacity
-                      style={[styles.cardActionButton, styles.editButton]}
-                      onPress={() => {
-                        debug.debug('Edit button pressed for batch:', item.id);
-                        handleEditName(item);
-                      }}
-                    >
-                      <Ionicons name="create" size={16} color="#fff" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.cardActionButton, styles.deleteButton]}
-                      onPress={() => {
-                        debug.debug('Delete button pressed for batch:', item.id);
-                        handleDeleteBatch(item);
-                      }}
-                    >
-                      <Ionicons name="trash" size={16} color="#fff" />
-                    </TouchableOpacity>
-                  </View>
+
+              <View style={styles.metaRow}>
+                <Ionicons name="list" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  Logs: {item.countLogs}
+                </Text>
+              </View>
+
+              <View style={styles.metaRow}>
+                <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  Total Overtime: {formatMinutes(item.totalMinutes)}
+                </Text>
+              </View>
+
+              {item.submittedAt && (
+                <View style={styles.metaRow}>
+                  <Ionicons name="checkmark-circle" size={14} color={isDark ? "#999" : "#6b7280"} />
+                  <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                    Submitted via {item.submittedVia || 'email'} on {new Date(item.submittedAt).toLocaleDateString('en-AU')}
+                  </Text>
+                </View>
+              )}
+
+              {!item.submittedAt && (
+                <View style={styles.metaRow}>
+                  <Ionicons name="mail-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                  <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                    Ready to submit via email
+                  </Text>
                 </View>
               )}
             </View>
-          )}
-        </View>
 
-        <View style={styles.exportDetails}>
-          <TouchableOpacity style={styles.viewLinkRow} onPress={() => handleViewPDF(item)}>
-            <Text style={[styles.viewLinkText, isDark && styles.viewLinkTextDark]}>View PDF</Text>
-          </TouchableOpacity>
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, isDark && styles.darkText]}>
-              Logs:
-            </Text>
-            <Text style={[styles.detailValue, isDark && styles.darkText]}>
-              {item.countLogs}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, isDark && styles.darkText]}>
-              Total Overtime:
-            </Text>
-            <Text style={[styles.detailValue, isDark && styles.darkText]}>
-              {formatMinutes(item.totalMinutes)}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, isDark && styles.darkText]}>
-              Status:
-            </Text>
-            <Text style={[styles.detailValue, isDark && styles.darkText]}>
-              {item.submittedAt 
-                ? `Submitted via ${item.submittedVia || 'email'} on ${new Date(item.submittedAt).toLocaleDateString('en-AU')}`
-                : 'Not submitted'
-              }
-            </Text>
-          </View>
-        </View>
+            <View style={[styles.actions, isDark && styles.darkActions]}>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.submitActionButton]}
+                onPress={() => handleSubmitEmail(item)}
+              >
+                <Ionicons name="send" size={14} color="#fff" />
+                <Text style={styles.submitActionButtonText}>Send</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, isDark && styles.darkActionButton]}
+                onPress={() => handleEditName(item)}
+              >
+                <Text style={[styles.actionButtonText, isDark && styles.darkActionButtonText]}>Edit</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.actionButton, styles.deleteActionButton, isDark && styles.darkDeleteButton]}
+                onPress={() => handleDeleteBatch(item)}
+              >
+                <Text style={[styles.actionButtonText, styles.deleteActionButtonText, isDark && styles.darkDeleteButtonText]}>
+                  Delete
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </TouchableOpacity>
     );
   };
 
   const renderEmptyState = () => (
-    <View style={[styles.emptyContainer, isDark && styles.darkContainer]}>
-      <Ionicons name="document-text-outline" size={64} color="#ccc" />
-      <Text style={[styles.emptyTitle, isDark && styles.darkText]}>
-        No Exports Yet
-      </Text>
-      <Text style={[styles.emptyMessage, isDark && styles.darkText]}>
-        Export your ready logs to create your first AVAC form.
-      </Text>
-      <TouchableOpacity
-        style={styles.createExportButton}
-        onPress={() => router.push('/(tabs)/log')}
-      >
-        <Text style={styles.createExportButtonText}>Go to Logs</Text>
-      </TouchableOpacity>
-    </View>
+    <View style={styles.emptyStateContainer}>
+      <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+          <Text style={[styles.previewTitle, isDark && styles.darkText]}>
+            Ready to export overview
+          </Text>
+          <Text style={[styles.previewDescription, isDark && styles.darkPreviewDescription]}>
+            Once you mark logs as ready, they collect here so you can generate an AVAC PDF in one tap.
+          </Text>
+          <View style={[styles.previewHighlight, isDark && styles.darkPreviewHighlight]}>
+            <Ionicons name="document-text" size={18} color="#2e7d32" />
+            <View>
+              <Text style={styles.previewHighlightTitle}>3 logs ready</Text>
+              <Text style={styles.previewHighlightSubtitle}>Tap to export a PDF bundle</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+          <Text style={[styles.previewDescription, isDark && styles.darkPreviewDescription]}>
+            Each export keeps the PDF, log count, total hours and submission status together.
+          </Text>
+
+          <View style={[styles.previewExportCard, isDark && styles.darkPreviewExportCard]}>
+            <View style={styles.previewExportHeader}>
+              <View>
+                <Text style={[styles.previewExportTitle, isDark && styles.darkText]}>
+                  Oct AVAC batch
+                </Text>
+                <Text style={[styles.previewExportDate, isDark && styles.darkPreviewDescription]}>
+                  Created 15 Oct · 09:12
+                </Text>
+              </View>
+              <View style={styles.previewExportActions}>
+                <View style={[styles.previewDotButton, styles.previewDotPrimary]} />
+                <View style={[styles.previewDotButton, styles.previewDotSecondary]} />
+              </View>
+            </View>
+
+            <View style={styles.previewExportStats}>
+              <View style={styles.previewStatRow}>
+                <Text style={styles.previewStatLabel}>Logs included</Text>
+                <Text style={styles.previewStatValue}>5</Text>
+              </View>
+              <View style={styles.previewStatRow}>
+                <Text style={styles.previewStatLabel}>Total overtime</Text>
+                <Text style={styles.previewStatValue}>18h 30m</Text>
+              </View>
+              <View style={styles.previewStatRow}>
+                <Text style={styles.previewStatLabel}>Status</Text>
+                <Text style={styles.previewStatValue}>Not submitted</Text>
+              </View>
+            </View>
+
+            <View style={styles.previewExportFooter}>
+              <Ionicons name="mail" size={14} color="#4CAF50" />
+              <Text style={styles.previewFooterText}>Submit via email when you’re ready.</Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={[styles.previewHelperText, isDark && styles.darkPreviewDescription]}>
+          Export your ready logs to create your first AVAC form.
+        </Text>
+      </View>
   );
 
   if (isLoading && exportBatches.length === 0) {
@@ -1030,25 +1789,12 @@ export default function ExportsScreen() {
         {selectionMode ? (
           <View style={styles.selectionModeButtons}>
             {selectedBatchIds.size > 0 && (
-              <>
-                <TouchableOpacity
-                  onPress={handleBatchDelete}
-                style={[styles.cardActionButton, styles.deleteActionButton]}
-              >
-                <Ionicons name="trash" size={16} color="#fff" />
-              </TouchableOpacity>
               <TouchableOpacity
-                onPress={handleBatchShare}
-                style={[styles.cardActionButton, styles.shareActionButton]}
-                  disabled={isBatchSharing}
-                >
-                  {isBatchSharing ? (
-                    <ActivityIndicator size={14} color="#fff" />
-                  ) : (
-                    <Ionicons name="share" size={16} color="#fff" />
-                  )}
-                </TouchableOpacity>
-              </>
+                onPress={handleBatchDelete}
+                style={[styles.filterButton, isDark && styles.darkFilterButton]}
+              >
+                <Ionicons name="trash-outline" size={18} color={isDark ? '#ff6b6b' : '#d32f2f'} />
+              </TouchableOpacity>
             )}
             <TouchableOpacity
               onPress={handleCancelSelection}
@@ -1094,7 +1840,6 @@ export default function ExportsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
-        onScrollBeginDrag={handleScroll}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1105,6 +1850,17 @@ export default function ExportsScreen() {
         ListEmptyComponent={renderEmptyState}
         ListHeaderComponent={renderListHeader}
       />
+      {exportBatches.length === 0 && (
+        <>
+          <TouchableOpacity
+            style={styles.previewCTAButton}
+            onPress={() => router.push('/log/new')}
+          >
+            <Ionicons name="add" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.previewCTAText}>Add first log</Text>
+        </>
+      )}
       <Modal
         visible={showEditModal}
         transparent={true}
@@ -1141,6 +1897,7 @@ export default function ExportsScreen() {
           </View>
         </View>
       </Modal>
+
     </View>
   );
 }
@@ -1168,6 +1925,40 @@ const styles = StyleSheet.create({
   },
   darkText: {
     color: '#fff',
+  },
+  darkSecondaryText: {
+    color: '#999',
+  },
+  darkActionButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#48484a',
+  },
+  darkActionButtonText: {
+    color: '#fff',
+  },
+  darkDeleteButton: {
+    backgroundColor: '#2d1b1b',
+    borderColor: '#4a2c2c',
+  },
+  darkDeleteButtonText: {
+    color: '#ff6b6b',
+  },
+  darkSecondaryText: {
+    color: '#999',
+  },
+  darkActionButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#48484a',
+  },
+  darkActionButtonText: {
+    color: '#fff',
+  },
+  darkDeleteButton: {
+    backgroundColor: '#2d1b1b',
+    borderColor: '#4a2c2c',
+  },
+  darkDeleteButtonText: {
+    color: '#ff6b6b',
   },
   selectionModeButtons: {
     flexDirection: 'row',
@@ -1285,84 +2076,116 @@ const styles = StyleSheet.create({
   },
   exportCard: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    padding: 16,
+    marginVertical: 6,
+    marginHorizontal: 0,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    zIndex: 10, // Ensure cards are above dismiss overlay
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   darkCard: {
-    backgroundColor: '#1c1c1e',
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
   },
   exportHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
-    position: 'relative',
+    marginBottom: 6,
   },
   exportInfo: {
     flex: 1,
+    marginRight: 12,
+  },
+  titleContainer: {
+    flex: 1,
+    flexShrink: 1,
+    marginRight: 12,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
   },
   exportTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
+    color: '#111827',
+    flexShrink: 1,
   },
-  exportDate: {
-    fontSize: 14,
-    color: '#666',
+  exportSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 10,
   },
-  exportActions: {
+  subtitleRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
-    position: 'relative',
-    zIndex: 20, // Higher than card to ensure buttons are above dismiss overlay
+    marginTop: 2,
+    flexWrap: 'wrap',
   },
-  cardActionButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  submitButton: {
-    backgroundColor: '#007AFF',
-  },
-  shareButton: {
-    backgroundColor: '#34C759',
-  },
-  editButton: {
-    backgroundColor: '#FF9500',
-  },
-  deleteButton: {
-    backgroundColor: '#FF3B30',
-  },
-  moreButton: {
-    backgroundColor: '#8E8E93',
-  },
-  inlineOverlay: {
-    position: 'absolute',
-    right: 40, // keep space for kebab button
-    top: 0,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 100, // Higher than card to ensure it's above dismiss overlay
-  },
-  inlineButtons: {
+  headerRight: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  submittedBadge: {
+    backgroundColor: '#dbeafe',
+  },
+  notSubmittedBadge: {
+    backgroundColor: '#fef3c7',
+  },
+  submittedText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1e40af',
+  },
+  notSubmittedText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#a15c07',
+  },
+  expandButton: {
+    padding: 4,
+  },
+  expandedContent: {
+    marginTop: 8,
+    marginBottom: 12,
     gap: 8,
   },
-  exportDetails: {
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+  },
+  metaText: {
+    fontSize: 13,
+    color: '#6b7280',
+    flex: 1,
   },
   viewLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 4,
   },
   viewLinkText: {
@@ -1373,56 +2196,81 @@ const styles = StyleSheet.create({
   viewLinkTextDark: {
     color: '#0A84FF',
   },
-  detailRow: {
+  actions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
+    gap: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  darkActions: {
+    borderTopColor: '#3a3a3c',
+  },
+  actionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    minWidth: 50,
   },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
+  submitActionButton: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
   },
-  detailValue: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '600',
+  shareActionButton: {
+    backgroundColor: '#34C759',
+    borderColor: '#34C759',
   },
-  emptyContainer: {
-    flex: 1,
+  deleteActionButton: {
+    backgroundColor: '#ffebee',
+    borderColor: '#ffcdd2',
+  },
+  headerActionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
   },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 8,
+  headerShareActionButton: {
+    backgroundColor: '#34C759',
   },
-  emptyMessage: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  createExportButton: {
+  headerSubmitActionButton: {
     backgroundColor: '#007AFF',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
   },
-  createExportButtonText: {
-    color: '#fff',
-    fontSize: 16,
+  actionButtonText: {
+    fontSize: 12,
+    color: '#666',
     fontWeight: '600',
+  },
+  submitActionButtonText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  shareActionButtonText: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  deleteActionButtonText: {
+    color: '#d32f2f',
   },
   loadingText: {
     fontSize: 16,
     color: '#666',
     marginTop: 16,
+  },
+  emptyStateContainer: {
+    paddingTop: 16,
+    paddingBottom: 40,
+    gap: 20,
   },
   // Modal styles
   modalOverlay: {
@@ -1488,6 +2336,173 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  firstRunScroll: {
+    paddingHorizontal: 16,
+    paddingTop: 80,
+    paddingBottom: 48,
+    gap: 20,
+  },
+  previewCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    alignSelf: 'stretch',
+  },
+  darkPreviewCard: {
+    backgroundColor: '#1c1c1e',
+  },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: '#111827',
+  },
+  previewDescription: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  darkPreviewDescription: {
+    color: '#a0a0a0',
+  },
+  previewHighlight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: '#e8f5e8',
+  },
+  darkPreviewHighlight: {
+    backgroundColor: '#1a2e1a',
+  },
+  previewHighlightTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1b5e20',
+  },
+  previewHighlightSubtitle: {
+    fontSize: 13,
+    color: '#2e7d32',
+  },
+  previewExportCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    padding: 16,
+    backgroundColor: '#fff',
+  },
+  darkPreviewExportCard: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
+  },
+  previewExportHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  previewExportTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  previewExportDate: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  previewExportActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  previewDotButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+  },
+  previewDotPrimary: {
+    backgroundColor: '#34C759',
+  },
+  previewDotSecondary: {
+    backgroundColor: '#8E8E93',
+  },
+  previewExportStats: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#e5e7eb',
+    paddingVertical: 12,
+    marginBottom: 12,
+    gap: 6,
+  },
+  previewStatRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  previewStatLabel: {
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  previewStatValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  previewExportFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  previewFooterText: {
+    fontSize: 13,
+    color: '#4CAF50',
+  },
+  previewHelperText: {
+    fontSize: 14,
+    color: '#4b5563',
+    lineHeight: 20,
+  },
+  previewCTAButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  previewCTAText: {
+    position: 'absolute',
+    bottom: 46,
+    right: 90,
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'left',
+    lineHeight: 20,
+  },
+  placeholderHeaderActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  disabledFilterButton: {
+    borderColor: '#e0e0e0',
+    backgroundColor: '#f4f4f4',
   },
   // Filter Styles (matching logs screen)
   headerFilterButton: {
@@ -1743,6 +2758,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a2e',
     borderColor: '#007AFF',
   },
+  unselectedCard: {
+    opacity: 0.4,
+    backgroundColor: '#f5f5f5',
+  },
+  darkUnselectedCard: {
+    opacity: 0.3,
+    backgroundColor: '#1c1c1e',
+  },
   selectionCheckboxButton: {
     marginRight: 12,
     padding: 4,
@@ -1793,5 +2816,120 @@ const styles = StyleSheet.create({
   },
   selectionCountDark: {
     color: '#999',
+  },
+  submitActionButtons: {
+    backgroundColor: '#e8f5e8',
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  darkSubmitActionButtons: {
+    backgroundColor: '#1a2e1a',
+    borderColor: '#4CAF50',
+  },
+  submitActionInstructions: {
+    fontSize: 14,
+    color: '#2e7d32',
+    fontWeight: '500',
+    marginBottom: 12,
+  },
+  darkSubmitActionInstructions: {
+    color: '#4CAF50',
+  },
+  submitActionButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  submitActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#4CAF50',
+  },
+  emailActionButton: {
+    backgroundColor: '#4CAF50',
+  },
+  shareActionButton: {
+    backgroundColor: '#4CAF50',
+  },
+  submitActionButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  submitContainer: {
+    backgroundColor: '#e8f5e8',
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  darkSubmitContainer: {
+    backgroundColor: '#1a2e1a',
+    borderColor: '#4CAF50',
+  },
+  submitInfo: {
+    flex: 1,
+  },
+  submitTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2e7d32',
+    marginBottom: 4,
+  },
+  submitSubtitle: {
+    fontSize: 14,
+    color: '#4CAF50',
+  },
+  darkSubmitSubtitle: {
+    color: '#4CAF50',
+  },
+  submitButton: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  darkSubmitButton: {
+    backgroundColor: '#4CAF50',
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  resendContainer: {
+    backgroundColor: '#fff3cd',
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#ffc107',
+  },
+  darkResendContainer: {
+    backgroundColor: '#2d2415',
+    borderColor: '#ffc107',
+  },
+  resendText: {
+    fontSize: 14,
+    color: '#856404',
+    textAlign: 'center',
+  },
+  darkResendText: {
+    color: '#ffc107',
   },
 });

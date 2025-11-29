@@ -5,7 +5,7 @@ import { useAuthStore } from '../../lib/state/authStore';
 
 import { createScopedLogger } from '../../lib/utils/logger';
 
-const debug = createScopedLogger('VerifyEmail');
+const { debug } = createScopedLogger('VerifyEmail');
 
 const maskEmail = (email?: string | null) => {
   if (!email) return email ?? undefined;

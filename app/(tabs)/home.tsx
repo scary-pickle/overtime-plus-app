@@ -7,7 +7,8 @@ import {
   TouchableOpacity, 
   Alert,
   useColorScheme,
-  RefreshControl
+  RefreshControl,
+  Modal
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -16,8 +17,9 @@ import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useAuthStore } from '../../lib/state/authStore';
 import { profileStorage } from '../../lib/storage/profile';
-import { getCurrentTime, getCurrentDate, formatMinutes, getShiftStartDate } from '../../lib/time';
+import { getCurrentTime, getCurrentDate, formatMinutes, getShiftStartDate, getHoursElapsedSinceShiftStart } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
+import { notificationManager } from '../../lib/notifications';
 import { LateBadge } from '../../components/LateBadge';
 import { EmptyState } from '../../components/EmptyState';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
@@ -40,7 +42,7 @@ export default function HomeScreen() {
   const hasProfile = !!profile;
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const { shifts, getRosterFor, loadShifts } = useShiftsStore();
-  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, updateLog, clearActiveShift, markDraftAsStale, loadLogs, hasLoggedShiftForDate, getLoggedShiftForDate } = useLogsStore();
+  const { logs, getDraftLogs, getReadyLogs, getActiveShiftDraft, addLog, updateLog, deleteLog, clearActiveShift, markDraftAsStale, loadLogs, hasLoggedShiftForDate, getLoggedShiftForDate } = useLogsStore();
   
   const [currentTime, setCurrentTime] = useState(getCurrentTime());
   const [todayRoster, setTodayRoster] = useState<any>(null);
@@ -51,6 +53,7 @@ export default function HomeScreen() {
   const [hasLoggedToday, setHasLoggedToday] = useState(false);
   const [todayLoggedShift, setTodayLoggedShift] = useState<OvertimeLog | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showActiveShiftWarningModal, setShowActiveShiftWarningModal] = useState(false);
 
   useEffect(() => {
     // Update time every minute
@@ -84,22 +87,59 @@ export default function HomeScreen() {
     }
   }, [hasProfile, shifts, logs, currentTime]);
 
-  // Check for active shift draft and handle stale drafts
+  // Check for active shift draft and handle stale drafts, 24-hour cleanup, and auto-reset
   useEffect(() => {
     const checkActiveShift = async () => {
       const activeDraft = getActiveShiftDraft();
+      const today = getCurrentDate();
+      const todayRoster = getRosterFor(today);
       
       if (activeDraft) {
-        const today = getCurrentDate();
-        
-        // Check if draft is stale (from a previous day)
+        // Check if draft is from a previous day
         if (activeDraft.date < today) {
-          debug.debug('Stale draft detected, clearing active shift');
+          debug.debug('Stale draft detected (previous day), clearing active shift');
           await markDraftAsStale(activeDraft.id);
+          await notificationManager.cancelActiveShiftReminder(activeDraft.id);
           setActiveShiftDraft(null);
-        } else {
-          setActiveShiftDraft(activeDraft);
+          return;
         }
+        
+        // Check if shift has been active for 24+ hours (abandoned)
+        const hoursElapsed = getHoursElapsedSinceShiftStart(activeDraft.date, activeDraft.actualStart);
+        if (hoursElapsed >= 24) {
+          debug.debug(`Abandoned shift detected (${hoursElapsed.toFixed(1)} hours), clearing active shift`);
+          await markDraftAsStale(activeDraft.id);
+          await notificationManager.cancelActiveShiftReminder(activeDraft.id);
+          setActiveShiftDraft(null);
+          return;
+        }
+        
+        // Check if a new shift is about to start (based on roster)
+        // If there's a roster for today and we're within 30 minutes of the rostered start time,
+        // auto-reset the abandoned shift
+        if (todayRoster && todayRoster.rosteredStart) {
+          const currentTime = getCurrentTime();
+          const [currentHours, currentMinutes] = currentTime.split(':').map(Number);
+          const [rosterHours, rosterMinutes] = todayRoster.rosteredStart.split(':').map(Number);
+          
+          const currentTotalMinutes = currentHours * 60 + currentMinutes;
+          const rosterTotalMinutes = rosterHours * 60 + rosterMinutes;
+          
+          // Check if we're within 30 minutes before or after the rostered start time
+          const minutesUntilRoster = rosterTotalMinutes - currentTotalMinutes;
+          if (minutesUntilRoster >= -30 && minutesUntilRoster <= 30) {
+            // New shift is about to start or has just started
+            // Auto-reset the abandoned shift
+            debug.debug('New shift about to start, auto-resetting abandoned shift');
+            await markDraftAsStale(activeDraft.id);
+            await notificationManager.cancelActiveShiftReminder(activeDraft.id);
+            setActiveShiftDraft(null);
+            return;
+          }
+        }
+        
+        // Shift is still valid, keep it active
+        setActiveShiftDraft(activeDraft);
       } else {
         setActiveShiftDraft(null);
       }
@@ -108,7 +148,7 @@ export default function HomeScreen() {
     if (hasProfile) {
       checkActiveShift();
     }
-  }, [hasProfile, logs]);
+  }, [hasProfile, logs, currentTime]);
 
   // Reload profile when screen comes into focus
   useEffect(() => {
@@ -210,6 +250,48 @@ export default function HomeScreen() {
     await proceedStartShift();
   };
 
+  const handleResetActiveShift = async () => {
+    if (!activeShiftDraft) {
+      return;
+    }
+
+    Alert.alert(
+      'Reset Active Shift',
+      'Are you sure you want to reset and delete the current active shift? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Cancel the 8-hour reminder notification
+              await notificationManager.cancelActiveShiftReminder(activeShiftDraft.id);
+              
+              // Delete the active draft
+              await deleteLog(activeShiftDraft.id, user?.id);
+              
+              // Clear the active shift state
+              setActiveShiftDraft(null);
+              
+              Alert.alert(
+                'Shift Reset',
+                'The active shift has been reset. You can now start a new shift.',
+                [{ text: 'OK' }]
+              );
+            } catch (error) {
+              debug.error('Error resetting active shift:', error);
+              Alert.alert('Error', 'Failed to reset shift. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const proceedStartShift = async () => {
 
     try {
@@ -241,6 +323,9 @@ export default function HomeScreen() {
 
       await addLog(draftLog);
       setActiveShiftDraft(draftLog);
+
+      // Schedule 8-hour reminder notification
+      await notificationManager.scheduleActiveShiftReminder(draftLog.id, today, currentActualTime);
 
       const message = roster 
         ? `Shift started at ${currentActualTime}` 
@@ -428,6 +513,32 @@ export default function HomeScreen() {
     }
   };
 
+  const handleCreateLog = () => {
+    // Check if there's an active shift in progress
+    const activeShift = getActiveShiftDraft();
+    
+    if (activeShift) {
+      // Show warning modal asking user what they want to do
+      setShowActiveShiftWarningModal(true);
+    } else {
+      // No active shift, proceed directly to create new log
+      router.push('/log/new');
+    }
+  };
+
+  const handleEditActiveShift = () => {
+    const activeShift = getActiveShiftDraft();
+    if (activeShift) {
+      setShowActiveShiftWarningModal(false);
+      router.push(`/log/${activeShift.id}`);
+    }
+  };
+
+  const handleCreateNewLogAnyway = () => {
+    setShowActiveShiftWarningModal(false);
+    router.push('/log/new');
+  };
+
   const draftLogs = getDraftLogs();
   const readyLogs = getReadyLogs();
   const pendingCount = draftLogs.length + readyLogs.length;
@@ -547,16 +658,11 @@ export default function HomeScreen() {
           <TouchableOpacity 
             style={[
               styles.actionButton, 
-              styles.startButton,
-              activeShiftDraft && styles.disabledButton
+              activeShiftDraft ? styles.resetButton : styles.startButton
             ]}
-            onPress={handleStartShift}
-            disabled={!!activeShiftDraft}
+            onPress={activeShiftDraft ? handleResetActiveShift : handleStartShift}
           >
-            <Text style={[
-              styles.actionButtonText,
-              activeShiftDraft && styles.disabledButtonText
-            ]}>
+            <Text style={styles.actionButtonText}>
               {activeShiftDraft ? 'Shift In Progress' : 'Start Shift'}
             </Text>
           </TouchableOpacity>
@@ -572,7 +678,7 @@ export default function HomeScreen() {
         {/* Create Log Button */}
         <TouchableOpacity 
           style={[styles.actionButton, styles.createLogButton]}
-          onPress={() => router.push('/log/new')}
+          onPress={handleCreateLog}
         >
           <Text style={styles.actionButtonText}>Create Log</Text>
         </TouchableOpacity>
@@ -657,6 +763,47 @@ export default function HomeScreen() {
           setActiveShiftDraft(null);
         }}
       />
+
+      {/* Active Shift Warning Modal */}
+      <Modal
+        visible={showActiveShiftWarningModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowActiveShiftWarningModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, isDark && styles.darkModalContent]}>
+            <Text style={[styles.modalTitle, isDark && styles.darkText]}>
+              Active Shift in Progress
+            </Text>
+            <Text style={[styles.modalMessage, isDark && styles.darkText]}>
+              You have an active shift in progress. Would you like to edit the current shift log or create a new log?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary]}
+                onPress={handleEditActiveShift}
+              >
+                <Text style={styles.modalButtonPrimaryText}>Edit Active Shift</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary, isDark && styles.darkModalButtonSecondary]}
+                onPress={handleCreateNewLogAnyway}
+              >
+                <Text style={[styles.modalButtonSecondaryText, isDark && styles.darkModalButtonSecondaryText]}>
+                  Create New Log
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => setShowActiveShiftWarningModal(false)}
+              >
+                <Text style={[styles.modalButtonCancelText, isDark && styles.darkText]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -742,6 +889,9 @@ const styles = StyleSheet.create({
   },
   startButton: {
     backgroundColor: '#4CAF50',
+  },
+  resetButton: {
+    backgroundColor: '#FF9800',
   },
   endButton: {
     backgroundColor: '#FF4444',
@@ -969,5 +1119,83 @@ const styles = StyleSheet.create({
   },
   darkWelcomeText: {
     color: '#fff',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  darkModalContent: {
+    backgroundColor: '#1c1c1e',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  modalButtons: {
+    gap: 12,
+  },
+  modalButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonPrimary: {
+    backgroundColor: '#007AFF',
+  },
+  modalButtonSecondary: {
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  darkModalButtonSecondary: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  modalButtonCancel: {
+    backgroundColor: 'transparent',
+  },
+  modalButtonPrimaryText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonSecondaryText: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  darkModalButtonSecondaryText: {
+    color: '#5ac8fa',
+  },
+  modalButtonCancelText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

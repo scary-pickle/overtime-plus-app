@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { OvertimeLog } from '../types';
@@ -29,30 +29,86 @@ export function LogCard({
   onToggleSelection,
   isDark = false
 }: LogCardProps) {
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'draft': return '#FFA500';
-      case 'ready': return '#4CAF50';
-      case 'exported': return '#2196F3';
-      default: return '#666';
-    }
-  };
+  const [isExpanded, setIsExpanded] = useState(false);
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'draft': return 'Draft';
-      case 'ready': return 'Ready';
-      case 'exported': return 'Exported';
-      default: return status;
-    }
-  };
-
-  const formatDate = (dateString: string) => {
+  const formatCompactDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-AU', {
-      weekday: 'short',
       day: 'numeric',
       month: 'short'
     });
+  };
+
+  const getCategoryDisplayName = () => {
+    if (log.smoCategories) {
+      const activeCategories = Object.entries(log.smoCategories)
+        .filter(([_, value]) => value)
+        .map(([key, _]) => key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()));
+      return activeCategories.join(', ') || 'SMO Categories';
+    }
+    return log.category;
+  };
+
+  const getSubtitleText = () => {
+    const parts: string[] = [];
+    
+    // Add date
+    parts.push(formatCompactDate(log.date));
+    
+    // Add hours
+    parts.push(formatMinutes(log.minutesOvertime));
+    
+    // Add description (comments or shift info)
+    if (log.comments) {
+      parts.push(log.comments);
+    } else if (log.rosteredStart && log.rosteredFinish && log.rosteredStart !== 'N/A' && log.rosteredFinish !== 'N/A') {
+      parts.push(`${log.rosteredStart} - ${log.rosteredFinish} rostered`);
+    } else if (log.actualStart !== 'N/A' && log.actualFinish !== 'N/A') {
+      parts.push(`${log.actualStart} - ${log.actualFinish}`);
+    } else if (log.status === 'draft') {
+      parts.push('Needs delegate details before export');
+    }
+    
+    return parts.join(' · ');
+  };
+
+  const handleCardPress = () => {
+    if (showSelection && onToggleSelection) {
+      onToggleSelection();
+    } else {
+      // Tapping the card expands/collapses it
+      setIsExpanded(!isExpanded);
+    }
+  };
+
+  const handleExpandPress = (e: any) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
+  };
+
+  const getStatusBadge = () => {
+    if (log.status === 'ready') {
+      return (
+        <View style={[styles.statusBadge, styles.readyBadge]}>
+          <Ionicons name="checkmark-circle" size={14} color="#1b5728" />
+          <Text style={styles.readyText}>Ready</Text>
+        </View>
+      );
+    } else if (log.status === 'draft') {
+      return (
+        <View style={[styles.statusBadge, styles.draftBadge]}>
+          <Ionicons name="ellipse" size={12} color="#a15c07" />
+          <Text style={styles.draftText}>Draft</Text>
+        </View>
+      );
+    } else if (log.status === 'exported') {
+      return (
+        <View style={[styles.statusBadge, styles.exportedBadge]}>
+          <Ionicons name="checkmark-circle" size={14} color="#1e40af" />
+          <Text style={styles.exportedText}>Exported</Text>
+        </View>
+      );
+    }
+    return null;
   };
 
   return (
@@ -64,7 +120,7 @@ export function LogCard({
         isSelected && isDark && styles.darkSelectedCard,
         showSelection && styles.selectionCard
       ]} 
-      onPress={onPress}
+      onPress={handleCardPress}
       activeOpacity={0.7}
     >
       <View style={styles.header}>
@@ -81,99 +137,120 @@ export function LogCard({
           </TouchableOpacity>
         )}
         
-        <View style={styles.dateContainer}>
-          <Text style={[styles.date, isDark && styles.darkText]}>{formatDate(log.date)}</Text>
-          <Text style={[styles.time, isDark && styles.darkSecondaryText]}>
-            {log.actualStart} - {log.actualFinish}
+        <View style={styles.titleContainer}>
+          <Text style={[styles.title, isDark && styles.darkText]}>
+            {getCategoryDisplayName()}
           </Text>
         </View>
         
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(log.status) }]}>
-          <Text style={styles.statusText}>{getStatusText(log.status)}</Text>
+        <View style={styles.headerRight}>
+          {getStatusBadge()}
+          {!showSelection && (
+            <TouchableOpacity 
+              style={styles.expandButton}
+              onPress={handleExpandPress}
+            >
+              <Ionicons 
+                name={isExpanded ? "chevron-up" : "chevron-down"} 
+                size={18} 
+                color={isDark ? "#999" : "#6b7280"} 
+              />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
-      <View style={styles.content}>
-        {/* Show SMO categories if present, otherwise show regular category */}
-        {log.smoCategories ? (
-          <View style={styles.row}>
-            <Text style={[styles.label, isDark && styles.darkSecondaryText]}>SMO Categories:</Text>
-            <View style={styles.smoCategoriesContainer}>
-              {Object.entries(log.smoCategories)
-                .filter(([_, value]) => value)
-                .map(([key, _]) => (
-                  <View key={key} style={[styles.smoCategoryBadge, isDark && styles.darkSmoCategoryBadge]}>
-                    <Text style={[styles.smoCategoryText, isDark && styles.darkSmoCategoryText]}>
-                      {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                    </Text>
-                  </View>
-                ))}
-            </View>
-          </View>
-        ) : (
-          <View style={styles.row}>
-            <Text style={[styles.label, isDark && styles.darkSecondaryText]}>Category:</Text>
-            <Text style={[styles.value, isDark && styles.darkText]}>{log.category}</Text>
-          </View>
-        )}
-        
-        <View style={styles.row}>
-          <Text style={[styles.label, isDark && styles.darkSecondaryText]}>Overtime:</Text>
-          <Text style={[styles.value, styles.overtimeValue, isDark && styles.darkOvertimeValue]}>
-            {formatMinutes(log.minutesOvertime)}
-          </Text>
-        </View>
-        
-        {log.rosteredStart && log.rosteredFinish && (
-          <View style={styles.row}>
-            <Text style={[styles.label, isDark && styles.darkSecondaryText]}>Rostered:</Text>
-            <Text style={[styles.value, isDark && styles.darkText]}>
-              {log.rosteredStart} - {log.rosteredFinish}
-            </Text>
-          </View>
-        )}
-        
-        {log.comments && (
-          <View style={styles.row}>
-            <Text style={[styles.label, isDark && styles.darkSecondaryText]}>Comments:</Text>
-            <Text style={[styles.value, styles.commentsValue, isDark && styles.darkCommentsValue]} numberOfLines={2}>
-              {log.comments}
-            </Text>
-          </View>
-        )}
-      </View>
+      <Text style={[styles.subtitle, isDark && styles.darkSecondaryText]}>
+        {getSubtitleText()}
+      </Text>
 
-      {showActions && (
-        <View style={styles.actions}>
-          {log.status === 'draft' && onMarkReady && (
-            <TouchableOpacity 
-              style={[styles.actionButton, isDark && styles.darkActionButton]}
-              onPress={onMarkReady}
-            >
-              <Text style={[styles.actionButtonText, isDark && styles.darkActionButtonText]}>Mark Ready</Text>
-            </TouchableOpacity>
-          )}
-          
-          {onEdit && (
-            <TouchableOpacity 
-              style={[styles.actionButton, isDark && styles.darkActionButton]}
-              onPress={onEdit}
-            >
-              <Text style={[styles.actionButtonText, isDark && styles.darkActionButtonText]}>Edit</Text>
-            </TouchableOpacity>
-          )}
-          
-          {onDelete && (
-            <TouchableOpacity 
-              style={[styles.actionButton, styles.deleteButton, isDark && styles.darkDeleteButton]}
-              onPress={onDelete}
-            >
-              <Text style={[styles.actionButtonText, styles.deleteButtonText, isDark && styles.darkDeleteButtonText]}>
-                Delete
+      {isExpanded && (
+        <>
+          <View style={styles.expandedContent}>
+            {log.rosteredStart && log.rosteredFinish && log.rosteredStart !== 'N/A' && log.rosteredFinish !== 'N/A' && (
+              <View style={styles.metaRow}>
+                <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  Rostered: {log.rosteredStart} - {log.rosteredFinish}
+                </Text>
+              </View>
+            )}
+            
+            {log.actualStart !== 'N/A' && log.actualFinish !== 'N/A' && (
+              <View style={styles.metaRow}>
+                <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  Actual: {log.actualStart} - {log.actualFinish}
+                </Text>
+              </View>
+            )}
+
+            {log.smoCategories && (
+              <View style={styles.metaRow}>
+                <Ionicons name="list" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <View style={styles.smoCategoriesContainer}>
+                  {Object.entries(log.smoCategories)
+                    .filter(([_, value]) => value)
+                    .map(([key, _]) => (
+                      <View key={key} style={[styles.smoCategoryBadge, isDark && styles.darkSmoCategoryBadge]}>
+                        <Text style={[styles.smoCategoryText, isDark && styles.darkSmoCategoryText]}>
+                          {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                        </Text>
+                      </View>
+                    ))}
+                </View>
+              </View>
+            )}
+
+            {log.comments && (
+              <View style={styles.metaRow}>
+                <Ionicons name="document-text" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]} numberOfLines={3}>
+                  {log.comments}
+                </Text>
+              </View>
+            )}
+
+            {log.status === 'draft' && !log.comments && (
+              <Text style={[styles.draftHelperText, isDark && styles.darkSecondaryText]}>
+                Draft logs stay here until you're ready to submit.
               </Text>
-            </TouchableOpacity>
+            )}
+          </View>
+
+          {showActions && (
+            <View style={styles.actions}>
+              {log.status === 'draft' && onMarkReady && (
+                <TouchableOpacity 
+                  style={[styles.actionButton, isDark && styles.darkActionButton]}
+                  onPress={onMarkReady}
+                >
+                  <Text style={[styles.actionButtonText, isDark && styles.darkActionButtonText]}>Mark Ready</Text>
+                </TouchableOpacity>
+              )}
+              
+              {onEdit && (
+                <TouchableOpacity 
+                  style={[styles.actionButton, isDark && styles.darkActionButton]}
+                  onPress={onEdit}
+                >
+                  <Text style={[styles.actionButtonText, isDark && styles.darkActionButtonText]}>Edit</Text>
+                </TouchableOpacity>
+              )}
+              
+              {onDelete && (
+                <TouchableOpacity 
+                  style={[styles.actionButton, styles.deleteButton, isDark && styles.darkDeleteButton]}
+                  onPress={onDelete}
+                >
+                  <Text style={[styles.actionButtonText, styles.deleteButtonText, isDark && styles.darkDeleteButtonText]}>
+                    Delete
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
-        </View>
+        </>
       )}
     </TouchableOpacity>
   );
@@ -182,85 +259,106 @@ export function LogCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
     padding: 16,
-    marginVertical: 8,
+    marginVertical: 6,
     marginHorizontal: 0,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 1,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  dateContainer: {
-    flex: 1,
-  },
-  date: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#333',
-  },
-  time: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 1,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  content: {
-    marginBottom: 8,
-  },
-  row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
-  label: {
+  titleContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  subtitle: {
     fontSize: 13,
-    color: '#666',
+    color: '#6b7280',
+    marginBottom: 10,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  readyBadge: {
+    backgroundColor: '#d1fae5',
+  },
+  draftBadge: {
+    backgroundColor: '#fef3c7',
+  },
+  exportedBadge: {
+    backgroundColor: '#dbeafe',
+  },
+  readyText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1b5728',
+  },
+  draftText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#a15c07',
+  },
+  exportedText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1e40af',
+  },
+  expandedContent: {
+    marginTop: 8,
+    marginBottom: 12,
+    gap: 8,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  metaText: {
+    fontSize: 13,
+    color: '#6b7280',
     flex: 1,
   },
-  value: {
+  draftHelperText: {
     fontSize: 13,
-    color: '#333',
-    fontWeight: '500',
-    flex: 2,
-    textAlign: 'right',
-  },
-  overtimeValue: {
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  commentsValue: {
-    fontSize: 13,
-    color: '#666',
+    color: '#6b7280',
     fontStyle: 'italic',
-    flex: 2,
-    textAlign: 'right',
+    marginTop: 4,
   },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 12,
     paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
   },
   actionButton: {
     paddingHorizontal: 12,
@@ -282,6 +380,9 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     color: '#d32f2f',
+  },
+  expandButton: {
+    padding: 4,
   },
   selectedCard: {
     borderWidth: 2,
@@ -308,18 +409,13 @@ const styles = StyleSheet.create({
   },
   // Dark mode styles
   darkCard: {
-    backgroundColor: '#1c1c1e',
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
   },
   darkText: {
     color: '#fff',
   },
   darkSecondaryText: {
-    color: '#999',
-  },
-  darkOvertimeValue: {
-    color: '#64B5F6',
-  },
-  darkCommentsValue: {
     color: '#999',
   },
   darkSelectedCard: {
@@ -343,16 +439,14 @@ const styles = StyleSheet.create({
   smoCategoriesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    flex: 2,
-    justifyContent: 'flex-end',
+    flex: 1,
+    gap: 6,
   },
   smoCategoryBadge: {
     backgroundColor: '#e3f2fd',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    marginLeft: 4,
-    marginBottom: 4,
   },
   darkSmoCategoryBadge: {
     backgroundColor: '#1a237e',

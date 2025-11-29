@@ -9,6 +9,7 @@ import { database } from '../db/sqlite';
 import { profileStorage } from '../storage/profile';
 import * as SecureStore from 'expo-secure-store';
 import { createScopedLogger, maskEmail, maskUserId } from '../utils/logger';
+import { clearCachedPdfsForBatches, deleteStoredPdfs } from '../storage/pdfStorage';
 
 const CURRENT_USER_ID_KEY = 'overtime_plus_current_user_id';
 const debug = createScopedLogger('authStore');
@@ -681,6 +682,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             debug.error(`[deleteAccount] Failed to flag ${table} rows for deletion`, error);
           }
         }
+
+        try {
+          const functionsClient = (supabase as any).functions;
+          if (!functionsClient?.invoke) {
+            throw new Error('Supabase functions client unavailable');
+          }
+
+          const { error: hardDeleteError } = await functionsClient.invoke('delete-account', {
+            body: { reason: 'user_initiated' },
+          });
+
+          if (hardDeleteError) {
+            throw hardDeleteError;
+          }
+        } catch (error) {
+          debug.error('[deleteAccount] Hard delete function failed', error);
+          throw new Error('Failed to remove your cloud backups. Please try again.');
+        }
       }
 
       // Sign out from RevenueCat to clear entitlement state
@@ -688,6 +707,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await revenuecatClient.logOut();
       } catch (error) {
         debug.error('[deleteAccount] RevenueCat logout failed (non-fatal)', error);
+      }
+
+      // Gather export batches before clearing DB for later cleanup
+      let exportBatches: any[] = [];
+      try {
+        await database.init();
+        exportBatches = await database.getExportBatches(userId);
+      } catch (error) {
+        debug.error('[deleteAccount] Failed to load export batches for cleanup (non-fatal)', error);
       }
 
       // Wipe local profile and cached data
@@ -698,7 +726,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       try {
-        await database.init();
         await database.clearAllData();
         await database.clearAuthSessions();
         await database.clearLegacyData();
@@ -712,6 +739,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await onboardingStore.resetOnboarding(userId);
       } catch (error) {
         debug.error('[deleteAccount] Failed to reset onboarding flags', error);
+      }
+
+      // Clean up cached PDFs locally and in storage (best-effort)
+      if (exportBatches.length > 0) {
+        try {
+          await clearCachedPdfsForBatches(exportBatches);
+          await deleteStoredPdfs(exportBatches);
+        } catch (error) {
+          debug.error('[deleteAccount] Failed to clean up PDFs (non-fatal)', error);
+        }
       }
 
       // Sign out of Supabase and clear stored IDs

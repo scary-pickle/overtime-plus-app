@@ -23,7 +23,13 @@ async function tryLoadOTASMOTemplate(): Promise<ArrayBuffer | null> {
       }
     }
   } catch (e) {
-    console.warn('[SMO AVAC] OTA template load failed (non-fatal):', e);
+    // Extract meaningful error information for logging
+    const errorInfo = e instanceof Error 
+      ? { message: e.message, name: e.name, stack: e.stack?.split('\n').slice(0, 3).join('\n') }
+      : { error: String(e) };
+    // Also check for CodedError properties (expo-router)
+    const codedErrorInfo = (e as any)?.code ? { code: (e as any).code } : {};
+    console.warn('[SMO AVAC] OTA template load failed (non-fatal):', { ...errorInfo, ...codedErrorInfo });
   }
   return null;
 }

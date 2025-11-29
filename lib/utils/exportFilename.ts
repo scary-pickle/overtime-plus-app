@@ -98,7 +98,7 @@ export function getExportFileName(exportBatch: ExportBatch, profile?: Profile | 
 
 /**
  * Get a shortened display name for the export (without person's name)
- * Format: Uses customName if available, otherwise "SMO_AVAC_2025-11-27" or "AVAC_2025-11-27"
+ * Format: Uses customName if available, otherwise "AVAC_2025-11-27"
  * This is used for display in the UI, while the full filename is used when sharing
  */
 export function getExportDisplayName(exportBatch: ExportBatch, profile?: Profile | null): string {
@@ -109,13 +109,10 @@ export function getExportDisplayName(exportBatch: ExportBatch, profile?: Profile
     return customName.endsWith('.pdf') ? customName.slice(0, -4) : customName;
   }
   
-  // No custom name, generate shortened format: PREFIX_DATE
+  // No custom name, generate shortened format: AVAC_DATE
   const dateStr = new Date(exportBatch.createdAt).toISOString().split('T')[0];
   
-  // Determine if it's SMO format
-  const isSMO = profile?.isSMO || false;
-  
-  // Return shortened format: PREFIX_DATE
-  return isSMO ? `SMO_AVAC_${dateStr}` : `AVAC_${dateStr}`;
+  // Always return AVAC_DATE format (no SMO prefix)
+  return `AVAC_${dateStr}`;
 }
 

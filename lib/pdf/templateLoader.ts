@@ -1,5 +1,5 @@
 import { Paths } from 'expo-file-system';
-import { readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
+import { readAsStringAsync, writeAsStringAsync, getInfoAsync } from 'expo-file-system/legacy';
 import { supabaseEnabled, getSupabaseConfig } from '../supabase';
 import { database } from '../db/sqlite';
 import { createScopedLogger } from '../utils/logger';
@@ -26,6 +26,17 @@ function getCachePdfPath(templateType: TemplateType, version: string): string {
 
 export function isTemplateOTAEnabled(): boolean {
   return OTA_ENABLED && supabaseEnabled;
+}
+
+// Verify that a cached file actually exists and is readable
+async function verifyCachedFileExists(pdfPath: string | null): Promise<boolean> {
+  if (!pdfPath) return false;
+  try {
+    const fileInfo = await getInfoAsync(pdfPath);
+    return fileInfo.exists === true && (fileInfo.size ?? 0) >= 10000; // At least 10KB
+  } catch {
+    return false;
+  }
 }
 
 // Fetch active template metadata from Supabase REST
@@ -161,11 +172,17 @@ export async function ensureTemplateUpToDate(templateType: TemplateType): Promis
     debug.debug(`No template meta found for ${templateType}, using cached or bundled`);
     const cached = await database.getTemplateCache(templateType);
     if (cached.pdfPath && cached.mappingJson) {
-      return {
-        pdfPath: cached.pdfPath,
-        mapping: JSON.parse(cached.mappingJson),
-        version: cached.version,
-      };
+      // Verify the cached file actually exists before returning it
+      const fileExists = await verifyCachedFileExists(cached.pdfPath);
+      if (fileExists) {
+        return {
+          pdfPath: cached.pdfPath,
+          mapping: JSON.parse(cached.mappingJson),
+          version: cached.version,
+        };
+      } else {
+        debug.debug(`Cached template file not found or invalid: ${cached.pdfPath}`);
+      }
     }
     return { pdfPath: null, mapping: null, version: null };
   }
@@ -173,11 +190,16 @@ export async function ensureTemplateUpToDate(templateType: TemplateType): Promis
   debug.debug(`Found template ${templateType} v${meta.version} in Supabase`);
   const cached = await database.getTemplateCache(templateType);
 
-  // Use cached if versions match
+  // Use cached if versions match and file exists
   if (meta && cached.version === meta.version && cached.pdfPath) {
-    debug.debug(`Using cached template ${templateType} v${cached.version}`);
-    const mapping = cached.mappingJson ? JSON.parse(cached.mappingJson) : (meta.coordinateMapping || null);
-    return { pdfPath: cached.pdfPath, mapping, version: cached.version };
+    const fileExists = await verifyCachedFileExists(cached.pdfPath);
+    if (fileExists) {
+      debug.debug(`Using cached template ${templateType} v${cached.version}`);
+      const mapping = cached.mappingJson ? JSON.parse(cached.mappingJson) : (meta.coordinateMapping || null);
+      return { pdfPath: cached.pdfPath, mapping, version: cached.version };
+    } else {
+      debug.debug(`Cached template file not found or invalid: ${cached.pdfPath}, will re-download`);
+    }
   }
 
   // If meta exists and either not cached or version changed, download new PDF and cache mapping
@@ -195,22 +217,33 @@ export async function ensureTemplateUpToDate(templateType: TemplateType): Promis
       return { pdfPath, mapping: meta.coordinateMapping || null, version: meta.version };
     } catch (downloadError) {
       debug.error(`Failed to download template ${templateType}:`, downloadError);
-      // Fall back to cached version if available
+      // Fall back to cached version if available and file exists
       if (cached.pdfPath && cached.mappingJson) {
-        debug.debug(`Falling back to cached template ${templateType}`);
-        return {
-          pdfPath: cached.pdfPath,
-          mapping: JSON.parse(cached.mappingJson),
-          version: cached.version,
-        };
+        const fileExists = await verifyCachedFileExists(cached.pdfPath);
+        if (fileExists) {
+          debug.debug(`Falling back to cached template ${templateType}`);
+          return {
+            pdfPath: cached.pdfPath,
+            mapping: JSON.parse(cached.mappingJson),
+            version: cached.version,
+          };
+        } else {
+          debug.debug(`Cached template file not found: ${cached.pdfPath}`);
+        }
       }
       // No cache available - return null to use bundled template
       return { pdfPath: null, mapping: null, version: null };
     }
   }
 
-  // If no meta available, return whatever cached exists
-  return { pdfPath: cached.pdfPath, mapping: cached.mappingJson ? JSON.parse(cached.mappingJson) : null, version: cached.version };
+  // If no meta available, return whatever cached exists (if file exists)
+  if (cached.pdfPath) {
+    const fileExists = await verifyCachedFileExists(cached.pdfPath);
+    if (fileExists) {
+      return { pdfPath: cached.pdfPath, mapping: cached.mappingJson ? JSON.parse(cached.mappingJson) : null, version: cached.version };
+    }
+  }
+  return { pdfPath: null, mapping: null, version: null };
 }
 
 export async function loadCachedPDFArrayBuffer(localPath: string): Promise<ArrayBuffer> {

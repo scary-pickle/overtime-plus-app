@@ -17,8 +17,7 @@ const debug = createScopedLogger('supabase');
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-// Validate HTTPS requirement for Supabase URL (non-blocking, logs warning instead of throwing)
-// This prevents module load failures while still alerting developers to security issues
+// Validate HTTPS requirement for Supabase URL (blocking for non-local hosts)
 // Allow localhost/127.0.0.1/local IPs for local development
 const isLocalhost = SUPABASE_URL && (
   SUPABASE_URL.includes('localhost') || 
@@ -30,12 +29,9 @@ const isLocalhost = SUPABASE_URL && (
 );
 
 if (SUPABASE_URL && !SUPABASE_URL.startsWith('https://') && !isLocalhost) {
-  debug.error(
-    'SECURITY WARNING: Invalid Supabase URL - Must use HTTPS. Non-HTTPS URLs are not allowed for security reasons.',
-    'URL:', SUPABASE_URL.substring(0, 50) + '...'
-  );
-  // Don't throw - allow app to continue but log the security issue
-  // The app will fail when trying to create the client anyway
+  const msg = 'Invalid Supabase URL - must use HTTPS (non-localhost).';
+  debug.error('SECURITY BLOCK:', msg, 'URL:', SUPABASE_URL.substring(0, 50) + '...');
+  throw new Error(msg);
 } else if (isLocalhost) {
   debug.debug('Using local Supabase instance (HTTP allowed for localhost)');
 }
@@ -59,6 +55,9 @@ interface SupabaseClient {
     resend?: (params: any) => Promise<any>;
   };
   from: (table: string) => any;
+  functions?: {
+    invoke: (name: string, options?: any) => Promise<any>;
+  };
 }
 
 // Stub Supabase client
@@ -112,6 +111,12 @@ const createStubClient = (): SupabaseClient => ({
     update: () => Promise.resolve({ data: null, error: null }),
     delete: () => Promise.resolve({ data: null, error: null }),
   }),
+  functions: {
+    invoke: async () => {
+      debug.debug('Stub: functions.invoke called');
+      return { data: null, error: new Error('Supabase not configured') };
+    },
+  },
 });
 
 // Real Supabase client (when configured)
@@ -875,33 +880,19 @@ export const logsSync = {
         userId: userId.substring(0, 8) + '...',
       });
 
-      // Get session from auth store
-      const { useAuthStore } = await import('./state/authStore');
-      const authState = useAuthStore.getState();
-      let sessionToUse = authState.session;
+      // Get a valid access token (will refresh if expired)
+      const accessToken = await getValidAccessToken();
       
-      // If not in auth store, try getSession() (but don't wait long)
-      if (!sessionToUse) {
-        // @ts-ignore
-        const result = await (supabase as any).auth.getSession();
-        sessionToUse = result?.data?.session;
-      }
-      
-      // Use direct REST API if we have a session, otherwise fall back to Supabase client
-      if (sessionToUse?.access_token) {
-        const accessToken = sessionToUse.access_token;
+      // Use direct REST API if we have a valid token, otherwise fall back to Supabase client
+      if (accessToken) {
         const apiKey = SUPABASE_ANON_KEY;
         const restUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?user_id=eq.${userId}&deleted_at=is.null&order=date.desc,created_at.desc&select=*`;
         
         debug.debug('[logsSync.downloadLogs] Using direct REST API with session token');
         
-        const response = await fetch(restUrl, {
+        // Use authenticatedFetch which handles token refresh automatically
+        const response = await authenticatedFetch(restUrl, {
           method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
-          },
         });
         
         if (!response.ok) {
@@ -1636,6 +1627,305 @@ export const shiftTemplatesSync = {
       });
     } catch (error) {
       debug.error('[shiftTemplatesSync.deleteTemplate] Failed to delete template from Supabase:', error);
+      throw error;
+    }
+  },
+};
+
+/**
+ * Log templates sync functions (for LogTemplate)
+ */
+export const logTemplatesSync = {
+  async uploadTemplate(template: LogTemplate, userId?: string | null): Promise<void> {
+    if (!supabaseEnabled) {
+      return;
+    }
+
+    if (!userId) {
+      debug.debug('[logTemplatesSync.uploadTemplate] No userId provided, skipping Supabase sync');
+      return;
+    }
+
+    try {
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug.debug('[logTemplatesSync.uploadTemplate] No session available, cannot upload template');
+        throw new Error('No active session - please sign in again');
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Check if template already exists using direct REST API
+      const checkUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${template.id}&notes=eq.log_template&deleted_at=is.null&select=id&limit=1`;
+      
+      const checkResponse = await fetch(checkUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      let existingId: string | null = null;
+      if (checkResponse.ok) {
+        const existingData = await checkResponse.json();
+        if (Array.isArray(existingData) && existingData.length > 0) {
+          existingId = existingData[0].id;
+        }
+      }
+
+      // Store template in shifts table with notes='log_template' marker
+      // Use a dummy date for start_at/end_at since templates don't have dates
+      const templateData = {
+        user_id: userId,
+        start_at: new Date().toISOString(), // Dummy date for querying
+        end_at: null,
+        department: null,
+        hospital: null,
+        notes: 'log_template', // Marker to identify this as a LogTemplate
+        extras: template, // Store full LogTemplate object in extras JSONB
+        updated_at: new Date().toISOString(),
+        deleted_at: template.deletedAt || null, // Include soft delete timestamp
+      };
+
+      let response: Response;
+      if (existingId) {
+        // Update existing template
+        debug.debug('[logTemplatesSync.uploadTemplate] Updating existing template', { existingId, templateId: template.id });
+        const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingId}&select=*`;
+        response = await fetch(updateUrl, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(templateData),
+        });
+      } else {
+        // Insert new template
+        debug.debug('[logTemplatesSync.uploadTemplate] Inserting new template', { templateId: template.id });
+        const insertUrl = `${SUPABASE_URL}/rest/v1/shifts?select=*`;
+        response = await fetch(insertUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': apiKey!,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+          body: JSON.stringify(templateData),
+        });
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        debug.error('[logTemplatesSync.uploadTemplate] Error uploading template:', errorData);
+        throw errorData;
+      }
+
+      debug.debug('[logTemplatesSync.uploadTemplate] Template uploaded successfully to Supabase', {
+        templateId: template.id,
+      });
+    } catch (error) {
+      debug.error('[logTemplatesSync.uploadTemplate] Failed to upload template to Supabase:', error);
+      throw error;
+    }
+  },
+
+  async downloadTemplates(userId?: string | null): Promise<LogTemplate[]> {
+    if (!supabaseEnabled) {
+      return [];
+    }
+
+    if (!userId) {
+      debug.debug('[logTemplatesSync.downloadTemplates] No userId provided, skipping Supabase sync');
+      return [];
+    }
+
+    try {
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug.debug('[logTemplatesSync.downloadTemplates] No session available, cannot download templates');
+        return [];
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Fetch templates from shifts table where notes='log_template'
+      const url = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&notes=eq.log_template&deleted_at=is.null&select=*&order=created_at.desc`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        debug.error('[logTemplatesSync.downloadTemplates] Error downloading templates:', errorText);
+        return [];
+      }
+
+      const data = await response.json();
+      
+      if (!Array.isArray(data)) {
+        debug.debug('[logTemplatesSync.downloadTemplates] Invalid response format, returning empty array');
+        return [];
+      }
+
+      // Extract templates from extras JSONB field
+      const templates: LogTemplate[] = data
+        .map((row: any) => {
+          try {
+            const template = row.extras as LogTemplate;
+            if (template && template.id && template.name) {
+              return template;
+            }
+            return null;
+          } catch (error) {
+            debug.error('[logTemplatesSync.downloadTemplates] Error parsing template:', error);
+            return null;
+          }
+        })
+        .filter((template: LogTemplate | null): template is LogTemplate => template !== null);
+
+      debug.debug('[logTemplatesSync.downloadTemplates] Downloaded templates from Supabase', {
+        count: templates.length,
+      });
+
+      return templates;
+    } catch (error) {
+      debug.error('[logTemplatesSync.downloadTemplates] Failed to download templates from Supabase:', error);
+      return [];
+    }
+  },
+
+  async deleteTemplate(templateId: string, userId?: string | null): Promise<void> {
+    if (!supabaseEnabled) {
+      return;
+    }
+
+    if (!userId) {
+      debug.debug('[logTemplatesSync.deleteTemplate] No userId provided, skipping Supabase sync');
+      return;
+    }
+
+    try {
+      // Get session from auth store
+      const { useAuthStore } = await import('./state/authStore');
+      const authState = useAuthStore.getState();
+      let sessionToUse = authState.session;
+      
+      // If not in auth store, try getSession() (but don't wait long)
+      if (!sessionToUse) {
+        // @ts-ignore
+        const result = await (supabase as any).auth.getSession();
+        sessionToUse = result?.data?.session;
+      }
+      
+      if (!sessionToUse?.access_token) {
+        debug.debug('[logTemplatesSync.deleteTemplate] No session available, cannot delete template');
+        throw new Error('No active session - please sign in again');
+      }
+
+      const accessToken = sessionToUse.access_token;
+      const apiKey = SUPABASE_ANON_KEY;
+      
+      // Find template by extras->>id and notes='log_template'
+      const findUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${templateId}&notes=eq.log_template&deleted_at=is.null&select=id&limit=1`;
+      
+      const findResponse = await fetch(findUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!findResponse.ok) {
+        const errorText = await findResponse.text();
+        debug.error('[logTemplatesSync.deleteTemplate] Error finding template:', errorText);
+        throw new Error('Failed to find template');
+      }
+
+      const findData = await findResponse.json();
+      
+      if (!Array.isArray(findData) || findData.length === 0) {
+        debug.debug('[logTemplatesSync.deleteTemplate] Template not found in Supabase', { templateId });
+        return;
+      }
+
+      const supabaseId = findData[0].id;
+
+      // Soft delete by setting deleted_at
+      const deleteUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${supabaseId}`;
+      const deleteResponse = await fetch(deleteUrl, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': apiKey!,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
+          deleted_at: new Date().toISOString(),
+        }),
+      });
+
+      if (!deleteResponse.ok) {
+        const errorText = await deleteResponse.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { message: errorText };
+        }
+        debug.error('[logTemplatesSync.deleteTemplate] Error deleting template:', errorData);
+        throw errorData;
+      }
+
+      debug.debug('[logTemplatesSync.deleteTemplate] Template deleted successfully from Supabase', {
+        templateId,
+      });
+    } catch (error) {
+      debug.error('[logTemplatesSync.deleteTemplate] Failed to delete template from Supabase:', error);
       throw error;
     }
   },

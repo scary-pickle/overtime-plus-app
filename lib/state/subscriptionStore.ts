@@ -84,6 +84,11 @@ const initialState: Omit<
 };
 
 const derivePaywallEnabled = (flags: RemoteFlagMap): boolean => {
+  // Dev bypass: Allow disabling paywall via environment variable for testing
+  if (process.env.EXPO_PUBLIC_DISABLE_PAYWALL === 'true') {
+    return false;
+  }
+  
   const paywallFlag = flags['enable_paywall'];
   if (!paywallFlag?.value) {
     return false;

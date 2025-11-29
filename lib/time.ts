@@ -233,3 +233,34 @@ export function getShiftStartDate(endDate: string, startTime: string | 'N/A', fi
   // Otherwise, shift started and ended on the same day
   return endDate;
 }
+
+/**
+ * Calculate hours elapsed since a shift started
+ * @param shiftDate - The date the shift started (YYYY-MM-DD)
+ * @param startTime - The time the shift started (HH:mm or 'N/A')
+ * @returns Number of hours elapsed, or 0 if invalid
+ */
+export function getHoursElapsedSinceShiftStart(shiftDate: string, startTime: string | 'N/A'): number {
+  if (startTime === 'N/A' || !shiftDate) {
+    return 0;
+  }
+
+  try {
+    // Parse the shift date and start time
+    const [year, month, day] = shiftDate.split('-').map(Number);
+    const [hours, minutes] = startTime.split(':').map(Number);
+    
+    // Create date object for when shift started
+    const shiftStartDate = new Date(year, month - 1, day, hours, minutes, 0);
+    const now = new Date();
+    
+    // Calculate difference in milliseconds, convert to hours
+    const diffMs = now.getTime() - shiftStartDate.getTime();
+    const diffHours = diffMs / (1000 * 60 * 60);
+    
+    // Return 0 if negative (shift hasn't started yet) or if invalid
+    return Math.max(0, diffHours);
+  } catch (error) {
+    return 0;
+  }
+}

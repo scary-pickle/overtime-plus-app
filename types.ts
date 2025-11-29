@@ -138,6 +138,8 @@ export type LogTemplate = {
   };
   createdAt: string;
   updatedAt: string;
+  userId?: string | null; // For multi-user support
+  deletedAt?: string;    // ISO timestamp for soft delete
 };
 
 export type ShiftTemplate = {

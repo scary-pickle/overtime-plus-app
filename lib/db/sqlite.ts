@@ -151,8 +151,10 @@ class Database {
         comments TEXT,
         concurrent_employment INTEGER DEFAULT 0,
         smo_categories TEXT,
+        user_id TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
       );
     `);
 
@@ -201,19 +203,24 @@ class Database {
       );
     `);
 
-    // Create indexes for better performance
+    // Create indexes for better performance (excluding user_id indexes - they'll be created after migrations)
     await this.db.execAsync(`
       CREATE INDEX IF NOT EXISTS idx_overtime_logs_date ON overtime_logs(date);
       CREATE INDEX IF NOT EXISTS idx_overtime_logs_status ON overtime_logs(status);
       CREATE INDEX IF NOT EXISTS idx_usual_shifts_active ON usual_shifts(active_from, active_to);
       CREATE INDEX IF NOT EXISTS idx_usual_shifts_type ON usual_shifts(type, day_of_week);
       CREATE INDEX IF NOT EXISTS idx_log_templates_name ON log_templates(name);
-      CREATE INDEX IF NOT EXISTS idx_shift_templates_user_id ON shift_templates(user_id);
       CREATE INDEX IF NOT EXISTS idx_shift_templates_label ON shift_templates(label);
     `);
 
-    // Run migrations
+    // Run migrations (adds user_id and deleted_at columns)
     await this.runMigrations();
+
+    // Create user_id indexes after migrations (columns must exist first)
+    await this.db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_log_templates_user_id ON log_templates(user_id);
+      CREATE INDEX IF NOT EXISTS idx_shift_templates_user_id ON shift_templates(user_id);
+    `);
   }
 
   private async runMigrations(): Promise<void> {
@@ -256,6 +263,15 @@ class Database {
       // Column already exists, which is fine
     }
 
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE log_templates ADD COLUMN user_id TEXT;
+      `);
+      debug.debug('✅ Added user_id column to log_templates');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
     // Clear old data without user_id when a new authenticated user signs in
     // This is done via a method that can be called explicitly, not automatically
 
@@ -285,6 +301,26 @@ class Database {
         ALTER TABLE overtime_logs ADD COLUMN smo_categories TEXT;
       `);
       debug.debug('Added smo_categories column');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      // Migration: Add submitted_at column to export_batches
+      await this.db.execAsync(`
+        ALTER TABLE export_batches ADD COLUMN submitted_at TEXT;
+      `);
+      debug.debug('✅ Added submitted_at column to export_batches');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      // Migration: Add submitted_via column to export_batches
+      await this.db.execAsync(`
+        ALTER TABLE export_batches ADD COLUMN submitted_via TEXT;
+      `);
+      debug.debug('✅ Added submitted_via column to export_batches');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -365,6 +401,15 @@ class Database {
         ALTER TABLE export_batches ADD COLUMN deleted_at TEXT;
       `);
       debug.debug('Added deleted_at column to export_batches');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE log_templates ADD COLUMN deleted_at TEXT;
+      `);
+      debug.debug('Added deleted_at column to log_templates');
     } catch (error) {
       // Column already exists, which is fine
     }
@@ -606,11 +651,12 @@ class Database {
     // Use INSERT OR REPLACE to handle conflicts (e.g., when syncing a batch that was soft-deleted locally)
     await this.db.runAsync(`
       INSERT OR REPLACE INTO export_batches (
-        id, created_at, pdf_uri, count_logs, total_minutes, submitted_to_email, custom_name, user_id, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, created_at, pdf_uri, count_logs, total_minutes, submitted_to_email, custom_name, submitted_at, submitted_via, user_id, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       batch.id, batch.createdAt, batch.pdfUri, batch.countLogs,
-      batch.totalMinutes, batch.submittedToEmail || null, batch.customName || null, userId || null, batch.deletedAt || null
+      batch.totalMinutes, batch.submittedToEmail || null, batch.customName || null, 
+      batch.submittedAt || null, batch.submittedVia || null, userId || null, batch.deletedAt || null
     ]);
   }
 
@@ -632,6 +678,8 @@ class Database {
       totalMinutes: row.total_minutes as number,
       submittedToEmail: row.submitted_to_email as string | undefined,
       customName: row.custom_name as string | undefined,
+      submittedAt: row.submitted_at as string | undefined,
+      submittedVia: row.submitted_via as 'email' | 'manual' | undefined,
       deletedAt: row.deleted_at as string | undefined
     }));
   }
@@ -641,14 +689,14 @@ class Database {
 
     const query = userId
       ? `UPDATE export_batches SET
-          pdf_uri = ?, submitted_to_email = ?, custom_name = ?
+          pdf_uri = ?, submitted_to_email = ?, custom_name = ?, submitted_at = ?, submitted_via = ?
         WHERE id = ? AND user_id = ?`
       : `UPDATE export_batches SET
-          pdf_uri = ?, submitted_to_email = ?, custom_name = ?
+          pdf_uri = ?, submitted_to_email = ?, custom_name = ?, submitted_at = ?, submitted_via = ?
         WHERE id = ? AND user_id IS NULL`;
     const params = userId
-      ? [batch.pdfUri, batch.submittedToEmail || null, batch.customName || null, batch.id, userId]
-      : [batch.pdfUri, batch.submittedToEmail || null, batch.customName || null, batch.id];
+      ? [batch.pdfUri, batch.submittedToEmail || null, batch.customName || null, batch.submittedAt || null, batch.submittedVia || null, batch.id, userId]
+      : [batch.pdfUri, batch.submittedToEmail || null, batch.customName || null, batch.submittedAt || null, batch.submittedVia || null, batch.id];
 
     await this.db.runAsync(query, params);
   }
@@ -666,24 +714,25 @@ class Database {
   }
 
   // LogTemplates CRUD
-  async createLogTemplate(template: LogTemplate): Promise<void> {
+  async createLogTemplate(template: LogTemplate, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     try {
-      debug.debug('Creating template:', { id: template.id, name: template.name, category: template.category });
+      debug.debug('Creating template:', { id: template.id, name: template.name, category: template.category, userId: userId ? `${userId.substring(0, 8)}...` : 'null' });
       await this.db.runAsync(`
         INSERT INTO log_templates (
           id, name, rostered_start, rostered_finish,
           meal_break_minutes, category, comments, concurrent_employment,
-          smo_categories, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          smo_categories, user_id, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         template.id, template.name,
         template.rosteredStart || null, template.rosteredFinish || null,
         template.mealBreakMinutes || 0, template.category, template.comments || null,
         template.concurrentEmployment ? 1 : 0,
         template.smoCategories ? JSON.stringify(template.smoCategories) : null,
-        template.createdAt, template.updatedAt
+        userId || null,
+        template.createdAt, template.updatedAt, template.deletedAt || null
       ]);
       debug.debug('Template created successfully:', template.id);
     } catch (error) {
@@ -700,19 +749,16 @@ class Database {
     }
   }
 
-  async getLogTemplates(): Promise<LogTemplate[]> {
+  async getLogTemplates(userId?: string | null): Promise<LogTemplate[]> {
     if (!this.db) throw new Error('Database not initialized');
 
     try {
-      // Explicitly list columns to avoid issues with old schema that might have actual_start/actual_finish
-      const result = await this.db.getAllAsync(`
-        SELECT 
-          id, name, rostered_start, rostered_finish,
-          meal_break_minutes, category, comments, concurrent_employment,
-          smo_categories, created_at, updated_at
-        FROM log_templates 
-        ORDER BY name, created_at DESC
-      `);
+      const query = userId
+        ? `SELECT * FROM log_templates WHERE user_id = ? AND deleted_at IS NULL ORDER BY name, created_at DESC`
+        : `SELECT * FROM log_templates WHERE user_id IS NULL AND deleted_at IS NULL ORDER BY name, created_at DESC`;
+      const params = userId ? [userId] : [];
+
+      const result = await this.db.getAllAsync(query, params);
 
       debug.debug('Fetched templates from database:', result.length);
       
@@ -727,7 +773,9 @@ class Database {
         concurrentEmployment: row.concurrent_employment === 1,
         smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
         createdAt: row.created_at as string,
-        updatedAt: row.updated_at as string
+        updatedAt: row.updated_at as string,
+        userId: row.user_id as string | null,
+        deletedAt: row.deleted_at as string | undefined
       }));
     } catch (error) {
       debug.error('Error fetching templates:', error);
@@ -740,31 +788,51 @@ class Database {
     }
   }
 
-  async updateLogTemplate(template: LogTemplate): Promise<void> {
+  async updateLogTemplate(template: LogTemplate, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync(`
-      UPDATE log_templates SET
-        name = ?, rostered_start = ?,
-        rostered_finish = ?, meal_break_minutes = ?, category = ?,
-        comments = ?, concurrent_employment = ?, smo_categories = ?, updated_at = ?
-      WHERE id = ?
-    `, [
-      template.name,
-      template.rosteredStart || null, template.rosteredFinish || null,
-      template.mealBreakMinutes || 0, template.category, template.comments || null,
-      template.concurrentEmployment ? 1 : 0,
-      template.smoCategories ? JSON.stringify(template.smoCategories) : null,
-      new Date().toISOString(), template.id
-    ]);
+    const query = userId
+      ? `UPDATE log_templates SET
+          name = ?, rostered_start = ?,
+          rostered_finish = ?, meal_break_minutes = ?, category = ?,
+          comments = ?, concurrent_employment = ?, smo_categories = ?, updated_at = ?
+        WHERE id = ? AND user_id = ?`
+      : `UPDATE log_templates SET
+          name = ?, rostered_start = ?,
+          rostered_finish = ?, meal_break_minutes = ?, category = ?,
+          comments = ?, concurrent_employment = ?, smo_categories = ?, updated_at = ?
+        WHERE id = ? AND user_id IS NULL`;
+    const params = userId
+      ? [
+          template.name,
+          template.rosteredStart || null, template.rosteredFinish || null,
+          template.mealBreakMinutes || 0, template.category, template.comments || null,
+          template.concurrentEmployment ? 1 : 0,
+          template.smoCategories ? JSON.stringify(template.smoCategories) : null,
+          new Date().toISOString(), template.id, userId
+        ]
+      : [
+          template.name,
+          template.rosteredStart || null, template.rosteredFinish || null,
+          template.mealBreakMinutes || 0, template.category, template.comments || null,
+          template.concurrentEmployment ? 1 : 0,
+          template.smoCategories ? JSON.stringify(template.smoCategories) : null,
+          new Date().toISOString(), template.id
+        ];
+
+    await this.db.runAsync(query, params);
   }
 
-  async deleteLogTemplate(id: string): Promise<void> {
+  async deleteLogTemplate(id: string, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    await this.db.runAsync(`
-      DELETE FROM log_templates WHERE id = ?
-    `, [id]);
+    // Soft delete - set deleted_at timestamp
+    const query = userId
+      ? `UPDATE log_templates SET deleted_at = ? WHERE id = ? AND user_id = ?`
+      : `UPDATE log_templates SET deleted_at = ? WHERE id = ? AND user_id IS NULL`;
+    const params = userId ? [new Date().toISOString(), id, userId] : [new Date().toISOString(), id];
+
+    await this.db.runAsync(query, params);
   }
 
   // ShiftTemplates CRUD

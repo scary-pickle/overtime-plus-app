@@ -5,7 +5,7 @@ import { useAuthStore } from '../../lib/state/authStore';
 
 import { createScopedLogger } from '../../lib/utils/logger';
 
-const debug = createScopedLogger('SignIn');
+const { debug } = createScopedLogger('SignIn');
 
 export default function SignIn() {
   debug('[sign-in] component render');

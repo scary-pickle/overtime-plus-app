@@ -211,15 +211,90 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     try {
       // Load from local SQLite first (fast)
       const exportBatches = await database.getExportBatches(userId);
+      
+      // If we have a userId, also sync from Supabase to ensure we have the latest data
+      // This prevents showing stale "not submitted" status
+      // Use Promise.race with a timeout to avoid hanging if Supabase is slow
+      if (userId) {
+        try {
+          const syncPromise = exportSync.downloadExportBatches(userId);
+          const timeoutPromise = new Promise<ExportBatch[]>((resolve) => {
+            setTimeout(() => resolve([]), 2000); // 2 second timeout
+          });
+          const remoteBatches = await Promise.race([syncPromise, timeoutPromise]);
+          if (remoteBatches.length > 0) {
+            // Merge local and remote data intelligently
+            const localBatchMap = new Map(exportBatches.map(batch => [batch.id, batch]));
+            const remoteBatchMap = new Map(remoteBatches.map(batch => [batch.id, batch]));
+            
+            const mergedMap = new Map<string, ExportBatch>();
+            const allBatchIds = new Set([...localBatchMap.keys(), ...remoteBatchMap.keys()]);
+            
+            for (const batchId of allBatchIds) {
+              const localBatch = localBatchMap.get(batchId);
+              const remoteBatch = remoteBatchMap.get(batchId);
+              
+              if (localBatch && remoteBatch) {
+                // Both exist - merge intelligently
+                // Prefer the one with submittedAt if only one has it
+                if (localBatch.submittedAt && !remoteBatch.submittedAt) {
+                  mergedMap.set(batchId, localBatch);
+                } else if (remoteBatch.submittedAt && !localBatch.submittedAt) {
+                  mergedMap.set(batchId, remoteBatch);
+                } else if (localBatch.submittedAt && remoteBatch.submittedAt) {
+                  // Both have submittedAt - prefer the one with newer submittedAt timestamp
+                  const localSubmittedTime = new Date(localBatch.submittedAt).getTime();
+                  const remoteSubmittedTime = new Date(remoteBatch.submittedAt).getTime();
+                  if (localSubmittedTime > remoteSubmittedTime) {
+                    mergedMap.set(batchId, localBatch);
+                  } else {
+                    mergedMap.set(batchId, remoteBatch);
+                  }
+                } else {
+                  // Neither has submittedAt - prefer remote (it's the source of truth)
+                  mergedMap.set(batchId, remoteBatch);
+                }
+              } else if (remoteBatch) {
+                mergedMap.set(batchId, remoteBatch);
+              } else if (localBatch) {
+                mergedMap.set(batchId, localBatch);
+              }
+            }
+            
+            const mergedBatches = Array.from(mergedMap.values()).sort((a, b) => {
+              const aTime = new Date(a.createdAt).getTime();
+              const bTime = new Date(b.createdAt).getTime();
+              return bTime - aTime;
+            });
+            
+            // Update local database with merged data
+            for (const batch of mergedBatches) {
+              await database.createExportBatch(batch, userId).catch(() => {});
+            }
+            
+            set({ 
+              exportBatches: mergedBatches, 
+              isLoading: false,
+              error: null 
+            });
+            return;
+          }
+        } catch (syncError) {
+          debug.error('Initial Supabase sync failed (non-fatal):', syncError);
+          // Fall through to use local data
+        }
+      }
+      
+      // Use local data (either no userId, or Supabase sync failed/returned no data)
       set({ 
         exportBatches, 
         isLoading: false,
         error: null 
       });
       
-      // Sync from Supabase in background (non-blocking)
+      // Continue syncing in background for future updates
       if (userId) {
-        exportSync.downloadExportBatches(userId).then(remoteBatches => {
+        exportSync.downloadExportBatches(userId).then(async (remoteBatches) => {
           if (remoteBatches.length > 0) {
             debug.debug('Syncing export batches from Supabase in background');
             // Get current batches from store (may have been updated since initial load)
@@ -227,19 +302,43 @@ export const useLogsStore = create<LogsState>((set, get) => ({
             const localBatchMap = new Map(currentBatches.map(batch => [batch.id, batch]));
             const remoteBatchMap = new Map(remoteBatches.map(batch => [batch.id, batch]));
             
-            // Merge: remote batches take precedence, then add local-only batches
+            // Merge with smart conflict resolution for submittedAt
             // Use a Map to ensure no duplicates by ID
             const mergedMap = new Map<string, ExportBatch>();
             
-            // First add all remote batches (remote wins for conflicts)
-            for (const batch of remoteBatches) {
-              mergedMap.set(batch.id, batch);
-            }
+            // Process all batches with smart merging
+            const allBatchIds = new Set([...localBatchMap.keys(), ...remoteBatchMap.keys()]);
             
-            // Then add local batches that aren't in remote
-            for (const batch of currentBatches) {
-              if (!mergedMap.has(batch.id)) {
-                mergedMap.set(batch.id, batch);
+            for (const batchId of allBatchIds) {
+              const localBatch = localBatchMap.get(batchId);
+              const remoteBatch = remoteBatchMap.get(batchId);
+              
+              if (localBatch && remoteBatch) {
+                // Both exist - merge intelligently
+                // Prefer the one with submittedAt if only one has it
+                if (localBatch.submittedAt && !remoteBatch.submittedAt) {
+                  mergedMap.set(batchId, localBatch);
+                } else if (remoteBatch.submittedAt && !localBatch.submittedAt) {
+                  mergedMap.set(batchId, remoteBatch);
+                } else if (localBatch.submittedAt && remoteBatch.submittedAt) {
+                  // Both have submittedAt - prefer the one with newer submittedAt timestamp
+                  const localSubmittedTime = new Date(localBatch.submittedAt).getTime();
+                  const remoteSubmittedTime = new Date(remoteBatch.submittedAt).getTime();
+                  if (localSubmittedTime > remoteSubmittedTime) {
+                    mergedMap.set(batchId, localBatch);
+                  } else {
+                    mergedMap.set(batchId, remoteBatch);
+                  }
+                } else {
+                  // Neither has submittedAt - prefer remote (it's the source of truth)
+                  mergedMap.set(batchId, remoteBatch);
+                }
+              } else if (remoteBatch) {
+                // Only remote exists
+                mergedMap.set(batchId, remoteBatch);
+              } else if (localBatch) {
+                // Only local exists
+                mergedMap.set(batchId, localBatch);
               }
             }
             
@@ -252,6 +351,13 @@ export const useLogsStore = create<LogsState>((set, get) => ({
             
             // Update store with merged batches (deduplicated)
             set({ exportBatches: mergedBatches });
+            
+            // Also update local database with merged data to keep it in sync
+            for (const batch of mergedBatches) {
+              await database.createExportBatch(batch, userId).catch(() => {
+                // Ignore errors - this is just to keep local DB in sync
+              });
+            }
           }
         }).catch(err => {
           debug.error('Background sync failed (non-fatal):', err);

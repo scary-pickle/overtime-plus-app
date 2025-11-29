@@ -388,25 +388,27 @@ export default function EditLogScreen() {
   return (
     <SharedTimePickerProvider>
       <View style={[styles.container, isDark && styles.darkContainer]}>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={[styles.header, isDark && styles.darkHeader, { paddingTop: insets.top + 12 }]}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={handleCancel}
-            >
-              <Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : '#000'} />
-            </TouchableOpacity>
-            <Text style={[styles.title, isDark && styles.darkText]}>Edit Log</Text>
-            <TouchableOpacity 
-              style={[styles.saveButton, isDark && styles.darkSaveButton]}
-              onPress={handleSave}
-            >
-              <Text style={[styles.saveButtonText, isDark && styles.darkSaveButtonText]}>Save</Text>
-            </TouchableOpacity>
-          </View>
+        <View style={[styles.header, isDark && styles.darkHeader, { paddingTop: insets.top + 12 }]}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={handleCancel}
+          >
+            <Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : '#000'} />
+          </TouchableOpacity>
+          <Text style={[styles.title, isDark && styles.darkText]}>Edit Log</Text>
+          <TouchableOpacity 
+            style={[styles.saveButton, isDark && styles.darkSaveButton]}
+            onPress={handleSave}
+          >
+            <Text style={[styles.saveButtonText, isDark && styles.darkSaveButtonText]}>Save</Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Previously Exported Warning */}
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
+        >
           {showExportedWarning && (
             <View style={[styles.warningBanner, isDark && styles.darkWarningBanner]}>
               <Ionicons name="warning" size={20} color="#ff6b35" />
@@ -594,6 +596,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingTop: 16,
   },
   header: {
     flexDirection: 'row',

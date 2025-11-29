@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   useColorScheme,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useShiftsStore } from '../../lib/state/shiftsStore';

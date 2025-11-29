@@ -61,8 +61,11 @@ export function composeAVACEmail(
   // Create subject
   const subject = `AVAC Submission - ${profile.fullName}`;
   
+  // Ensure recipient email is trimmed and non-empty before adding to recipients
+  const trimmedRecipientEmail = recipientEmail?.trim() || '';
+  
   return {
-    recipients: recipientEmail ? [recipientEmail] : [],
+    recipients: trimmedRecipientEmail ? [trimmedRecipientEmail] : [],
     subject,
     body,
     attachments: [pdfUri]
@@ -193,9 +196,17 @@ export async function sendAVACEmailWithAttachment(profile: Profile, pdfUri: stri
       };
     }
     
-    // Compose email - use recipientEmail if set, otherwise leave recipients empty
-    const recipientEmail = profile.recipientEmail || '';
+    // Compose email - use recipientEmail from profile if set, otherwise leave recipients empty
+    // Trim whitespace to ensure we properly detect if recipient email is provided
+    const recipientEmail = profile.recipientEmail?.trim() || '';
     const emailData = composeAVACEmail(profile, localPdfUri, recipientEmail, undefined, exportBatch);
+    
+    // Log recipient email usage for debugging
+    if (recipientEmail) {
+      debug.log('Using recipient email from profile:', recipientEmail);
+    } else {
+      debug.log('No recipient email set in profile - user will need to enter it manually');
+    }
     
     // Open email composer (always opens Apple Mail)
     // If no recipient email is set, recipients array will be empty so user can enter it

@@ -11,6 +11,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { createScopedLogger } from '../../lib/utils/logger';
@@ -18,7 +19,6 @@ import { createScopedLogger } from '../../lib/utils/logger';
 const debug = createScopedLogger('Shifts');
 import { useAuthStore } from '../../lib/state/authStore';
 import { ShiftCard } from '../../components/ShiftCard';
-import { EmptyState } from '../../components/EmptyState';
 import { ShiftsCalendarView } from '../../components/ShiftsCalendarView';
 import { UsualShift } from '../../types';
 import { formatDateToISO } from '../../lib/time';
@@ -32,13 +32,21 @@ export default function ShiftsScreen() {
   const { shifts, deleteShift, loadShifts } = useShiftsStore();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [calendarViewMode, setCalendarViewMode] = useState<'month' | 'week'>('month');
+  const [calendarViewMode, setCalendarViewMode] = useState<'month' | 'week'>('week');
   const [isViewModeMenuOpen, setIsViewModeMenuOpen] = useState(false);
 
   useEffect(() => {
     debug.debug('Loading shifts...');
     loadShifts(user?.id);
   }, [user?.id]);
+
+  // Reload shifts when screen comes into focus (e.g., when navigating back from creating a shift)
+  useFocusEffect(
+    React.useCallback(() => {
+      debug.debug('Shifts screen focused, reloading shifts...');
+      loadShifts(user?.id);
+    }, [loadShifts, user?.id])
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -96,17 +104,20 @@ export default function ShiftsScreen() {
 
   const getNextShiftOccurrence = (shift: UsualShift): string => {
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to midnight for accurate date comparison
     const dayOfWeek = shift.dayOfWeek;
     
     // Start from today and look ahead up to 7 days
     for (let i = 0; i < 7; i++) {
       const checkDate = new Date(today);
       checkDate.setDate(today.getDate() + i);
+      checkDate.setHours(0, 0, 0, 0); // Normalize to midnight
       
       if (checkDate.getDay() === dayOfWeek) {
         const dateStr = formatDateToISO(checkDate);
         
         // Check if shift is active on this date
+        // Use string comparison for dates to avoid timezone issues
         if (shift.activeFrom <= dateStr && (!shift.activeTo || shift.activeTo >= dateStr)) {
           // For biweekly shifts, check week index
           if (shift.type === 'biweekly' && shift.weekIndex) {
@@ -277,13 +288,115 @@ export default function ShiftsScreen() {
 
   if (shifts.length === 0) {
     return (
-      <EmptyState
-        title="No Shift Patterns"
-        description="Create your usual shift patterns to quickly log overtime with pre-filled times."
-        actionText="Add First Shift"
-        onAction={handleAddShift}
-        icon="📅"
-      />
+      <View style={[styles.container, isDark && styles.darkContainer]}>
+        <View style={styles.headerContainer}>
+          <Text style={[styles.title, isDark && styles.darkText]}>
+            Shifts
+          </Text>
+          <View style={[styles.viewModeChip, styles.viewModeChipDisabled]}>
+            <Text style={styles.viewModeChipText}>Weekly</Text>
+            <Ionicons name="chevron-down" size={16} color="#A0A6AD" />
+          </View>
+        </View>
+        <ScrollView
+          contentContainerStyle={styles.firstRunScroll}
+          showsVerticalScrollIndicator={false}
+        >
+
+          <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+            <Text style={[styles.previewTitle, isDark && styles.darkText]}>
+              Calendar preview
+            </Text>
+            <Text style={[styles.previewDescription, isDark && styles.darkDescription]}>
+              Your shift patterns appear on the calendar so you always know what's coming up.
+            </Text>
+            
+            {/* Week Day Row */}
+            <View style={styles.previewWeekDayRow}>
+              {[
+                { name: 'SUN', day: 11, hasShift: true },
+                { name: 'MON', day: 12, hasShift: false },
+                { name: 'TUE', day: 13, hasShift: true },
+                { name: 'WED', day: 14, hasShift: false },
+                { name: 'THU', day: 15, hasShift: true },
+                { name: 'FRI', day: 16, hasShift: false },
+                { name: 'SAT', day: 17, hasShift: false },
+              ].map((dayInfo, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.previewWeekDayCell,
+                    isDark && styles.darkPreviewWeekDayCell,
+                    dayInfo.day === 13 && styles.previewWeekTodayCell,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.previewWeekDayName,
+                      isDark && styles.darkText,
+                      dayInfo.day === 13 && styles.previewWeekTodayDayName,
+                    ]}
+                  >
+                    {dayInfo.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.previewWeekDayNumber,
+                      isDark && styles.darkText,
+                      dayInfo.day === 13 && styles.previewWeekTodayDayNumber,
+                    ]}
+                  >
+                    {dayInfo.day}
+                  </Text>
+                  {dayInfo.hasShift && (
+                    <View style={styles.previewWeekIndicators}>
+                      <View style={[styles.previewWeekIndicator, styles.previewActiveIndicator]} />
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+            <Text style={[styles.previewTitle, isDark && styles.darkText]}>
+              Shift cards preview
+            </Text>
+            <Text style={[styles.previewDescription, isDark && styles.darkDescription]}>
+              Each pattern shows the day, time and next occurrence. Tap to edit or duplicate.
+            </Text>
+            {[
+              { title: 'Day shift', subtitle: 'Mon · 07:00 – 15:00' },
+              { title: 'Night float', subtitle: 'Thu · 18:00 – 06:00 (biweekly)' },
+            ].map((item) => (
+              <View key={item.title} style={[styles.previewShiftCard, isDark && styles.darkPreviewShiftCard]}>
+                <View>
+                  <Text style={[styles.previewShiftTitle, isDark && styles.darkText]}>
+                    {item.title}
+                  </Text>
+                  <Text style={[styles.previewShiftSubtitle, isDark && styles.darkDescription]}>
+                    {item.subtitle}
+                  </Text>
+                </View>
+                <View style={styles.previewBadge}>
+                  <Ionicons name="calendar" size={14} color="#fff" />
+                  <Text style={styles.previewBadgeText}>Next up</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <Text style={[styles.previewHelperText, isDark && styles.darkDescription]}>
+            Create your usual shift patterns to quickly log overtime with pre-filled times.
+          </Text>
+        </ScrollView>
+        <>
+          <TouchableOpacity style={styles.previewCTAButton} onPress={handleAddShift}>
+            <Ionicons name="add" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.previewCTAText}>Add first shift</Text>
+        </>
+      </View>
     );
   }
 
@@ -300,76 +413,77 @@ export default function ShiftsScreen() {
 
   return (
     <View style={[styles.container, isDark && styles.darkContainer]}>
+      {/* Header - Fixed at top */}
+      <View style={styles.headerContainer}>
+        <Text style={[styles.title, isDark && styles.darkText]}>
+          Shifts
+        </Text>
+        <View style={styles.viewModeContainer}>
+          <TouchableOpacity
+            style={[
+              styles.viewModeChip,
+              isDark && styles.darkViewModeChip,
+              isViewModeMenuOpen && styles.viewModeChipOpen,
+            ]}
+            onPress={() => setIsViewModeMenuOpen(prev => !prev)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.viewModeChipText}>
+              {calendarViewMode === 'month' ? 'Monthly' : 'Weekly'}
+            </Text>
+            <Ionicons
+              name={isViewModeMenuOpen ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color="#007AFF"
+            />
+          </TouchableOpacity>
+          {isViewModeMenuOpen && (
+            <View style={[styles.viewModeMenu, isDark && styles.darkViewModeMenu]}>
+              <TouchableOpacity
+                style={styles.viewModeMenuItem}
+                onPress={() => {
+                  setCalendarViewMode('month');
+                  setIsViewModeMenuOpen(false);
+                }}
+              >
+                <Text style={[
+                  styles.viewModeMenuText,
+                  calendarViewMode === 'month' && styles.viewModeMenuTextActive,
+                ]}>
+                  Monthly
+                </Text>
+                {calendarViewMode === 'month' && (
+                  <Ionicons name="checkmark" size={16} color="#007AFF" />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.viewModeMenuItem}
+                onPress={() => {
+                  setCalendarViewMode('week');
+                  setIsViewModeMenuOpen(false);
+                }}
+              >
+                <Text style={[
+                  styles.viewModeMenuText,
+                  calendarViewMode === 'week' && styles.viewModeMenuTextActive,
+                ]}>
+                  Weekly
+                </Text>
+                {calendarViewMode === 'week' && (
+                  <Ionicons name="checkmark" size={16} color="#007AFF" />
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Scrollable Content */}
       <FlatList
         data={[]}
         renderItem={() => null}
         ListHeaderComponent={
           <View style={styles.content}>
-            {/* Header */}
-            <View style={styles.headerRow}>
-              <Text style={[styles.title, isDark && styles.darkText]}>
-                Shifts
-              </Text>
-              <View style={styles.viewModeContainer}>
-                <TouchableOpacity
-                  style={[
-                    styles.viewModeChip,
-                    isDark && styles.darkViewModeChip,
-                    isViewModeMenuOpen && styles.viewModeChipOpen,
-                  ]}
-                  onPress={() => setIsViewModeMenuOpen(prev => !prev)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.viewModeChipText}>
-                    {calendarViewMode === 'month' ? 'Monthly' : 'Weekly'}
-                  </Text>
-                  <Ionicons
-                    name={isViewModeMenuOpen ? 'chevron-up' : 'chevron-down'}
-                    size={16}
-                    color="#007AFF"
-                  />
-                </TouchableOpacity>
-                {isViewModeMenuOpen && (
-                  <View style={[styles.viewModeMenu, isDark && styles.darkViewModeMenu]}>
-                    <TouchableOpacity
-                      style={styles.viewModeMenuItem}
-                      onPress={() => {
-                        setCalendarViewMode('month');
-                        setIsViewModeMenuOpen(false);
-                      }}
-                    >
-                      <Text style={[
-                        styles.viewModeMenuText,
-                        calendarViewMode === 'month' && styles.viewModeMenuTextActive,
-                      ]}>
-                        Monthly
-                      </Text>
-                      {calendarViewMode === 'month' && (
-                        <Ionicons name="checkmark" size={16} color="#007AFF" />
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.viewModeMenuItem}
-                      onPress={() => {
-                        setCalendarViewMode('week');
-                        setIsViewModeMenuOpen(false);
-                      }}
-                    >
-                      <Text style={[
-                        styles.viewModeMenuText,
-                        calendarViewMode === 'week' && styles.viewModeMenuTextActive,
-                      ]}>
-                        Weekly
-                      </Text>
-                      {calendarViewMode === 'week' && (
-                        <Ionicons name="checkmark" size={16} color="#007AFF" />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            </View>
-
             {/* Calendar Picker */}
             <View style={styles.calendarSection}>
               <ShiftsCalendarView
@@ -444,22 +558,23 @@ const styles = StyleSheet.create({
   darkContainer: {
     backgroundColor: '#000',
   },
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 80,
+    paddingTop: 0,
     paddingBottom: 16,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 16,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
   },
   darkText: {
     color: '#fff',
@@ -602,5 +717,239 @@ const styles = StyleSheet.create({
   },
   filterBannerClose: {
     padding: 4,
+  },
+  firstRunScroll: {
+    paddingHorizontal: 16,
+    paddingTop: 0,
+    paddingBottom: 40,
+    gap: 20,
+  },
+  previewCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  darkPreviewCard: {
+    backgroundColor: '#1c1c1e',
+  },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+    color: '#333',
+  },
+  previewDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  darkDescription: {
+    color: '#a0a0a0',
+  },
+  previewWeekHeader: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    gap: 8,
+    marginBottom: 8,
+  },
+  darkPreviewWeekHeader: {
+    backgroundColor: '#2c2c2e',
+  },
+  previewNavButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  darkPreviewNavButton: {
+    backgroundColor: '#1c1c1e',
+  },
+  previewWeekRange: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  previewTodayButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+    alignItems: 'center',
+  },
+  darkPreviewTodayButton: {
+    backgroundColor: '#1a2942',
+  },
+  previewTodayButtonText: {
+    fontSize: 13,
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  previewLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: '#f8f8f8',
+    borderRadius: 8,
+  },
+  darkPreviewLegend: {
+    backgroundColor: '#2c2c2e',
+  },
+  previewLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  previewLegendIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  previewActiveIndicator: {
+    backgroundColor: '#4CAF50',
+  },
+  previewInactiveIndicator: {
+    backgroundColor: '#FF9800',
+  },
+  previewLegendText: {
+    fontSize: 11,
+    color: '#666',
+    fontWeight: '500',
+  },
+  previewWeekDayRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingBottom: 0,
+  },
+  previewWeekDayCell: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  darkPreviewWeekDayCell: {
+    backgroundColor: '#2c2c2e',
+  },
+  previewWeekTodayCell: {
+    borderWidth: 2,
+    borderColor: '#007AFF',
+  },
+  previewWeekDayName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+  },
+  previewWeekTodayDayName: {
+    color: '#007AFF',
+  },
+  previewWeekDayNumber: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    marginTop: 4,
+  },
+  previewWeekTodayDayNumber: {
+    color: '#007AFF',
+  },
+  previewWeekIndicators: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 6,
+    justifyContent: 'center',
+  },
+  previewWeekIndicator: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  previewShiftCard: {
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e4e9f1',
+  },
+  darkPreviewShiftCard: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
+  },
+  previewShiftTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2933',
+    marginBottom: 2,
+  },
+  previewShiftSubtitle: {
+    fontSize: 13,
+    color: '#4b5563',
+  },
+  previewBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  previewBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  previewHelperText: {
+    fontSize: 14,
+    color: '#4b5563',
+    lineHeight: 20,
+  },
+  previewCTAButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  previewCTAText: {
+    position: 'absolute',
+    bottom: 46,
+    right: 90,
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'left',
+    lineHeight: 20,
+  },
+  viewModeChipDisabled: {
+    borderColor: '#dfe2e6',
+    opacity: 0.7,
   },
 });

@@ -13,6 +13,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useProfileStore } from '../../lib/state/profileStore';
+import { useAuthStore } from '../../lib/state/authStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useTemplatesStore } from '../../lib/state/templatesStore';
@@ -47,9 +48,10 @@ export default function NewLogScreen() {
   const isDark = colorScheme === 'dark';
   
   const { profile, initials } = useProfileStore();
+  const { user } = useAuthStore();
   const { shifts, getRosterFor } = useShiftsStore();
   const { addLog, getYesterdayLog, logs } = useLogsStore();
-  const { templates, loadTemplates } = useTemplatesStore();
+  const { templates, loadTemplates, isLoading: templatesLoading } = useTemplatesStore();
   
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
   const [actualStart, setActualStart] = useState('');
@@ -128,8 +130,8 @@ export default function NewLogScreen() {
   useFocusEffect(
     useCallback(() => {
       // Reload templates whenever screen comes into focus
-      loadTemplates();
-    }, [loadTemplates])
+      loadTemplates(user?.id);
+    }, [loadTemplates, user?.id])
   );
 
   useEffect(() => {
@@ -168,10 +170,12 @@ export default function NewLogScreen() {
         }
       }
     } else if (params.from === 'template') {
-      // If coming from template, show the template modal
-      setShowTemplateModal(true);
+      // If coming from template, wait for templates to finish loading before showing modal
+      if (!templatesLoading) {
+        setShowTemplateModal(true);
+      }
     }
-  }, [params.from, getYesterdayLog]);
+  }, [params.from, getYesterdayLog, templates, templatesLoading]);
 
   const handleCopyFromTemplate = (template: typeof templates[number]) => {
     // Templates don't have actual times - leave them blank
@@ -829,7 +833,7 @@ export default function NewLogScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalScrollView}>
-              {templates.length === 0 ? (
+              {!templates || templates.length === 0 ? (
                 <View style={styles.emptyTemplatesContainer}>
                   <Text style={[styles.emptyTemplatesText, isDark && styles.darkText]}>
                     No templates available. Create a template from an existing log.

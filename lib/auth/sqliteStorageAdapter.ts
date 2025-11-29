@@ -1,3 +1,5 @@
+import { xchacha20poly1305 } from '@noble/ciphers/chacha';
+import { getRandomBytesAsync } from 'expo-crypto';
 import { database } from '../db/sqlite';
 import * as SecureStore from 'expo-secure-store';
 import base64 from 'react-native-base64';
@@ -5,52 +7,11 @@ import { createScopedLogger } from '../utils/logger';
 
 const ENCRYPTION_KEY_STORE_KEY = 'overtime_auth_encryption_key';
 const ENCRYPTION_THRESHOLD = 1500; // Encrypt values larger than this
+const NONCE_LENGTH = 24;
+const ENCRYPTION_PREFIX = 'v2:'; // Marker for authenticated encryption payloads
 const SECURE_STORE_OPTIONS = { keychainService: 'overtime-securestore' };
 
 const debug = createScopedLogger('SQLiteStorageAdapter');
-
-// Simple XOR encryption for SQLite storage
-// Encryption key is stored in SecureStore (hardware-backed)
-async function getEncryptionKey(): Promise<string> {
-  try {
-    let key = await SecureStore.getItemAsync(ENCRYPTION_KEY_STORE_KEY, SECURE_STORE_OPTIONS);
-    if (!key) {
-      // Generate a new encryption key
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      key = Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-      await SecureStore.setItemAsync(ENCRYPTION_KEY_STORE_KEY, key, SECURE_STORE_OPTIONS);
-      debug.debug('Generated new encryption key');
-    }
-    return key;
-  } catch (error) {
-    debug.error('Failed to get encryption key:', error);
-    throw error;
-  }
-}
-
-// XOR encrypt/decrypt with binary-safe handling
-function xorEncrypt(data: string, key: string): Uint8Array {
-  const dataBytes = new TextEncoder().encode(data);
-  const keyBytes = new TextEncoder().encode(key);
-  const result = new Uint8Array(dataBytes.length);
-  
-  for (let i = 0; i < dataBytes.length; i++) {
-    result[i] = dataBytes[i] ^ keyBytes[i % keyBytes.length];
-  }
-  
-  return result;
-}
-
-function xorDecrypt(encrypted: Uint8Array, key: string): string {
-  const keyBytes = new TextEncoder().encode(key);
-  const result = new Uint8Array(encrypted.length);
-  
-  for (let i = 0; i < encrypted.length; i++) {
-    result[i] = encrypted[i] ^ keyBytes[i % keyBytes.length];
-  }
-  
-  return new TextDecoder().decode(result);
-}
 
 // Convert Uint8Array to base64 string (binary-safe)
 function uint8ArrayToBase64(bytes: Uint8Array): string {
@@ -69,6 +30,99 @@ function base64ToUint8Array(base64Str: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+async function getEncryptionKeyBytes(): Promise<Uint8Array> {
+  try {
+    let stored = await SecureStore.getItemAsync(ENCRYPTION_KEY_STORE_KEY, SECURE_STORE_OPTIONS);
+    if (stored) {
+      // Prefer base64 decoding; fallback to UTF-8 for legacy keys
+      try {
+        return base64ToUint8Array(stored);
+      } catch {
+        return new TextEncoder().encode(stored);
+      }
+    }
+
+    const keyBytes = await getRandomBytesAsync(32);
+    await SecureStore.setItemAsync(ENCRYPTION_KEY_STORE_KEY, uint8ArrayToBase64(keyBytes), SECURE_STORE_OPTIONS);
+    debug.debug('Generated new encryption key');
+    return keyBytes;
+  } catch (error) {
+    debug.error('Failed to get encryption key:', error);
+    throw error;
+  }
+}
+
+// Legacy XOR encrypt/decrypt (for migration on read)
+function legacyXorEncrypt(data: string, key: string): string {
+  const dataBytes = new TextEncoder().encode(data);
+  const keyBytes = new TextEncoder().encode(key);
+  const result = new Uint8Array(dataBytes.length);
+  for (let i = 0; i < dataBytes.length; i++) {
+    result[i] = dataBytes[i] ^ keyBytes[i % keyBytes.length];
+  }
+  return uint8ArrayToBase64(result);
+}
+
+function legacyXorDecrypt(encrypted: string, key: string): string | null {
+  try {
+    const encryptedBytes = base64ToUint8Array(encrypted);
+    const keyBytes = new TextEncoder().encode(key);
+    const result = new Uint8Array(encryptedBytes.length);
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      result[i] = encryptedBytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+    return new TextDecoder().decode(result);
+  } catch {
+    return null;
+  }
+}
+
+// XChaCha20-Poly1305 authenticated encryption (current)
+async function encryptPayload(value: string): Promise<string> {
+  const key = await getEncryptionKeyBytes();
+  const nonce = await getRandomBytesAsync(NONCE_LENGTH);
+  const cipher = xchacha20poly1305(key, nonce);
+  const ciphertext = cipher.encrypt(new TextEncoder().encode(value));
+  const payload = new Uint8Array(nonce.length + ciphertext.length);
+  payload.set(nonce, 0);
+  payload.set(ciphertext, nonce.length);
+  return `${ENCRYPTION_PREFIX}${uint8ArrayToBase64(payload)}`;
+}
+
+async function decryptPayload(value: string): Promise<string | null> {
+  // New scheme marker
+  if (value.startsWith(ENCRYPTION_PREFIX)) {
+    try {
+      const key = await getEncryptionKeyBytes();
+      const payload = base64ToUint8Array(value.slice(ENCRYPTION_PREFIX.length));
+      if (payload.length <= NONCE_LENGTH) {
+        throw new Error('Invalid payload length');
+      }
+      const nonce = payload.slice(0, NONCE_LENGTH);
+      const body = payload.slice(NONCE_LENGTH);
+      const cipher = xchacha20poly1305(key, nonce);
+      const plaintextBytes = cipher.decrypt(body);
+      return new TextDecoder().decode(plaintextBytes);
+    } catch (error) {
+      debug.warn('Failed to decrypt authenticated payload:', error);
+      return null;
+    }
+  }
+
+  // Legacy XOR fallback (best-effort)
+  try {
+    const legacyKey = await SecureStore.getItemAsync(ENCRYPTION_KEY_STORE_KEY, SECURE_STORE_OPTIONS);
+    if (legacyKey) {
+      const legacy = legacyXorDecrypt(value, legacyKey);
+      if (legacy !== null) return legacy;
+    }
+  } catch (legacyError) {
+    debug.warn('Legacy decryption failed:', legacyError);
+  }
+
+  return null;
 }
 
 // Key mapping: Use a different storage key for the actual session to avoid PKCE conflicts
@@ -254,19 +308,12 @@ export const SQLiteStorageAdapter = {
       
       // Decrypt if needed
       if (row.encrypted) {
-        try {
-          const encryptionKey = await getEncryptionKey();
-          // Convert base64 string to Uint8Array (binary-safe)
-          const encryptedBytes = base64ToUint8Array(value);
-          debug.debug('Converted from base64, encrypted bytes:', encryptedBytes.length);
-          
-          // XOR decrypt (returns the original string)
-          value = xorDecrypt(encryptedBytes, encryptionKey);
-          debug.debug('Decrypted, length:', value.length);
-        } catch (decryptError) {
-          debug.warn('Failed to decrypt value:', decryptError);
+        const decrypted = await decryptPayload(value);
+        if (decrypted === null) {
+          debug.warn('Failed to decrypt value; returning null to avoid corrupt session');
           return null;
         }
+        value = decrypted;
       }
 
       // Compression is disabled - data is stored uncompressed
@@ -341,35 +388,23 @@ export const SQLiteStorageAdapter = {
         }
       
       try {
-        // DISABLED: LZString compression produces Unicode that gets corrupted by TextEncoder/TextDecoder
-        // Session data (~2200 bytes) is small enough to store uncompressed
+        // Always prefer authenticated encryption for auth tokens; fall back to plaintext only if we must.
         let payload = value;
-        let compressed = false;
-
-        // Encrypt if payload is large
-        // Use binary-safe XOR encryption with Uint8Array to avoid UTF-8 corruption
-        let encrypted = 0;
+        let encryptedFlag = 0;
         const payloadBytes = new TextEncoder().encode(payload).length;
-        if (payloadBytes > ENCRYPTION_THRESHOLD) {
+        const shouldEncrypt = isSupabaseSessionKey(key) || payloadBytes > ENCRYPTION_THRESHOLD;
+
+        if (shouldEncrypt && !payload.startsWith(ENCRYPTION_PREFIX)) {
           try {
-            const encryptionKey = await getEncryptionKey();
-            // XOR encrypt returns Uint8Array (binary-safe)
-            const encryptedBytes = xorEncrypt(payload, encryptionKey);
-            // Convert to base64 for safe TEXT storage in SQLite
-            payload = uint8ArrayToBase64(encryptedBytes);
-            encrypted = 1;
-            debug.debug('Encrypted value (binary-safe):', { 
-              originalLength: payloadBytes, 
-              encryptedBytes: encryptedBytes.length,
-              base64Length: payload.length
-            });
+            payload = await encryptPayload(payload);
+            encryptedFlag = 1;
+            debug.debug('Encrypted value (AEAD):', { originalLength: payloadBytes, storedLength: payload.length });
           } catch (encryptError) {
-            debug.warn('Encryption failed:', encryptError);
-            // Continue with unencrypted value
+            debug.warn('Encryption failed, storing unencrypted payload (non-fatal):', encryptError);
           }
         }
 
-        await database.setAuthSession(storageKey, payload, encrypted);
+        await database.setAuthSession(storageKey, payload, encryptedFlag);
         debug.debug('Successfully stored in SQLite');
         
         // CRITICAL: Verify the write was successful for session keys
@@ -424,4 +459,3 @@ export const SQLiteStorageAdapter = {
     }
   },
 };
-

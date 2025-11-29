@@ -123,6 +123,10 @@ export default function WidgetConfirmScreen() {
 
       await addLog(draftLog);
 
+      // Schedule 8-hour reminder notification
+      const { notificationManager } = await import('../../lib/notifications');
+      await notificationManager.scheduleActiveShiftReminder(draftLog.id, today, currentActualTime);
+
       const message = roster 
         ? `Shift started at ${currentActualTime}` 
         : `Shift started at ${currentActualTime} (no roster found)`;

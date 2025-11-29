@@ -29,7 +29,7 @@ const costCentrePattern = /^[0-9]{6}$/;
 export const profileSchema = z.object({
   fullName: z.string().min(1, 'Full name is required'),
   payrollNumber: z.string().min(1, 'Payroll number is required'),
-  orgUnitNo: z.string().min(1, 'Organisation unit number is required'),
+  orgUnitNo: z.string().min(1, 'Organisation unit number is required').max(8, 'Organisation unit number must be 8 characters or less'),
   orgUnitName: z.string().min(1, 'Organisation unit name is required'),
   location: z.string().min(1, 'Location is required'),
   payLevel: z.string().min(1, 'Pay level is required'),

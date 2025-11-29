@@ -305,6 +305,7 @@ export default function OnboardingProfileSetup() {
               onChangeText={(value) => setFormData(prev => ({ ...prev, orgUnitNo: value }))}
               placeholder="Enter org unit number"
               placeholderTextColor={isDark ? '#666' : '#999'}
+              maxLength={8}
             />
             <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
               You can skip this for now. We'll remind you before exporting AVAC forms.

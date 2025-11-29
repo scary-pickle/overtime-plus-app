@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { UsualShift } from '../types';
 
 interface ShiftCardProps {
@@ -23,6 +24,8 @@ export function ShiftCard({
   isNextShift = false,
   isDark = false
 }: ShiftCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   const getTypeColor = (type: string) => {
     if (!type) return '#666';
     switch (type) {
@@ -46,6 +49,36 @@ export function ShiftCard({
   const getDayName = (dayOfWeek: number) => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return days[dayOfWeek];
+  };
+
+  const getSubtitleText = () => {
+    const parts: string[] = [];
+    
+    // Add day name
+    if (shift.dayOfWeek !== undefined) {
+      parts.push(getDayName(shift.dayOfWeek));
+    }
+    
+    // Add time range
+    const startTime = shift.rosteredStart || '--:--';
+    const finishTime = shift.rosteredFinish || '--:--';
+    parts.push(`${startTime} – ${finishTime}`);
+    
+    // Add frequency if biweekly
+    if (shift.type === 'biweekly') {
+      parts.push('(biweekly)');
+    }
+    
+    return parts.join(' · ');
+  };
+
+  const handleCardPress = () => {
+    setIsExpanded(!isExpanded);
+  };
+
+  const handleExpandPress = (e: any) => {
+    e.stopPropagation();
+    setIsExpanded(!isExpanded);
   };
 
   const formatDateRange = (activeFrom: string, activeTo?: string) => {
@@ -156,64 +189,85 @@ export function ShiftCard({
         isNextShift && styles.nextShiftCard,
         isNextShift && isDark && styles.darkNextShiftCard
       ]} 
-      onPress={onPress}
+      onPress={handleCardPress}
       activeOpacity={0.7}
     >
       <View style={styles.header}>
         <View style={styles.titleContainer}>
-          <View style={styles.titleRow}>
-            <Text style={[styles.title, isDark && styles.darkText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
-              {shift.label || 'Unnamed Shift'}
-            </Text>
-            {isNextShift && (
-              <View style={styles.nextShiftBadge}>
-                <Text style={styles.nextShiftText}>NEXT</Text>
-              </View>
-            )}
-          </View>
+          <Text style={[styles.title, isDark && styles.darkText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
+            {shift.label || 'Unnamed Shift'}
+          </Text>
+          <Text style={[styles.subtitle, isDark && styles.darkSecondaryText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
+            {getSubtitleText()}
+          </Text>
         </View>
         
-        <View style={[styles.typeBadge, { backgroundColor: getTypeColor(shift.type) }]}>
-          <Text style={styles.typeText}>{getTypeText(shift.type)}</Text>
+        <View style={styles.headerRight}>
+          {isNextShift && (
+            <View style={styles.nextUpBadge}>
+              <Ionicons name="calendar" size={14} color="#fff" />
+              <Text style={styles.nextUpText}>Next up</Text>
+            </View>
+          )}
+          <TouchableOpacity 
+            style={styles.expandButton}
+            onPress={handleExpandPress}
+          >
+            <Ionicons 
+              name={isExpanded ? "chevron-up" : "chevron-down"} 
+              size={18} 
+              color={isDark ? "#999" : "#6b7280"} 
+            />
+          </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.timeContainer}>
-          <Text style={[styles.timeLabel, isDark && styles.darkTimeLabel, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
-            {shift.rosteredStart || '--:--'} - {shift.rosteredFinish || '--:--'}
-          </Text>
-          {shift.mealBreakMinutes && shift.mealBreakMinutes > 0 && (
-            <Text style={[styles.mealBreak, isDark && styles.darkSecondaryText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
-              ({shift.mealBreakMinutes}m break)
-            </Text>
-          )}
-        </View>
-        
-        {shift.type === 'biweekly' && shift.weekIndex && (
-          <View style={styles.weekContainer}>
-            <Text style={[styles.weekLabel, isDark && styles.darkWeekLabel, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
-              Week {shift.weekIndex}
-            </Text>
-          </View>
-        )}
-        
-        <View style={styles.bottomRow}>
-          <View style={styles.dateContainer}>
-            {nextOccurrence && nextOccurrence !== '9999-12-31' ? (
-              <Text style={[styles.dateLabel, isDark && styles.darkSecondaryText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
-                {formatNextOccurrenceDate(nextOccurrence)}
-              </Text>
-            ) : (
-              <Text style={[styles.dateLabel, isDark && styles.darkSecondaryText, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
-                {formatDateRange(shift.activeFrom || '', shift.activeTo)}
-              </Text>
+      {isExpanded && (
+        <>
+          <View style={styles.expandedContent}>
+            {shift.type === 'biweekly' && shift.weekIndex && (
+              <View style={styles.metaRow}>
+                <Ionicons name="calendar-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  Week {shift.weekIndex}
+                </Text>
+              </View>
             )}
+
+            {shift.mealBreakMinutes && shift.mealBreakMinutes > 0 && (
+              <View style={styles.metaRow}>
+                <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  {shift.mealBreakMinutes}m meal break
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.metaRow}>
+              <Ionicons name="calendar" size={14} color={isDark ? "#999" : "#6b7280"} />
+              <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                {nextOccurrence && nextOccurrence !== '9999-12-31' 
+                  ? formatNextOccurrenceDate(nextOccurrence)
+                  : formatDateRange(shift.activeFrom || '', shift.activeTo)
+                }
+              </Text>
+            </View>
+
             {nextOccurrence && formatNextOccurrence(nextOccurrence) !== '' && (
-              <Text style={[styles.nextOccurrenceLabel, isDark && styles.darkNextOccurrence, !isActive() && styles.inactiveText, !isActive() && isDark && styles.darkInactiveText]}>
-                Next: {formatNextOccurrence(nextOccurrence)}
-              </Text>
+              <View style={styles.metaRow}>
+                <Ionicons name="arrow-forward" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkNextOccurrence]}>
+                  Next: {formatNextOccurrence(nextOccurrence)}
+                </Text>
+              </View>
             )}
+
+            <View style={styles.metaRow}>
+              <Ionicons name="repeat" size={14} color={isDark ? "#999" : "#6b7280"} />
+              <View style={[styles.typeBadge, { backgroundColor: getTypeColor(shift.type) }]}>
+                <Text style={styles.typeText}>{getTypeText(shift.type)}</Text>
+              </View>
+            </View>
           </View>
 
           {showActions && (
@@ -239,8 +293,8 @@ export function ShiftCard({
               )}
             </View>
           )}
-        </View>
-      </View>
+        </>
+      )}
     </TouchableOpacity>
   );
 }
@@ -248,18 +302,20 @@ export function ShiftCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 14,
-    marginVertical: 3,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e4e9f1',
+    padding: 16,
+    marginVertical: 6,
     marginHorizontal: 0,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 1,
     },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 2,
-    elevation: 3,
+    elevation: 2,
   },
   nextShiftCard: {
     borderWidth: 2,
@@ -273,37 +329,58 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
+    alignItems: 'center',
   },
   titleContainer: {
     flex: 1,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  nextShiftBadge: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  nextShiftText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
+    marginRight: 12,
   },
   title: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#333',
+    color: '#1f2933',
+    marginBottom: 2,
   },
-  day: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
+  subtitle: {
+    fontSize: 13,
+    color: '#4b5563',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  nextUpBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  nextUpText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  expandButton: {
+    padding: 4,
+  },
+  expandedContent: {
+    marginTop: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  metaText: {
+    fontSize: 13,
+    color: '#4b5563',
+    flex: 1,
   },
   typeBadge: {
     paddingHorizontal: 8,
@@ -315,68 +392,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  content: {
-    marginBottom: 0,
-  },
-  timeContainer: {
-    marginBottom: 3,
-  },
-  timeLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#007AFF',
-  },
-  mealBreak: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  weekContainer: {
-    marginBottom: 4,
-  },
-  weekLabel: {
-    fontSize: 12,
-    color: '#FF9800',
-    fontWeight: '500',
-  },
-  bottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginTop: 4,
-  },
-  dateContainer: {
-    flex: 1,
-    marginTop: 0,
-  },
-  dateLabel: {
-    fontSize: 11,
-    color: '#666',
-  },
-  nextOccurrenceLabel: {
-    fontSize: 11,
-    color: '#007AFF',
-    fontWeight: '600',
-    marginTop: 0,
-  },
-  inactiveText: {
-    color: '#999',
-  },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 8,
-    marginTop: 0,
+    gap: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e4e9f1',
   },
   actionButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 6,
     backgroundColor: '#f5f5f5',
     borderWidth: 1,
     borderColor: '#ddd',
-    minWidth: 60,
-    alignItems: 'center',
+    minWidth: 50,
   },
   deleteButton: {
     backgroundColor: '#ffebee',
@@ -390,21 +421,19 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     color: '#d32f2f',
   },
+  inactiveText: {
+    color: '#999',
+  },
   // Dark mode styles
   darkCard: {
-    backgroundColor: '#1c1c1e',
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
   },
   darkText: {
     color: '#fff',
   },
   darkSecondaryText: {
     color: '#999',
-  },
-  darkTimeLabel: {
-    color: '#64B5F6',
-  },
-  darkWeekLabel: {
-    color: '#FFB74D',
   },
   darkNextOccurrence: {
     color: '#64B5F6',

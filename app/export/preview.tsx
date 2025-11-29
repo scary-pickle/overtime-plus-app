@@ -35,7 +35,7 @@ export default function ExportPreviewScreen() {
   
   const { profile } = useProfileStore();
   const { user } = useAuthStore();
-  const { logs, getReadyLogs, batchExport, updateExportBatch } = useLogsStore();
+  const { logs, getReadyLogs, batchExport, updateExportBatch, markBatchAsSubmitted } = useLogsStore();
   
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -258,6 +258,11 @@ export default function ExportPreviewScreen() {
           mimeType: 'application/pdf',
           dialogTitle: 'Share AVAC Form',
         });
+        
+        // Mark batch as submitted after sharing
+        if (exportBatch) {
+          await markBatchAsSubmitted(exportBatch.id, 'manual');
+        }
       } else {
         Alert.alert('Sharing not available', 'Sharing is not available on this device.');
       }

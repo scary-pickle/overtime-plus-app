@@ -19,7 +19,6 @@ import { useLogsStore } from '../../lib/state/logsStore';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useAuthStore } from '../../lib/state/authStore';
 import { LogCard } from '../../components/LogCard';
-import { EmptyState } from '../../components/EmptyState';
 import { OvertimeLog } from '../../types';
 
 type FilterStatus = 'all' | 'draft' | 'ready' | 'exported';
@@ -33,7 +32,7 @@ export default function LogScreen() {
   
   // Get user from auth store for userId
   const { user } = useAuthStore();
-  const { logs, deleteLog, markReady, loadLogs, getReadyLogs, getExportedLogs, resetLogsToReady, getYesterdayLog, isLoading } = useLogsStore();
+  const { logs, deleteLog, markReady, loadLogs, getReadyLogs, getExportedLogs, resetLogsToReady, getYesterdayLog, isLoading, getActiveShiftDraft } = useLogsStore();
   const { profile } = useProfileStore();
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [filterType, setFilterType] = useState<FilterType>('category');
@@ -47,6 +46,7 @@ export default function LogScreen() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [menuAnimation] = useState(new Animated.Value(0));
+  const [showActiveShiftWarningModal, setShowActiveShiftWarningModal] = useState(false);
 
   // Load logs when screen comes into focus (similar to home screen)
   useFocusEffect(
@@ -83,6 +83,29 @@ export default function LogScreen() {
 
   const handleNewLog = () => {
     handleCloseAddMenu();
+    
+    // Check if there's an active shift in progress
+    const activeShift = getActiveShiftDraft();
+    
+    if (activeShift) {
+      // Show warning modal asking user what they want to do
+      setShowActiveShiftWarningModal(true);
+    } else {
+      // No active shift, proceed directly to create new log
+      router.push('/log/new');
+    }
+  };
+
+  const handleEditActiveShift = () => {
+    const activeShift = getActiveShiftDraft();
+    if (activeShift) {
+      setShowActiveShiftWarningModal(false);
+      router.push(`/log/${activeShift.id}`);
+    }
+  };
+
+  const handleCreateNewLogAnyway = () => {
+    setShowActiveShiftWarningModal(false);
     router.push('/log/new');
   };
 
@@ -231,11 +254,10 @@ export default function LogScreen() {
 
   const handleSelectAll = () => {
     const filtered = getFilteredLogs();
-    const selectableLogs = filtered.filter(log => log.status === 'ready' || log.status === 'exported');
-    if (selectedLogs.size === selectableLogs.length) {
+    if (selectedLogs.size === filtered.length) {
       setSelectedLogs(new Set());
     } else {
-      setSelectedLogs(new Set(selectableLogs.map(log => log.id)));
+      setSelectedLogs(new Set(filtered.map(log => log.id)));
     }
   };
 
@@ -253,11 +275,54 @@ export default function LogScreen() {
     const selectedLogsData = logs.filter(log => selectedLogsArray.includes(log.id));
     const readyLogs = selectedLogsData.filter(log => log.status === 'ready');
     const exportedLogs = selectedLogsData.filter(log => log.status === 'exported');
+    const draftLogs = selectedLogsData.filter(log => log.status === 'draft');
 
+    // Filter out drafts - only export ready and exported logs
+    const logsToExport = [...readyLogs, ...exportedLogs];
+
+    if (logsToExport.length === 0) {
+      Alert.alert(
+        'No Ready Logs Selected',
+        draftLogs.length > 0
+          ? `You have selected ${draftLogs.length} draft log${draftLogs.length !== 1 ? 's' : ''}. Only ready or exported logs can be exported. Please mark your drafts as ready first.`
+          : 'No ready or exported logs selected. Please select logs that are ready for export.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Show warning if drafts were selected but will be ignored
+    if (draftLogs.length > 0) {
+      const draftCount = draftLogs.length;
+      const exportCount = logsToExport.length;
+      const message = `You have selected ${exportCount} ready/exported log${exportCount !== 1 ? 's' : ''} and ${draftCount} draft log${draftCount !== 1 ? 's' : ''}. Only the ready/exported logs will be exported. The draft logs will be ignored. Do you want to continue?`;
+
+      Alert.alert(
+        'Draft Logs Will Be Ignored',
+        message,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue',
+            onPress: () => {
+              // Continue with export of ready/exported logs only
+              handleProceedWithExport(logsToExport, exportedLogs);
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    // No drafts, proceed with export
+    handleProceedWithExport(logsToExport, exportedLogs);
+  };
+
+  const handleProceedWithExport = async (logsToExport: OvertimeLog[], exportedLogs: OvertimeLog[]) => {
     // If there are any exported logs, show warning
     if (exportedLogs.length > 0) {
       const exportedCount = exportedLogs.length;
-      const readyCount = readyLogs.length;
+      const readyCount = logsToExport.length - exportedCount;
       let message = '';
       
       if (readyCount > 0 && exportedCount > 0) {
@@ -280,12 +345,13 @@ export default function LogScreen() {
                   await resetLogsToReady(exportedLogs.map(log => log.id));
                 }
                 
-                // Navigate to export preview with selected log IDs
+                // Navigate to export preview with selected log IDs (only ready/exported)
+                const logIdsToExport = logsToExport.map(log => log.id);
                 setSelectedLogs(new Set());
                 setIsSelectionMode(false);
                 router.push({
                   pathname: '/export/preview',
-                  params: { logIds: selectedLogsArray.join(',') }
+                  params: { logIds: logIdsToExport.join(',') }
                 });
               } catch (error) {
                 Alert.alert('Error', 'Failed to reset logs. Please try again.');
@@ -296,11 +362,12 @@ export default function LogScreen() {
       );
     } else {
       // Only ready logs, export directly
+      const logIdsToExport = logsToExport.map(log => log.id);
       setSelectedLogs(new Set());
       setIsSelectionMode(false);
       router.push({
         pathname: '/export/preview',
-        params: { logIds: selectedLogsArray.join(',') }
+        params: { logIds: logIdsToExport.join(',') }
       });
     }
   };
@@ -308,6 +375,59 @@ export default function LogScreen() {
   const handleCancelSelection = () => {
     setSelectedLogs(new Set());
     setIsSelectionMode(false);
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedLogs.size === 0) return;
+
+    const filtered = getFilteredLogs();
+    const selectedLogsArray = Array.from(selectedLogs);
+    const selectedLogsData = filtered.filter(log => selectedLogsArray.includes(log.id));
+
+    if (selectedLogsData.length === 0) return;
+
+    const logCount = selectedLogsData.length;
+    const formatCompactDate = (dateString: string) => {
+      return new Date(dateString).toLocaleDateString('en-AU', {
+        day: 'numeric',
+        month: 'short'
+      });
+    };
+    const logNames = selectedLogsData
+      .slice(0, 3)
+      .map(log => {
+        const category = log.smoCategories 
+          ? Object.entries(log.smoCategories).filter(([_, value]) => value).map(([key]) => key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())).join(', ') || 'SMO Categories'
+          : log.category;
+        return `${category} - ${formatCompactDate(log.date)}`;
+      })
+      .join('\n');
+    const moreText = logCount > 3 ? `\n...and ${logCount - 3} more` : '';
+
+    Alert.alert(
+      'Delete Logs',
+      `Are you sure you want to delete ${logCount} log${logCount > 1 ? 's' : ''}? This action cannot be undone.\n\n${logNames}${moreText}`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            // Delete all selected logs
+            selectedLogsData.forEach(log => {
+              deleteLog(log.id);
+            });
+            
+            // Exit selection mode
+            setIsSelectionMode(false);
+            setSelectedLogs(new Set());
+          },
+        },
+      ]
+    );
   };
 
   const handleFilterChange = (status: FilterStatus) => {
@@ -351,11 +471,6 @@ export default function LogScreen() {
 
   const getFilteredLogs = () => {
     let filtered = logs;
-
-    // In selection mode, hide drafts and only show ready/exported
-    if (isSelectionMode) {
-      filtered = filtered.filter(log => log.status === 'ready' || log.status === 'exported');
-    }
 
     // Apply status filter (but not in selection mode)
     if (!isSelectionMode && filterStatus !== 'all') {
@@ -621,25 +736,33 @@ export default function LogScreen() {
       )}
 
       {/* Export Section for Selection Mode */}
-      {isSelectionMode && selectedLogs.size > 0 && (
-        <View style={[styles.exportContainer, isDark && styles.darkExportContainer]}>
-          <View style={styles.exportInfo}>
-            <Text style={[styles.exportTitle, isDark && styles.darkText]}>
-              Export Selected Logs
-            </Text>
-            <Text style={[styles.exportSubtitle, isDark && styles.darkText]}>
-              {selectedLogs.size} log{selectedLogs.size !== 1 ? 's' : ''} selected for export
-            </Text>
+      {isSelectionMode && selectedLogs.size > 0 && (() => {
+        const selectedLogsArray = Array.from(selectedLogs);
+        const selectedLogsData = logs.filter(log => selectedLogsArray.includes(log.id));
+        const readyLogs = selectedLogsData.filter(log => log.status === 'ready' || log.status === 'exported');
+        const draftLogs = selectedLogsData.filter(log => log.status === 'draft');
+        
+        return readyLogs.length > 0 ? (
+          <View style={[styles.exportContainer, isDark && styles.darkExportContainer]}>
+            <View style={styles.exportInfo}>
+              <Text style={[styles.exportTitle, isDark && styles.darkText]}>
+                Export Selected Logs
+              </Text>
+              <Text style={[styles.exportSubtitle, isDark && styles.darkText]}>
+                {readyLogs.length} ready log{readyLogs.length !== 1 ? 's' : ''} will be exported
+                {draftLogs.length > 0 && ` (${draftLogs.length} draft${draftLogs.length !== 1 ? 's' : ''} will be ignored)`}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.exportButton, isDark && styles.darkExportButton]}
+              onPress={handleExportSelected}
+            >
+              <Ionicons name="document-text" size={20} color="#fff" />
+              <Text style={styles.exportButtonText}>Export PDF</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.exportButton, isDark && styles.darkExportButton]}
-            onPress={handleExportSelected}
-          >
-            <Ionicons name="document-text" size={20} color="#fff" />
-            <Text style={styles.exportButtonText}>Export PDF</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+        ) : null;
+      })()}
 
       {/* Selection Mode Info Bar */}
       {isSelectionMode && (
@@ -651,8 +774,7 @@ export default function LogScreen() {
             <Text style={[styles.selectionBarButtonText, isDark && styles.selectionBarButtonTextDark]}>
               {(() => {
                 const filtered = getFilteredLogs();
-                const selectableLogs = filtered.filter(log => log.status === 'ready' || log.status === 'exported');
-                return selectedLogs.size === selectableLogs.length ? 'Deselect All' : 'Select All';
+                return selectedLogs.size === filtered.length ? 'Deselect All' : 'Select All';
               })()}
             </Text>
           </TouchableOpacity>
@@ -831,13 +953,121 @@ export default function LogScreen() {
   // Show empty state only if not loading and logs are empty
   if (!isLoading && logs.length === 0) {
     return (
-      <EmptyState
-        title="No Overtime Logs"
-        description="Start tracking your overtime by creating your first log."
-        actionText="Add First Log"
-        onAction={handleNewLog}
-        icon="📝"
-      />
+      <View style={[styles.container, isDark && styles.darkContainer]}>
+        <View style={styles.emptyStateHeaderContainer}>
+          <Text style={[styles.title, isDark && styles.darkText]}>
+            Logs
+          </Text>
+          <View style={styles.placeholderHeaderActions}>
+            <View style={[styles.filterButton, styles.disabledFilterButton]}>
+              <Ionicons name="checkbox-outline" size={18} color="#A0A6AD" />
+            </View>
+            <View style={[styles.filterButton, styles.disabledFilterButton]}>
+              <Ionicons name="options" size={18} color="#A0A6AD" />
+            </View>
+          </View>
+        </View>
+        <View style={styles.emptyStateContainer}>
+          <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+            <Text style={[styles.previewTitle, isDark && styles.darkText]}>
+              Filter preview
+            </Text>
+            <Text style={[styles.previewDescription, isDark && styles.darkPreviewDescription]}>
+              Use filters to focus on drafts, ready logs or exported history.
+            </Text>
+            <View style={styles.previewChipRow}>
+              {[
+                { label: 'Ready (3)', active: true },
+                { label: 'Exported (2)', active: false },
+                { label: 'Draft (1)', active: false },
+              ].map((chip) => (
+                <View
+                  key={chip.label}
+                  style={[
+                    styles.previewChip,
+                    chip.active && styles.previewChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.previewChipText,
+                      chip.active && styles.previewChipTextActive,
+                    ]}
+                  >
+                    {chip.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+            <Text style={[styles.previewTitle, isDark && styles.darkText]}>
+              Log preview
+            </Text>
+            <Text style={[styles.previewDescription, isDark && styles.darkPreviewDescription]}>
+              Logs show your category, hours and status. Tap to edit, duplicate or mark ready for export.
+            </Text>
+
+            <View style={[styles.previewLogCard, isDark && styles.darkPreviewLogCard]}>
+              <View style={styles.previewLogHeader}>
+                <Text style={[styles.previewLogTitle, isDark && styles.darkText]}>
+                  ICU overtime
+                </Text>
+                <View style={[styles.previewBadge, styles.previewReadyBadge]}>
+                  <Ionicons name="checkmark-circle" size={14} color="#1b5728" />
+                  <Text style={styles.previewReadyText}>Ready</Text>
+                </View>
+              </View>
+              <Text style={[styles.previewLogSubtitle, isDark && styles.darkPreviewDescription]}>
+                12 Oct · 3h 45m · Night shift assistance
+              </Text>
+              <View style={styles.previewLogMeta}>
+                <View style={styles.previewMetaRow}>
+                  <Ionicons name="time" size={14} color="#6b7280" />
+                  <Text style={[styles.previewMetaText, isDark && styles.darkPreviewDescription]}>
+                    Prefilled from shift pattern
+                  </Text>
+                </View>
+                <View style={styles.previewMetaRow}>
+                  <Ionicons name="document-text" size={14} color="#6b7280" />
+                  <Text style={[styles.previewMetaText, isDark && styles.darkPreviewDescription]}>
+                    Tap to review details
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.previewLogCard, isDark && styles.darkPreviewLogCard]}>
+              <View style={styles.previewLogHeader}>
+                <Text style={[styles.previewLogTitle, isDark && styles.darkText]}>
+                  Clinic coverage
+                </Text>
+                <View style={[styles.previewBadge, styles.previewDraftBadge]}>
+                  <Ionicons name="ellipse" size={12} color="#a15c07" />
+                  <Text style={styles.previewDraftText}>Draft</Text>
+                </View>
+              </View>
+              <Text style={[styles.previewLogSubtitle, isDark && styles.darkPreviewDescription]}>
+                9 Oct · Needs delegate details before export
+              </Text>
+              <Text style={[styles.previewMetaText, isDark && styles.darkPreviewDescription]}>
+                Draft logs stay here until you’re ready to submit.
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.previewHelperText, isDark && styles.darkPreviewDescription]}>
+            Start tracking your overtime by creating your first log.
+          </Text>
+        </View>
+
+        {/* Add Button - positioned same as actual log list */}
+        <TouchableOpacity style={styles.addButton} onPress={handleNewLog}>
+          <Ionicons name="add" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.previewCTAText}>Add first log</Text>
+      </View>
     );
   }
 
@@ -851,16 +1081,26 @@ export default function LogScreen() {
           Logs
         </Text>
         {isSelectionMode ? (
-          <TouchableOpacity
-            onPress={handleCancelSelection}
-            style={[styles.filterButton, isDark && styles.darkFilterButton]}
-          >
-            <Ionicons 
-              name="close" 
-              size={18} 
-              color={isDark ? '#999' : '#666'} 
-            />
-          </TouchableOpacity>
+          <View style={styles.selectionModeButtons}>
+            {selectedLogs.size > 0 && (
+              <TouchableOpacity
+                onPress={handleBatchDelete}
+                style={[styles.filterButton, isDark && styles.darkFilterButton]}
+              >
+                <Ionicons name="trash-outline" size={18} color={isDark ? '#ff6b6b' : '#d32f2f'} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              onPress={handleCancelSelection}
+              style={[styles.filterButton, isDark && styles.darkFilterButton]}
+            >
+              <Ionicons 
+                name="close" 
+                size={18} 
+                color={isDark ? '#999' : '#666'} 
+              />
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={styles.normalModeButtons}>
             <TouchableOpacity
@@ -916,7 +1156,7 @@ export default function LogScreen() {
         onRequestClose={handleCloseAddMenu}
       >
         <TouchableWithoutFeedback onPress={handleCloseAddMenu}>
-          <View style={styles.modalOverlay}>
+          <View style={styles.addMenuOverlay}>
             <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
               <Animated.View
                 style={[
@@ -989,6 +1229,47 @@ export default function LogScreen() {
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Active Shift Warning Modal */}
+      <Modal
+        visible={showActiveShiftWarningModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowActiveShiftWarningModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, isDark && styles.darkModalContent]}>
+            <Text style={[styles.modalTitle, isDark && styles.darkText]}>
+              Active Shift in Progress
+            </Text>
+            <Text style={[styles.modalMessage, isDark && styles.darkText]}>
+              You have an active shift in progress. Would you like to edit the current shift log or create a new log?
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary]}
+                onPress={handleEditActiveShift}
+              >
+                <Text style={styles.modalButtonPrimaryText}>Edit Active Shift</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary, isDark && styles.darkModalButtonSecondary]}
+                onPress={handleCreateNewLogAnyway}
+              >
+                <Text style={[styles.modalButtonSecondaryText, isDark && styles.darkModalButtonSecondaryText]}>
+                  Create New Log
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => setShowActiveShiftWarningModal(false)}
+              >
+                <Text style={[styles.modalButtonCancelText, isDark && styles.darkText]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1199,7 +1480,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  modalOverlay: {
+  addMenuOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'flex-end',
@@ -1536,18 +1817,35 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
   },
+  selectionModeButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
   selectionBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
+    paddingHorizontal: 16,
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    marginVertical: 6,
+    marginHorizontal: 0,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   darkSelectionBar: {
-    backgroundColor: '#1c1c1e',
-    borderBottomColor: '#333',
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
   },
   selectionBarButton: {
     paddingVertical: 6,
@@ -1568,5 +1866,259 @@ const styles = StyleSheet.create({
   },
   selectionCountDark: {
     color: '#999',
+  },
+  firstRunScroll: {
+    paddingHorizontal: 16,
+    paddingTop: 80,
+    paddingBottom: 48,
+    gap: 20,
+  },
+  emptyStateHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 80,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  emptyStateContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 0,
+    paddingBottom: 48,
+    gap: 16,
+  },
+  previewCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  darkPreviewCard: {
+    backgroundColor: '#1c1c1e',
+  },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+    color: '#111827',
+  },
+  previewDescription: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  darkPreviewDescription: {
+    color: '#a0a0a0',
+  },
+  previewChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  previewChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#fff',
+  },
+  previewChipActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  previewChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4b5563',
+  },
+  previewChipTextActive: {
+    color: '#fff',
+  },
+  previewLogCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    padding: 16,
+    marginBottom: 12,
+    backgroundColor: '#fff',
+  },
+  darkPreviewLogCard: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
+  },
+  previewLogHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  previewLogTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  previewLogSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 10,
+  },
+  previewBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  previewReadyBadge: {
+    backgroundColor: '#d1fae5',
+  },
+  previewDraftBadge: {
+    backgroundColor: '#fef3c7',
+  },
+  previewReadyText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1b5728',
+  },
+  previewDraftText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#a15c07',
+  },
+  previewLogMeta: {
+    gap: 6,
+  },
+  previewMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  previewMetaText: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  previewHelperText: {
+    fontSize: 14,
+    color: '#4b5563',
+    lineHeight: 20,
+  },
+  previewCTAButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  previewCTAText: {
+    position: 'absolute',
+    bottom: 46,
+    right: 90,
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'left',
+    lineHeight: 20,
+  },
+  placeholderHeaderActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  disabledFilterButton: {
+    borderColor: '#e0e0e0',
+    backgroundColor: '#f4f4f4',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  darkModalContent: {
+    backgroundColor: '#1c1c1e',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  modalButtons: {
+    gap: 12,
+  },
+  modalButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonPrimary: {
+    backgroundColor: '#007AFF',
+  },
+  modalButtonSecondary: {
+    backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  darkModalButtonSecondary: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  modalButtonCancel: {
+    backgroundColor: 'transparent',
+  },
+  modalButtonPrimaryText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalButtonSecondaryText: {
+    color: '#007AFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  darkModalButtonSecondaryText: {
+    color: '#5ac8fa',
+  },
+  modalButtonCancelText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

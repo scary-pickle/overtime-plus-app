@@ -202,6 +202,101 @@ class NotificationManager {
   }
 
   /**
+   * Schedule an 8-hour reminder for an active shift
+   * @param shiftId - The ID of the active shift
+   * @param shiftDate - The date the shift started (YYYY-MM-DD)
+   * @param startTime - The time the shift started (HH:mm)
+   */
+  async scheduleActiveShiftReminder(shiftId: string, shiftDate: string, startTime: string): Promise<void> {
+    try {
+      if (!this.settings.enabled) return;
+
+      // Cancel any existing active shift reminders first to prevent old notifications from firing
+      await this.cancelAllActiveShiftReminders();
+
+      // Parse start time to calculate 8 hours later
+      const [hours, minutes] = startTime.split(':').map(Number);
+      const [year, month, day] = shiftDate.split('-').map(Number);
+      
+      // Create date for when shift started
+      const shiftStartDate = new Date(year, month - 1, day, hours, minutes, 0);
+      
+      // Add 8 hours
+      const reminderDate = new Date(shiftStartDate);
+      reminderDate.setHours(reminderDate.getHours() + 8);
+      
+      // Only schedule if reminder time is in the future
+      if (reminderDate <= new Date()) {
+        debug.debug('8-hour reminder time has already passed, not scheduling');
+        return;
+      }
+
+      const notificationId = `active_shift_reminder_${shiftId}`;
+      
+      await Notifications.scheduleNotificationAsync({
+        identifier: notificationId,
+        content: {
+          title: 'Shift Reminder',
+          body: "You've been tracking a shift for 8 hours. Don't forget to end it!",
+          data: {
+            shiftId,
+            shiftDate,
+            type: 'active_shift_8hr_reminder'
+          },
+          sound: true,
+          priority: Notifications.AndroidNotificationPriority.HIGH,
+        },
+        trigger: {
+          date: reminderDate,
+          channelId: 'overtime-reminders'
+        }
+      });
+
+      debug.debug(`Scheduled 8-hour reminder for shift ${shiftId} at ${reminderDate.toISOString()}`);
+    } catch (error) {
+      debug.error('Failed to schedule active shift reminder:', error);
+    }
+  }
+
+  /**
+   * Cancel the 8-hour reminder for an active shift
+   * @param shiftId - The ID of the active shift
+   */
+  async cancelActiveShiftReminder(shiftId: string): Promise<void> {
+    try {
+      const notificationId = `active_shift_reminder_${shiftId}`;
+      await Notifications.cancelScheduledNotificationAsync(notificationId);
+      debug.debug(`Cancelled 8-hour reminder for shift ${shiftId}`);
+    } catch (error) {
+      debug.error('Failed to cancel active shift reminder:', error);
+    }
+  }
+
+  /**
+   * Cancel all active shift reminder notifications
+   * This is useful when starting a new shift to ensure no old reminders fire
+   */
+  async cancelAllActiveShiftReminders(): Promise<void> {
+    try {
+      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+      const activeShiftReminders = scheduledNotifications.filter(
+        notification => notification.identifier.startsWith('active_shift_reminder_')
+      );
+      
+      for (const notification of activeShiftReminders) {
+        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+        debug.debug(`Cancelled active shift reminder: ${notification.identifier}`);
+      }
+      
+      if (activeShiftReminders.length > 0) {
+        debug.debug(`Cancelled ${activeShiftReminders.length} active shift reminder(s)`);
+      }
+    } catch (error) {
+      debug.error('Failed to cancel all active shift reminders:', error);
+    }
+  }
+
+  /**
    * Get all scheduled notifications
    */
   async getScheduledNotifications(): Promise<Notifications.NotificationRequest[]> {

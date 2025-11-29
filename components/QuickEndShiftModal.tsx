@@ -15,6 +15,7 @@ import { OvertimeLog } from '../types';
 import { useProfileStore } from '../lib/state/profileStore';
 import { useLogsStore, validateLogForReady } from '../lib/state/logsStore';
 import { computeMinutes, formatMinutes, getCurrentTime, getShiftStartDate, getCurrentDate } from '../lib/time';
+import { notificationManager } from '../lib/notifications';
 import { TimeInput } from './TimeInput';
 import { SharedTimePickerProvider } from './SharedTimePicker';
 import { NAButton } from './NAButton';
@@ -238,9 +239,10 @@ export function QuickEndShiftModal({
 
       await updateLog(updatedLog);
       
-      // Clear active shift flag
+      // Clear active shift flag and cancel 8-hour reminder
       if (draftLog.isActiveShift) {
         await clearActiveShift(draftLog.id);
+        await notificationManager.cancelActiveShiftReminder(draftLog.id);
       }
 
       Alert.alert('Success', 'Shift logged successfully!', [

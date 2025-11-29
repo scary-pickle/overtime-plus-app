@@ -292,6 +292,7 @@ function FieldInputUncontrolled({
   isDark,
   isEditing,
   fieldKey,
+  maxLength,
 }: {
   label: string;
   placeholder: string;
@@ -301,6 +302,7 @@ function FieldInputUncontrolled({
   isDark: boolean;
   isEditing: boolean;
   fieldKey: string;
+  maxLength?: number;
 }) {
   const [localValue, setLocalValue] = useState(initialValue);
   const isFirstRender = useRef(true);
@@ -383,6 +385,7 @@ function FieldInputUncontrolled({
         editable={isEditing}
         blurOnSubmit={false}
         returnKeyType="next"
+        maxLength={maxLength}
       />
     </View>
   );
@@ -397,7 +400,8 @@ const FieldInput = React.memo(FieldInputUncontrolled, (prevProps, nextProps) => 
     prevProps.label === nextProps.label &&
     prevProps.placeholder === nextProps.placeholder &&
     prevProps.required === nextProps.required &&
-    prevProps.onChangeText === nextProps.onChangeText;
+    prevProps.onChangeText === nextProps.onChangeText &&
+    prevProps.maxLength === nextProps.maxLength;
   
     debug.debug(`[FieldInput-${nextProps.fieldKey}] memo comparison`, {
     shouldSkipRender,
@@ -588,7 +592,6 @@ export default function ProfileScreen() {
       delegateDetails: false,
       account: false,
       settings: false,
-      widgetSetup: false,
     };
   });
   
@@ -599,7 +602,6 @@ export default function ProfileScreen() {
   const delegateDetailsAnimation = useRef(new Animated.Value(0)).current;
   const accountAnimation = useRef(new Animated.Value(0)).current;
   const settingsAnimation = useRef(new Animated.Value(0)).current;
-  const widgetSetupAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadProfile(user?.id);
@@ -762,8 +764,6 @@ export default function ProfileScreen() {
         return delegateDetailsAnimation;
       case 'settings':
         return settingsAnimation;
-      case 'widgetSetup':
-        return widgetSetupAnimation;
       default:
         return employeeDetailsAnimation;
     }
@@ -1194,6 +1194,7 @@ export default function ProfileScreen() {
             onChangeText={fieldHandlers.orgUnitNo}
             isDark={isDark}
             isEditing={isEditing}
+            maxLength={8}
           />
           <FieldInput
             fieldKey="serviceEnquiryNumber"
@@ -1512,45 +1513,6 @@ export default function ProfileScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#f87171' : '#dc2626'} />
           </TouchableOpacity>
-        </CollapsibleSection>
-
-        {/* Widget Setup */}
-        <CollapsibleSection
-          sectionKey="widgetSetup"
-          title="Home Screen Widget"
-          subtitle="Quick access to start or end shifts"
-          showEdit={false}
-          isDark={isDark}
-          isExpanded={expandedSections.widgetSetup}
-          isEditing={isEditing}
-          animationValue={widgetSetupAnimation}
-          onToggle={toggleSection}
-        >
-          <Text style={[styles.description, isDark && styles.darkText]}>
-            Add the Overtime+ widget to your home screen to quickly start or end shifts.
-          </Text>
-          
-          <View style={styles.widgetInstructions}>
-            <Text style={[styles.instructionTitle, isDark && styles.darkText]}>
-              iOS:
-            </Text>
-            <Text style={[styles.instructionText, isDark && styles.darkText]}>
-              1. Long press on your home screen{'\n'}
-              2. Tap the "+" button{'\n'}
-              3. Search for "Overtime+"{'\n'}
-              4. Select widget size and tap "Add Widget"
-            </Text>
-            
-            <Text style={[styles.instructionTitle, isDark && styles.darkText]}>
-              Android:
-            </Text>
-            <Text style={[styles.instructionText, isDark && styles.darkText]}>
-              1. Long press on your home screen{'\n'}
-              2. Select "Widgets"{'\n'}
-              3. Find "Overtime+"{'\n'}
-              4. Drag to your home screen
-            </Text>
-          </View>
         </CollapsibleSection>
 
         {/* Action Buttons */}
@@ -1922,28 +1884,6 @@ const styles = StyleSheet.create({
   },
   switch: {
     transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }],
-  },
-  widgetInstructions: {
-    marginTop: 12,
-    gap: 16,
-  },
-  instructionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 6,
-  },
-  instructionText: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  description: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-    marginBottom: 12,
   },
   missingFieldsCard: {
     backgroundColor: '#fff3cd',

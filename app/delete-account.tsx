@@ -30,7 +30,7 @@ export default function DeleteAccountScreen() {
   const handleDelete = () => {
     Alert.alert(
       'Delete account?',
-      'This will permanently delete your account, Supabase data, local data on this device, and sign you out of subscriptions. This cannot be undone.',
+      'This will permanently delete your account, all Supabase-stored data (logs, shifts, exports, attachments), local data on this device, and disconnect any subscriptions. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -77,10 +77,14 @@ export default function DeleteAccountScreen() {
               Deleting your account will remove:
             </Text>
             <View style={styles.list}>
-              <Text style={[styles.listItem, isDark && styles.darkText]}>• Profile and roster data</Text>
-              <Text style={[styles.listItem, isDark && styles.darkText]}>• Logs and export batches</Text>
               <Text style={[styles.listItem, isDark && styles.darkText]}>
-                • Supabase account and subscription linkage
+                • Profile, roster, logs, shifts, and export batches stored in Supabase
+              </Text>
+              <Text style={[styles.listItem, isDark && styles.darkText]}>
+                • Files stored in Supabase Storage (attachments, exported PDFs)
+              </Text>
+              <Text style={[styles.listItem, isDark && styles.darkText]}>
+                • RevenueCat subscription linkage and entitlements
               </Text>
               <Text style={[styles.listItem, isDark && styles.darkText]}>
                 • Local data and cached sessions on this device
