@@ -72,6 +72,24 @@ interface LogsState {
   loadLogs: (userId?: string | null) => Promise<void>;
   loadExportBatches: (userId?: string | null) => Promise<void>;
   addLog: (log: OvertimeLog, userId?: string | null) => Promise<void>;
+  addShiftSwapLogs: (data: {
+    date: string;
+    personAInitials: string;
+    personARosteredStart: string | 'N/A';
+    personARosteredFinish: string | 'N/A';
+    personAActualStart: string;
+    personAActualFinish: string;
+    personBInitials: string;
+    personBName: string;
+    personBPayrollNumber: string;
+    personBPayLevel?: string;
+    personBRosteredStart: string | 'N/A';
+    personBRosteredFinish: string | 'N/A';
+    personBActualStart: string;
+    personBActualFinish: string;
+    mealBreakMinutes: number;
+    status: 'draft' | 'ready';
+  }, userId?: string | null) => Promise<void>;
   updateLog: (log: OvertimeLog, userId?: string | null) => Promise<void>;
   deleteLog: (id: string, userId?: string | null) => Promise<void>;
   markReady: (id: string, userId?: string | null) => Promise<void>;
@@ -480,6 +498,138 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to add log' 
       });
+    }
+  },
+
+  addShiftSwapLogs: async (data, userId?: string | null) => {
+    set({ isLoading: true, error: null });
+    try {
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Validate reciprocal swap
+      if (data.personARosteredStart !== 'N/A' && data.personBRosteredStart !== 'N/A') {
+        if (data.personAActualStart !== data.personBRosteredStart || data.personAActualFinish !== data.personBRosteredFinish) {
+          throw new Error('Person A actual times must match Person B rostered times (reciprocal swap)');
+        }
+        if (data.personBActualStart !== data.personARosteredStart || data.personBActualFinish !== data.personARosteredFinish) {
+          throw new Error('Person B actual times must match Person A rostered times (reciprocal swap)');
+        }
+      }
+      
+      // Generate shared shift swap ID
+      const shiftSwapId = `shift_swap_${Date.now()}`;
+      const timestamp = Date.now();
+      
+      // Calculate overtime for both entries
+      const personACalc = computeMinutes(
+        data.personAActualStart,
+        data.personAActualFinish,
+        data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+        data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+        data.mealBreakMinutes
+      );
+      
+      const personBCalc = computeMinutes(
+        data.personBActualStart,
+        data.personBActualFinish,
+        data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
+        data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
+        data.mealBreakMinutes
+      );
+      
+      // Create Person A log
+      const logA: OvertimeLog = {
+        id: `log_${timestamp}_A`,
+        date: data.date,
+        rosteredStart: data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+        rosteredFinish: data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+        actualStart: data.personAActualStart,
+        actualFinish: data.personAActualFinish,
+        mealBreakMinutes: data.mealBreakMinutes || undefined,
+        minutesOvertime: personACalc.roundedOvertime,
+        category: 'Change shift',
+        comments: 'Shift swap',
+        initials: data.personAInitials,
+        status: data.status,
+        source: 'manual',
+        shiftSwapId,
+        linkedLogId: `log_${timestamp}_B`,
+        isShiftSwap: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      // Create Person B log (store Person B's details in swapPartner fields for PDF generation)
+      const logB: OvertimeLog = {
+        id: `log_${timestamp}_B`,
+        date: data.date,
+        rosteredStart: data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
+        rosteredFinish: data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
+        actualStart: data.personBActualStart,
+        actualFinish: data.personBActualFinish,
+        mealBreakMinutes: data.mealBreakMinutes || undefined,
+        minutesOvertime: personBCalc.roundedOvertime,
+        category: 'Change shift',
+        comments: 'Shift swap',
+        initials: data.personBInitials,
+        status: data.status,
+        source: 'manual',
+        shiftSwapId,
+        linkedLogId: `log_${timestamp}_A`,
+        isShiftSwap: true,
+        // Store Person B's details (these will be used for PDF generation)
+        swapPartnerName: data.personBName,
+        swapPartnerPayrollNumber: data.personBPayrollNumber,
+        swapPartnerPayLevel: data.personBPayLevel,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      // Also store Person B's details in Person A's log for reference
+      logA.swapPartnerName = data.personBName;
+      logA.swapPartnerPayrollNumber = data.personBPayrollNumber;
+      logA.swapPartnerPayLevel = data.personBPayLevel;
+      
+      // Save both logs to local SQLite
+      await database.createOvertimeLog(logA, finalUserId);
+      await database.createOvertimeLog(logB, finalUserId);
+      
+      const { logs } = get();
+      set({ 
+        logs: [logA, logB, ...logs], 
+        isLoading: false,
+        error: null 
+      });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        logsSync.uploadLog(logA, finalUserId).catch(err => {
+          debug.error('Background sync failed for log A (non-fatal):', err);
+          syncQueue.add({
+            type: 'log',
+            operation: 'create',
+            data: logA,
+            userId: finalUserId,
+          }).catch(() => {});
+        });
+        
+        logsSync.uploadLog(logB, finalUserId).catch(err => {
+          debug.error('Background sync failed for log B (non-fatal):', err);
+          syncQueue.add({
+            type: 'log',
+            operation: 'create',
+            data: logB,
+            userId: finalUserId,
+          }).catch(() => {});
+        });
+      }
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to create shift swap logs' 
+      });
+      throw error; // Re-throw so the UI can show error
     }
   },
 

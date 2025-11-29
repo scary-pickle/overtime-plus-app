@@ -1741,20 +1741,49 @@ async function drawLogRow(
   // Format date
   const date = new Date(log.date).toLocaleDateString('en-AU');
   
-  // Draw employee name (from profile)
+  // Draw employee name (use swap partner details for shift swap Person B logs)
   const employeeNameBox = avacCoordinates.table[`employeeName_row${rowNum}`];
   console.log(`📝 Employee name box for row ${rowNum}:`, employeeNameBox);
   if (employeeNameBox) {
-    console.log(`📝 Drawing employee name: ${profile.fullName}`);
-    drawTextInBox(page, profile.fullName, employeeNameBox, helvetica, { color: rgb(0, 0, 0) });
+    // For shift swaps, identify Person B's log by checking if initials don't match profile
+    // Person A's log will have initials matching profile.employeeInitial
+    // Person B's log will have different initials
+    let employeeName = profile.fullName;
+    const isPersonBLog = log.isShiftSwap && 
+                         log.swapPartnerName && 
+                         log.initials && 
+                         profile.employeeInitial && 
+                         log.initials.toUpperCase() !== profile.employeeInitial.toUpperCase();
+    
+    if (isPersonBLog) {
+      // This is Person B's log - use Person B's details from swapPartner fields
+      employeeName = log.swapPartnerName;
+      console.log(`📝 Drawing employee name (Person B): ${employeeName} (initials: ${log.initials} vs profile: ${profile.employeeInitial})`);
+    } else {
+      // This is Person A's log or a regular log - use profile
+      employeeName = profile.fullName;
+      console.log(`📝 Drawing employee name (Person A/Regular): ${employeeName} (initials: ${log.initials})`);
+    }
+    drawTextInBox(page, employeeName, employeeNameBox, helvetica, { color: rgb(0, 0, 0) });
   } else {
     console.log(`❌ No employee name box found for row ${rowNum}`);
   }
 
-  // Draw pay level (from profile)
+  // Draw pay level (use swap partner pay level for shift swap Person B logs)
   const payLevelBox = avacCoordinates.table[`payLevel_row${rowNum}`];
   if (payLevelBox) {
-    drawTextInBox(page, profile.payLevel, payLevelBox, helvetica, { color: rgb(0, 0, 0) });
+    // Same logic: identify Person B by initials mismatch
+    const isPersonBLog = log.isShiftSwap && 
+                         log.swapPartnerName && 
+                         log.initials && 
+                         profile.employeeInitial && 
+                         log.initials.toUpperCase() !== profile.employeeInitial.toUpperCase();
+    
+    let payLevel = profile.payLevel;
+    if (isPersonBLog && log.swapPartnerPayLevel) {
+      payLevel = log.swapPartnerPayLevel;
+    }
+    drawTextInBox(page, payLevel, payLevelBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw date
@@ -1810,15 +1839,27 @@ async function drawLogRow(
     drawTextInBox(page, log.comments, commentsBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
-  // Draw personnel assignment number
+  // Draw personnel assignment number (use swap partner payroll number for shift swap Person B logs)
   const personnelBox = avacCoordinates.table[`personnelAssignmentNo_row${rowNum}`];
   if (personnelBox) {
-    drawTextInBox(page, profile.payrollNumber, personnelBox, helvetica, { color: rgb(0, 0, 0) });
+    // Same logic: identify Person B by initials mismatch
+    const isPersonBLog = log.isShiftSwap && 
+                         log.swapPartnerName && 
+                         log.initials && 
+                         profile.employeeInitial && 
+                         log.initials.toUpperCase() !== profile.employeeInitial.toUpperCase();
+    
+    let payrollNumber = profile.payrollNumber;
+    if (isPersonBLog && log.swapPartnerPayrollNumber) {
+      payrollNumber = log.swapPartnerPayrollNumber;
+    }
+    drawTextInBox(page, payrollNumber, personnelBox, helvetica, { color: rgb(0, 0, 0) });
   }
 
   // Draw employee initials
+  // Always draw initials for all logs (both Person A and Person B in shift swaps, and regular logs)
   const initialsBox = avacCoordinates.table[`employeeInitial_row${rowNum}`];
-  if (initialsBox) {
+  if (initialsBox && log.initials) {
     drawTextInBox(page, log.initials, initialsBox, helvetica, { color: rgb(0, 0, 0) });
   }
 

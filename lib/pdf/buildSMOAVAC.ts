@@ -642,12 +642,27 @@ async function drawSMOLogRow(
 ): Promise<void> {
   console.log(`📝 Drawing SMO log row ${rowNum}...`);
   
-  // Personnel Assignment ID
+  // Personnel Assignment ID (use swap partner payroll number for shift swap Person B logs)
   const personnelBox = (smoCoordinates.fields.table as any)[`personnelAssignmentNo_row${rowNum}`];
-  if (personnelBox && profile.payrollNumber) {
-    drawTextInBox(page, profile.payrollNumber, personnelBox, helvetica, { 
-      color: rgb(0, 0, 0) 
-    });
+  if (personnelBox) {
+    // Identify Person B by checking if initials don't match profile
+    // Person A's log will have initials matching profile.employeeInitial
+    // Person B's log will have different initials
+    const isPersonBLog = log.isShiftSwap && 
+                         log.swapPartnerName && 
+                         log.initials && 
+                         profile.employeeInitial && 
+                         log.initials.toUpperCase() !== profile.employeeInitial.toUpperCase();
+    
+    let payrollNumber = profile.payrollNumber;
+    if (isPersonBLog && log.swapPartnerPayrollNumber) {
+      payrollNumber = log.swapPartnerPayrollNumber;
+    }
+    if (payrollNumber) {
+      drawTextInBox(page, payrollNumber, personnelBox, helvetica, { 
+        color: rgb(0, 0, 0) 
+      });
+    }
   }
   
   // Concurrent Employment tickbox
@@ -750,6 +765,7 @@ async function drawSMOLogRow(
   }
   
   // Employee Initial
+  // Always draw initials for all logs (both Person A and Person B in shift swaps, and regular logs)
   const initialBox = (smoCoordinates.fields.table as any)[`employeeInitial_row${rowNum}`];
   if (initialBox && log.initials) {
     drawTextInBox(page, log.initials, initialBox, helvetica, { 

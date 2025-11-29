@@ -152,9 +152,59 @@ export default function ExportPreviewScreen() {
       return;
     }
 
+    // Expand shift swaps - include linked logs for shift swaps
+    // Use a Set to track processed log IDs to prevent duplicates
+    const processedLogIds = new Set<string>();
+    const expandedLogs: OvertimeLog[] = [];
+    
+    for (const log of readyLogs) {
+      // Skip if already processed
+      if (processedLogIds.has(log.id)) {
+        continue;
+      }
+      
+      // If this is a shift swap, handle both logs together to ensure correct order
+      if (log.isShiftSwap && log.linkedLogId) {
+        const linkedLog = logs.find(l => l.id === log.linkedLogId);
+        if (linkedLog && (linkedLog.status === 'ready' || linkedLog.status === 'exported')) {
+          // Determine which is Person A (matches profile initials) and which is Person B
+          const logAMatchesProfile = log.initials && profile.employeeInitial && 
+                                     log.initials.toUpperCase() === profile.employeeInitial.toUpperCase();
+          const linkedLogMatchesProfile = linkedLog.initials && profile.employeeInitial && 
+                                         linkedLog.initials.toUpperCase() === profile.employeeInitial.toUpperCase();
+          
+          // Person A should come first (row 1), Person B second (row 2)
+          if (logAMatchesProfile) {
+            // Current log is Person A, linked log is Person B
+            expandedLogs.push(log);
+            expandedLogs.push(linkedLog);
+          } else if (linkedLogMatchesProfile) {
+            // Linked log is Person A, current log is Person B
+            expandedLogs.push(linkedLog);
+            expandedLogs.push(log);
+          } else {
+            // Fallback: if we can't determine, add in original order
+            expandedLogs.push(log);
+            expandedLogs.push(linkedLog);
+          }
+          
+          processedLogIds.add(log.id);
+          processedLogIds.add(linkedLog.id);
+        } else {
+          // Linked log not found or not ready, just add current log
+          expandedLogs.push(log);
+          processedLogIds.add(log.id);
+        }
+      } else {
+        // Not a shift swap, just add the log
+        expandedLogs.push(log);
+        processedLogIds.add(log.id);
+      }
+    }
+
     // Validate logs (skip validation when regenerating to avoid errors while typing)
     if (!regenerate) {
-      const validation = validateLogsForPDF(readyLogs);
+      const validation = validateLogsForPDF(expandedLogs);
       if (!validation.valid) {
         setError(validation.errors.join(', '));
         return;
@@ -170,16 +220,16 @@ export default function ExportPreviewScreen() {
       
       // Use SMO template if user is SMO, otherwise use regular template
       const pdfUri = profile.isSMO 
-        ? await buildSMOAVAC(profile, readyLogs, customFileName)
-        : await buildAVAC(profile, readyLogs, customFileName);
+        ? await buildSMOAVAC(profile, expandedLogs, customFileName)
+        : await buildAVAC(profile, expandedLogs, customFileName);
       setPdfUri(pdfUri);
       
       // Get userId for cloud upload
       const userId = user?.id;
       
       if (!regenerate) {
-        // Store the log IDs used for this batch
-        const logIdsForBatch = readyLogs.map(log => log.id);
+        // Store the log IDs used for this batch (include both logs in shift swaps)
+        const logIdsForBatch = expandedLogs.map(log => log.id);
         setBatchLogIds(logIdsForBatch);
         
         // Create export batch with custom name

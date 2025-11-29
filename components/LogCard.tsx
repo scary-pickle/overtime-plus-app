@@ -6,6 +6,7 @@ import { formatMinutes } from '../lib/time';
 
 interface LogCardProps {
   log: OvertimeLog;
+  linkedLog?: OvertimeLog; // For shift swaps
   onPress?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -19,6 +20,7 @@ interface LogCardProps {
 
 export function LogCard({ 
   log, 
+  linkedLog,
   onPress, 
   onEdit, 
   onDelete, 
@@ -39,6 +41,9 @@ export function LogCard({
   };
 
   const getCategoryDisplayName = () => {
+    if (log.isShiftSwap) {
+      return 'Shift Swap';
+    }
     if (log.smoCategories) {
       const activeCategories = Object.entries(log.smoCategories)
         .filter(([_, value]) => value)
@@ -54,18 +59,26 @@ export function LogCard({
     // Add date
     parts.push(formatCompactDate(log.date));
     
-    // Add hours
-    parts.push(formatMinutes(log.minutesOvertime));
-    
-    // Add description (comments or shift info)
-    if (log.comments) {
-      parts.push(log.comments);
-    } else if (log.rosteredStart && log.rosteredFinish && log.rosteredStart !== 'N/A' && log.rosteredFinish !== 'N/A') {
-      parts.push(`${log.rosteredStart} - ${log.rosteredFinish} rostered`);
-    } else if (log.actualStart !== 'N/A' && log.actualFinish !== 'N/A') {
-      parts.push(`${log.actualStart} - ${log.actualFinish}`);
-    } else if (log.status === 'draft') {
-      parts.push('Needs delegate details before export');
+    // For shift swaps, show both people's initials and total overtime
+    if (log.isShiftSwap && linkedLog) {
+      const totalOvertime = log.minutesOvertime + linkedLog.minutesOvertime;
+      parts.push(`${log.initials} ↔ ${linkedLog.initials}`);
+      parts.push(formatMinutes(totalOvertime));
+      parts.push('Shift swap');
+    } else {
+      // Add hours
+      parts.push(formatMinutes(log.minutesOvertime));
+      
+      // Add description (comments or shift info)
+      if (log.comments) {
+        parts.push(log.comments);
+      } else if (log.rosteredStart && log.rosteredFinish && log.rosteredStart !== 'N/A' && log.rosteredFinish !== 'N/A') {
+        parts.push(`${log.rosteredStart} - ${log.rosteredFinish} rostered`);
+      } else if (log.actualStart !== 'N/A' && log.actualFinish !== 'N/A') {
+        parts.push(`${log.actualStart} - ${log.actualFinish}`);
+      } else if (log.status === 'draft') {
+        parts.push('Needs delegate details before export');
+      }
     }
     
     return parts.join(' · ');
@@ -167,54 +180,125 @@ export function LogCard({
       {isExpanded && (
         <>
           <View style={styles.expandedContent}>
-            {log.rosteredStart && log.rosteredFinish && log.rosteredStart !== 'N/A' && log.rosteredFinish !== 'N/A' && (
-              <View style={styles.metaRow}>
-                <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
-                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
-                  Rostered: {log.rosteredStart} - {log.rosteredFinish}
-                </Text>
-              </View>
-            )}
-            
-            {log.actualStart !== 'N/A' && log.actualFinish !== 'N/A' && (
-              <View style={styles.metaRow}>
-                <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
-                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
-                  Actual: {log.actualStart} - {log.actualFinish}
-                </Text>
-              </View>
-            )}
-
-            {log.smoCategories && (
-              <View style={styles.metaRow}>
-                <Ionicons name="list" size={14} color={isDark ? "#999" : "#6b7280"} />
-                <View style={styles.smoCategoriesContainer}>
-                  {Object.entries(log.smoCategories)
-                    .filter(([_, value]) => value)
-                    .map(([key, _]) => (
-                      <View key={key} style={[styles.smoCategoryBadge, isDark && styles.darkSmoCategoryBadge]}>
-                        <Text style={[styles.smoCategoryText, isDark && styles.darkSmoCategoryText]}>
-                          {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                        </Text>
-                      </View>
-                    ))}
+            {log.isShiftSwap && linkedLog ? (
+              <>
+                {/* Person A Entry */}
+                <View style={[styles.shiftSwapSection, isDark && styles.darkShiftSwapSection]}>
+                  <Text style={[styles.shiftSwapPersonTitle, isDark && styles.darkText]}>
+                    {log.initials}
+                  </Text>
+                  {log.rosteredStart && log.rosteredFinish && log.rosteredStart !== 'N/A' && log.rosteredFinish !== 'N/A' && (
+                    <View style={styles.metaRow}>
+                      <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                        Rostered: {log.rosteredStart} - {log.rosteredFinish}
+                      </Text>
+                    </View>
+                  )}
+                  {log.actualStart !== 'N/A' && log.actualFinish !== 'N/A' && (
+                    <View style={styles.metaRow}>
+                      <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                        Actual: {log.actualStart} - {log.actualFinish}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.metaRow}>
+                    <Ionicons name="hourglass" size={14} color={isDark ? "#999" : "#6b7280"} />
+                    <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                      Overtime: {formatMinutes(log.minutesOvertime)}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            )}
 
-            {log.comments && (
-              <View style={styles.metaRow}>
-                <Ionicons name="document-text" size={14} color={isDark ? "#999" : "#6b7280"} />
-                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]} numberOfLines={3}>
-                  {log.comments}
-                </Text>
-              </View>
-            )}
+                {/* Person B Entry */}
+                <View style={[styles.shiftSwapSection, isDark && styles.darkShiftSwapSection]}>
+                  <Text style={[styles.shiftSwapPersonTitle, isDark && styles.darkText]}>
+                    {linkedLog.initials}
+                  </Text>
+                  {linkedLog.rosteredStart && linkedLog.rosteredFinish && linkedLog.rosteredStart !== 'N/A' && linkedLog.rosteredFinish !== 'N/A' && (
+                    <View style={styles.metaRow}>
+                      <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                        Rostered: {linkedLog.rosteredStart} - {linkedLog.rosteredFinish}
+                      </Text>
+                    </View>
+                  )}
+                  {linkedLog.actualStart !== 'N/A' && linkedLog.actualFinish !== 'N/A' && (
+                    <View style={styles.metaRow}>
+                      <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                        Actual: {linkedLog.actualStart} - {linkedLog.actualFinish}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.metaRow}>
+                    <Ionicons name="hourglass" size={14} color={isDark ? "#999" : "#6b7280"} />
+                    <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                      Overtime: {formatMinutes(linkedLog.minutesOvertime)}
+                    </Text>
+                  </View>
+                </View>
 
-            {log.status === 'draft' && !log.comments && (
-              <Text style={[styles.draftHelperText, isDark && styles.darkSecondaryText]}>
-                Draft logs stay here until you're ready to submit.
-              </Text>
+                {/* Total */}
+                <View style={[styles.shiftSwapTotal, isDark && styles.darkShiftSwapTotal]}>
+                  <Text style={[styles.shiftSwapTotalText, isDark && styles.darkText]}>
+                    Total Overtime: {formatMinutes(log.minutesOvertime + linkedLog.minutesOvertime)}
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <>
+                {log.rosteredStart && log.rosteredFinish && log.rosteredStart !== 'N/A' && log.rosteredFinish !== 'N/A' && (
+                  <View style={styles.metaRow}>
+                    <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                    <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                      Rostered: {log.rosteredStart} - {log.rosteredFinish}
+                    </Text>
+                  </View>
+                )}
+                
+                {log.actualStart !== 'N/A' && log.actualFinish !== 'N/A' && (
+                  <View style={styles.metaRow}>
+                    <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                    <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                      Actual: {log.actualStart} - {log.actualFinish}
+                    </Text>
+                  </View>
+                )}
+
+                {log.smoCategories && (
+                  <View style={styles.metaRow}>
+                    <Ionicons name="list" size={14} color={isDark ? "#999" : "#6b7280"} />
+                    <View style={styles.smoCategoriesContainer}>
+                      {Object.entries(log.smoCategories)
+                        .filter(([_, value]) => value)
+                        .map(([key, _]) => (
+                          <View key={key} style={[styles.smoCategoryBadge, isDark && styles.darkSmoCategoryBadge]}>
+                            <Text style={[styles.smoCategoryText, isDark && styles.darkSmoCategoryText]}>
+                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                            </Text>
+                          </View>
+                        ))}
+                    </View>
+                  </View>
+                )}
+
+                {log.comments && (
+                  <View style={styles.metaRow}>
+                    <Ionicons name="document-text" size={14} color={isDark ? "#999" : "#6b7280"} />
+                    <Text style={[styles.metaText, isDark && styles.darkSecondaryText]} numberOfLines={3}>
+                      {log.comments}
+                    </Text>
+                  </View>
+                )}
+
+                {log.status === 'draft' && !log.comments && (
+                  <Text style={[styles.draftHelperText, isDark && styles.darkSecondaryText]}>
+                    Draft logs stay here until you're ready to submit.
+                  </Text>
+                )}
+              </>
             )}
           </View>
 
@@ -458,5 +542,41 @@ const styles = StyleSheet.create({
   },
   darkSmoCategoryText: {
     color: '#90caf9',
+  },
+  shiftSwapSection: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  darkShiftSwapSection: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
+  },
+  shiftSwapPersonTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  shiftSwapTotal: {
+    backgroundColor: '#e8f5e8',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  darkShiftSwapTotal: {
+    backgroundColor: '#1a2e1a',
+    borderColor: '#4CAF50',
+  },
+  shiftSwapTotalText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2e7d32',
+    textAlign: 'center',
   },
 });

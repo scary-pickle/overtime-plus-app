@@ -130,7 +130,32 @@ export default function LogScreen() {
     });
   };
 
+  const handleShiftSwap = () => {
+    handleCloseAddMenu();
+    router.push('/log/shift-swap');
+  };
+
   const handleEditLog = (log: OvertimeLog) => {
+    // Shift swaps should be edited via the shift swap screen
+    if (log.isShiftSwap && log.linkedLogId) {
+      Alert.alert(
+        'Edit Shift Swap',
+        'Shift swaps must be edited using the shift swap screen. This will allow you to edit both entries together.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Edit Shift Swap', 
+            style: 'default',
+            onPress: () => {
+              // Navigate to shift swap screen - could pass log IDs as params if needed
+              router.push('/log/shift-swap');
+            }
+          }
+        ]
+      );
+      return;
+    }
+    
     if (log.status === 'exported') {
       Alert.alert(
         'Edit Exported Log',
@@ -150,15 +175,28 @@ export default function LogScreen() {
   };
 
   const handleDeleteLog = (log: OvertimeLog) => {
+    const isShiftSwap = log.isShiftSwap && log.linkedLogId;
+    const message = isShiftSwap 
+      ? 'This is a shift swap entry. Deleting it will also delete the linked entry. Are you sure?'
+      : 'Are you sure you want to delete this log?';
+    
     Alert.alert(
       'Delete Log',
-      'Are you sure you want to delete this log?',
+      message,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => deleteLog(log.id),
+          onPress: async () => {
+            // Delete both logs if it's a shift swap
+            if (isShiftSwap && log.linkedLogId) {
+              await deleteLog(log.id);
+              await deleteLog(log.linkedLogId);
+            } else {
+              await deleteLog(log.id);
+            }
+          },
         },
       ]
     );
@@ -166,7 +204,18 @@ export default function LogScreen() {
 
   const handleMarkReady = async (log: OvertimeLog) => {
     try {
-      await markReady(log.id);
+      // For shift swaps, mark both logs as ready
+      if (log.isShiftSwap && log.linkedLogId) {
+        const linkedLog = logs.find(l => l.id === log.linkedLogId);
+        if (linkedLog) {
+          await markReady(log.id);
+          await markReady(linkedLog.id);
+        } else {
+          await markReady(log.id);
+        }
+      } else {
+        await markReady(log.id);
+      }
     } catch (error) {
       // Automatically navigate to edit screen if validation fails
       handleEditLog(log);
@@ -471,6 +520,20 @@ export default function LogScreen() {
 
   const getFilteredLogs = () => {
     let filtered = logs;
+
+    // Filter out linked logs in shift swaps (only show the primary log)
+    // The primary log is the one that appears first (lower timestamp in ID)
+    filtered = filtered.filter(log => {
+      if (log.isShiftSwap && log.linkedLogId) {
+        // Only show this log if it's the "primary" one (lower ID)
+        const linkedLog = logs.find(l => l.id === log.linkedLogId);
+        if (linkedLog) {
+          // Show the one with the lower ID (comes first alphabetically)
+          return log.id < linkedLog.id;
+        }
+      }
+      return true;
+    });
 
     // Apply status filter (but not in selection mode)
     if (!isSelectionMode && filterStatus !== 'all') {
@@ -873,9 +936,15 @@ export default function LogScreen() {
   const renderLogItem = ({ item }: { item: OvertimeLog }) => {
     const isSelected = selectedLogs.has(item.id);
     
+    // Find linked log if this is a shift swap
+    const linkedLog = item.isShiftSwap && item.linkedLogId 
+      ? logs.find(l => l.id === item.linkedLogId)
+      : undefined;
+    
     return (
       <LogCard
         log={item}
+        linkedLog={linkedLog}
         onPress={() => {
           if (isSelectionMode) {
             handleToggleSelection(item.id);
@@ -1211,6 +1280,15 @@ export default function LogScreen() {
                   <Ionicons name="copy-outline" size={20} color={isDark ? '#fff' : '#333'} />
                   <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
                     New from Template
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleShiftSwap}
+                >
+                  <Ionicons name="swap-horizontal-outline" size={20} color={isDark ? '#fff' : '#333'} />
+                  <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
+                    Shift Swap
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity

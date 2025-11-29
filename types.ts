@@ -61,6 +61,14 @@ export type OvertimeLog = {
   exportBatchId?: string;
   source: 'manual'|'geofence-proposed'|'imported';
   isActiveShift?: boolean; // Marks this draft as the currently active shift started via "Start Shift" button
+  // Shift swap fields
+  shiftSwapId?: string; // Shared ID for both logs in a shift swap pair
+  linkedLogId?: string; // ID of the other log in the shift swap pair
+  isShiftSwap?: boolean; // True if this log is part of a shift swap
+  // Shift swap partner details (for Person B)
+  swapPartnerName?: string; // Full name of the swap partner
+  swapPartnerPayrollNumber?: string; // Payroll number of the swap partner
+  swapPartnerPayLevel?: string; // Pay level of the swap partner
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;     // ISO timestamp for soft delete
