@@ -171,6 +171,13 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
           }).catch(() => {});
         });
       }
+      
+      // Schedule notifications for updated shift schedule
+      const { notificationManager } = require('../notifications');
+      const { shifts: updatedShifts } = get();
+      notificationManager.scheduleRolling7Days(updatedShifts).catch(err => {
+        devLog.error('Failed to schedule notifications (non-fatal):', err);
+      });
     } catch (error) {
       devLog.error('Failed to add shift:', error);
       set({ 
@@ -217,6 +224,12 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
           }).catch(() => {});
         });
       }
+      
+      // Schedule notifications for updated shift schedule
+      const { notificationManager } = require('../notifications');
+      notificationManager.scheduleRolling7Days(updatedShifts).catch(err => {
+        devLog.error('Failed to schedule notifications (non-fatal):', err);
+      });
     } catch (error) {
       devLog.error('Failed to update shift:', error);
       set({ 
@@ -257,6 +270,12 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
           }).catch(() => {});
         });
       }
+      
+      // Schedule notifications for updated shift schedule
+      const { notificationManager } = require('../notifications');
+      notificationManager.scheduleRolling7Days(filteredShifts).catch(err => {
+        devLog.error('Failed to schedule notifications (non-fatal):', err);
+      });
     } catch (error) {
       devLog.error('Failed to delete shift:', error);
       set({ 

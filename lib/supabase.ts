@@ -157,10 +157,14 @@ function getSupabaseClient(): SupabaseClient {
       global: {
         // Add fetch options for better error handling
         fetch: (url, options = {}) => {
-          debug.debug('[supabase] Making request', {
-            url: typeof url === 'string' ? url.substring(0, 50) : 'non-string',
-            method: options.method || 'GET',
-          });
+          // Only log non-session-related requests to reduce noise
+          const urlStr = typeof url === 'string' ? url : 'non-string';
+          if (!urlStr.includes('/auth/v1/token') && !urlStr.includes('/auth/v1/user')) {
+            debug.debug('[supabase] Making request', {
+              url: urlStr.substring(0, 50),
+              method: options.method || 'GET',
+            });
+          }
           return fetch(url, options);
         },
       },
@@ -399,8 +403,13 @@ async function authenticatedFetch(
       errorData = { message: errorText };
     }
     
-    // Check if it's a JWT expired error
-    if (errorData.code === 'PGRST303' || errorData.message === 'JWT expired') {
+    // Check if it's a JWT expired error or unauthorized
+    if (
+      errorData.code === 'PGRST303' ||
+      errorData.message === 'JWT expired' ||
+      response.status === 401 ||
+      response.status === 403
+    ) {
       debug.debug('[authenticatedFetch] JWT expired, refreshing token and retrying...');
       
       // Force refresh the session
@@ -585,12 +594,9 @@ export const profileSync = {
         hasApiKey: !!apiKey,
       });
       
-      const response = await fetch(restUrl, {
+      const response = await authenticatedFetch(restUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
           'Prefer': 'return=representation,resolution=merge-duplicates',
         },
         body: JSON.stringify(profileData),
@@ -664,13 +670,8 @@ export const profileSync = {
         
         debug.debug('[profileSync.downloadProfile] Using direct REST API with session token');
         
-        const response = await fetch(restUrl, {
+        const response = await authenticatedFetch(restUrl, {
           method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
-          },
         });
         
         if (!response.ok) {
@@ -1197,13 +1198,8 @@ export const shiftsSync = {
         
         debug.debug('[shiftsSync.downloadShifts] Using direct REST API with session token');
         
-        const response = await fetch(restUrl, {
+        const response = await authenticatedFetch(restUrl, {
           method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
-          },
         });
         
         if (!response.ok) {
@@ -1371,13 +1367,8 @@ export const shiftTemplatesSync = {
       // Check if template already exists using direct REST API
       const checkUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${template.id}&notes=eq.shift_template&deleted_at=is.null&select=id&limit=1`;
       
-      const checkResponse = await fetch(checkUrl, {
+      const checkResponse = await authenticatedFetch(checkUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
       
       let existingId: string | null = null;
@@ -1407,12 +1398,9 @@ export const shiftTemplatesSync = {
         // Update existing template
         debug.debug('[shiftTemplatesSync.uploadTemplate] Updating existing template', { existingId, templateId: template.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingId}&select=*`;
-        response = await fetch(updateUrl, {
+        response = await authenticatedFetch(updateUrl, {
           method: 'PATCH',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(templateData),
@@ -1421,12 +1409,9 @@ export const shiftTemplatesSync = {
         // Insert new template
         debug.debug('[shiftTemplatesSync.uploadTemplate] Inserting new template', { templateId: template.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/shifts?select=*`;
-        response = await fetch(insertUrl, {
+        response = await authenticatedFetch(insertUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(templateData),
@@ -1488,13 +1473,8 @@ export const shiftTemplatesSync = {
       // Fetch templates from shifts table where notes='shift_template'
       const url = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&notes=eq.shift_template&deleted_at=is.null&select=*&order=created_at.desc`;
       
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
 
       if (!response.ok) {
@@ -1571,13 +1551,8 @@ export const shiftTemplatesSync = {
       // Find template by extras->>id and notes='shift_template'
       const findUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${templateId}&notes=eq.shift_template&deleted_at=is.null&select=id&limit=1`;
       
-      const findResponse = await fetch(findUrl, {
+      const findResponse = await authenticatedFetch(findUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
 
       if (!findResponse.ok) {
@@ -1597,12 +1572,9 @@ export const shiftTemplatesSync = {
 
       // Soft delete by setting deleted_at
       const deleteUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${supabaseId}`;
-      const deleteResponse = await fetch(deleteUrl, {
+      const deleteResponse = await authenticatedFetch(deleteUrl, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
           'Prefer': 'return=representation',
         },
         body: JSON.stringify({
@@ -1670,13 +1642,8 @@ export const logTemplatesSync = {
       // Check if template already exists using direct REST API
       const checkUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${template.id}&notes=eq.log_template&deleted_at=is.null&select=id&limit=1`;
       
-      const checkResponse = await fetch(checkUrl, {
+      const checkResponse = await authenticatedFetch(checkUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
       
       let existingId: string | null = null;
@@ -1706,12 +1673,9 @@ export const logTemplatesSync = {
         // Update existing template
         debug.debug('[logTemplatesSync.uploadTemplate] Updating existing template', { existingId, templateId: template.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingId}&select=*`;
-        response = await fetch(updateUrl, {
+        response = await authenticatedFetch(updateUrl, {
           method: 'PATCH',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(templateData),
@@ -1720,12 +1684,9 @@ export const logTemplatesSync = {
         // Insert new template
         debug.debug('[logTemplatesSync.uploadTemplate] Inserting new template', { templateId: template.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/shifts?select=*`;
-        response = await fetch(insertUrl, {
+        response = await authenticatedFetch(insertUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(templateData),
@@ -1787,13 +1748,8 @@ export const logTemplatesSync = {
       // Fetch templates from shifts table where notes='log_template'
       const url = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&notes=eq.log_template&deleted_at=is.null&select=*&order=created_at.desc`;
       
-      const response = await fetch(url, {
+      const response = await authenticatedFetch(url, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
 
       if (!response.ok) {
@@ -1870,13 +1826,8 @@ export const logTemplatesSync = {
       // Find template by extras->>id and notes='log_template'
       const findUrl = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${templateId}&notes=eq.log_template&deleted_at=is.null&select=id&limit=1`;
       
-      const findResponse = await fetch(findUrl, {
+      const findResponse = await authenticatedFetch(findUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
 
       if (!findResponse.ok) {
@@ -1896,12 +1847,9 @@ export const logTemplatesSync = {
 
       // Soft delete by setting deleted_at
       const deleteUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${supabaseId}`;
-      const deleteResponse = await fetch(deleteUrl, {
+      const deleteResponse = await authenticatedFetch(deleteUrl, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
           'Prefer': 'return=representation',
         },
         body: JSON.stringify({
@@ -1987,13 +1935,8 @@ export const exportSync = {
       // Check if batch already exists using direct REST API
       const checkUrl = `${SUPABASE_URL}/rest/v1/export_batches?user_id=eq.${userId}&params->>id=eq.${batch.id}&deleted_at=is.null&select=id&limit=1`;
       
-      const checkResponse = await fetch(checkUrl, {
+      const checkResponse = await authenticatedFetch(checkUrl, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': apiKey!,
-          'Content-Type': 'application/json',
-        },
       });
       
       let existingId: string | null = null;
@@ -2026,12 +1969,9 @@ export const exportSync = {
         // Update existing batch
         debug.debug('[exportSync.uploadExportBatch] Updating existing batch', { existingId, batchId: batch.id });
         const updateUrl = `${SUPABASE_URL}/rest/v1/export_batches?id=eq.${existingId}&select=*`;
-        response = await fetch(updateUrl, {
+        response = await authenticatedFetch(updateUrl, {
           method: 'PATCH',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(batchData),
@@ -2040,12 +1980,9 @@ export const exportSync = {
         // Insert new batch
         debug.debug('[exportSync.uploadExportBatch] Inserting new batch', { batchId: batch.id });
         const insertUrl = `${SUPABASE_URL}/rest/v1/export_batches?select=*`;
-        response = await fetch(insertUrl, {
+        response = await authenticatedFetch(insertUrl, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
             'Prefer': 'return=representation',
           },
           body: JSON.stringify(batchData),
@@ -2107,13 +2044,8 @@ export const exportSync = {
         
         debug.debug('[exportSync.downloadExportBatches] Using direct REST API with session token');
         
-        const response = await fetch(restUrl, {
+        const response = await authenticatedFetch(restUrl, {
           method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'apikey': apiKey!,
-            'Content-Type': 'application/json',
-          },
         });
         
         if (!response.ok) {

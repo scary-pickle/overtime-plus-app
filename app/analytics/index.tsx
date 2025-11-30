@@ -1,6 +1,9 @@
 import React, { useMemo, useState, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useColorScheme } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useAuthStore } from '../../lib/state/authStore';
 import BarChart from '../../components/charts/Line';
@@ -27,23 +30,15 @@ export default function AnalyticsScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const navigation = useNavigation();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
 
-  // Set navigation header dynamically for dark mode support
+  // Hide the default navigation header
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: 'Analytics',
-      headerBackTitle: 'Home',
-      headerBackTitleVisible: true,
-      headerStyle: {
-        backgroundColor: isDark ? '#000' : '#fff',
-      },
-      headerTintColor: isDark ? '#fff' : '#000',
-      headerTitleStyle: {
-        color: isDark ? '#fff' : '#000',
-        fontWeight: '600',
-      },
+      headerShown: false,
     });
-  }, [isDark, navigation]);
+  }, [navigation]);
 
   // Load logs when screen mounts
   useEffect(() => {
@@ -61,9 +56,9 @@ export default function AnalyticsScreen() {
     return defaultRange; // month = last 30 days default
   }, [mode, startDate, endDate, defaultRange]);
 
-  // Filter logs and compute series - include ALL logs regardless of status
+  // Filter logs and compute series - exclude shift swaps as they aren't technically overtime
   const filtered = useMemo(() => {
-    const result = getLogsInRange(logs, activeRange);
+    const result = getLogsInRange(logs, activeRange).filter(log => !log.isShiftSwap);
     debug.debug('Analytics Debug:', {
       totalLogs: logs.length,
       activeRange,
@@ -75,13 +70,29 @@ export default function AnalyticsScreen() {
   const totalMinutes = useMemo(() => sumMinutes(filtered), [filtered]);
   const daySeries = useMemo(() => bucketByDay(filtered, activeRange).map((d) => ({ x: d.date.slice(5), y: d.minutes })), [filtered, activeRange]);
   const categorySeries = useMemo(() => getCategoryBreakdown(filtered).map((c) => ({ x: c.category, y: c.minutes })), [filtered]);
-  const fortnightMinutes = useMemo(() => getFortnightSummary(new Date(), logs), [logs]);
+  const fortnightMinutes = useMemo(() => {
+    const fortnightLogs = logs.filter(log => !log.isShiftSwap);
+    return getFortnightSummary(new Date(), fortnightLogs);
+  }, [logs]);
 
   return (
     <ScrollView style={[styles.container, isDark && styles.darkContainer]}>
+      {/* Header with back button */}
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : '#000'} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, isDark && styles.darkText]}>
+          Analytics
+        </Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
       {/* Page header */}
       <View style={[styles.headerRow, isDark && styles.darkHeaderRow]}>
-        <Text style={[styles.title, isDark && styles.darkTitle]}>Analytics</Text>
         <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>Insights from your overtime logs</Text>
       </View>
 
@@ -149,10 +160,28 @@ export default function AnalyticsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   darkContainer: { backgroundColor: '#000' },
-  headerRow: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, backgroundColor: '#fff' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingTop: 10,
+    paddingHorizontal: 20,
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 40, // Same width as back button to center the title
+  },
+  headerRow: { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 6, backgroundColor: '#fff' },
   darkHeaderRow: { backgroundColor: '#000' },
-  title: { fontSize: 26, fontWeight: '800', color: '#111' },
-  darkTitle: { color: '#fff' },
   subtitle: { marginTop: 2, color: '#666', fontSize: 12 },
   darkSubtitle: { color: '#aaa' },
   darkText: { color: '#fff' },

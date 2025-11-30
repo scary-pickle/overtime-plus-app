@@ -1,9 +1,12 @@
 import 'react-native-reanimated';
 import 'react-native-url-polyfill/auto';
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
+import '../lib/utils/consoleSafe';
+import '../lib/utils/secureFetch';
 import { Stack, useRouter, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme } from 'react-native';
+import { useColorScheme, View, StyleSheet } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { database } from '../lib/db/sqlite';
 import { useProfileStore } from '../lib/state/profileStore';
 import { useShiftsStore } from '../lib/state/shiftsStore';
@@ -19,12 +22,16 @@ import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useSubscriptionStore } from '../lib/state/subscriptionStore';
 import { createScopedLogger } from '../lib/utils/logger';
+import { AnimatedSplashText } from '../components/AnimatedSplashText';
 
 const debug = createScopedLogger('App');
 
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const { user, checkSession, emailVerified } = useAuthStore();
+  const { user, checkSession, emailVerified, isLoading } = useAuthStore();
   const { loadProfile } = useProfileStore();
   const { loadShifts } = useShiftsStore();
   const { loadLogs, loadExportBatches } = useLogsStore();
@@ -34,6 +41,7 @@ export default function RootLayout() {
   const subscriptionInitialized = useSubscriptionStore((state) => state.initialized);
   const initializeSubscription = useSubscriptionStore((state) => state.init);
   const resetSubscription = useSubscriptionStore((state) => state.reset);
+  const [appIsReady, setAppIsReady] = React.useState(false);
 
   useEffect(() => {
     (async () => {
@@ -45,6 +53,8 @@ export default function RootLayout() {
         await purgeLegacyAuthStorage();
       } catch (error) {
         debug.error('Failed to initialize database:', error);
+        // Still hide splash even on error
+        setAppIsReady(true);
         return;
       }
       
@@ -67,6 +77,9 @@ export default function RootLayout() {
       
       // Continue with rest of app initialization
       await initializeApp();
+      
+      // Mark app as ready
+      setAppIsReady(true);
     })();
     const unsubscribeLinking = subscribeToAuthDeepLinks();
     return () => {
@@ -74,14 +87,24 @@ export default function RootLayout() {
     };
   }, []);
 
+  // Don't hide splash screen here - let index.tsx handle it after navigation
+  // This ensures smooth transition without white flash
+
   useEffect(() => {
+    // Only initialize/reset if state actually changed to prevent loops
     if (user?.id && emailVerified) {
-      initializeSubscription(user.id).catch(() => {});
+      // Only initialize if not already initialized for this user
+      if (!subscriptionInitialized || useSubscriptionStore.getState().userId !== user.id) {
+        initializeSubscription(user.id).catch(() => {});
+      }
     } else {
-      resetSubscription();
+      // Only reset if we were previously initialized
+      if (subscriptionInitialized) {
+        resetSubscription();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, emailVerified]);
+  }, [user?.id, emailVerified, subscriptionInitialized]);
 
   useEffect(() => {
     if (!user?.id || !emailVerified || !subscriptionInitialized) {
@@ -100,8 +123,13 @@ export default function RootLayout() {
     
     // Only auto-redirect TO paywall if user needs to see it
     // Don't redirect AWAY from paywall - allow users to manually view it
+    // Use a ref to prevent multiple redirects in quick succession
     if (shouldShowPaywall && !onPaywallScreen) {
-      router.replace('/subscription/paywall');
+      // Use setTimeout to debounce rapid state changes
+      const timeoutId = setTimeout(() => {
+        router.replace('/subscription/paywall');
+      }, 100);
+      return () => clearTimeout(timeoutId);
     }
     // Removed: else if (!shouldShowPaywall && onPaywallScreen) - allow manual navigation
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,6 +143,13 @@ export default function RootLayout() {
       await syncQueue.init();
       debug.debug('Sync queue initialized');
 
+      // Initialize notification manager (load settings)
+      await notificationManager.init();
+      
+      // Cancel all existing notifications when initializing (in case of user switch)
+      // This ensures old user's notifications don't persist
+      await notificationManager.cancelAllNotifications();
+      
       // Request notification permissions
       await notificationManager.requestPermissions();
 
@@ -130,6 +165,47 @@ export default function RootLayout() {
           loadLogs(user.id), // Pass userId to load user-specific logs
           loadExportBatches(user.id), // Pass userId to load user-specific export batches
         ]);
+
+        // Schedule notifications after shifts are loaded
+        const { shifts } = useShiftsStore.getState();
+        if (shifts.length > 0) {
+          notificationManager.scheduleRolling7Days(shifts).catch(err => {
+            debug.error('Failed to schedule notifications (non-fatal):', err);
+          });
+        }
+
+        // Check and schedule unsubmitted AVAC notification after export batches are loaded
+        const { exportBatches, logs, getDraftLogs, getReadyLogs } = useLogsStore.getState();
+        if (exportBatches.length > 0) {
+          notificationManager.checkAndScheduleUnsubmittedAVACNotification(exportBatches).catch(err => {
+            debug.error('Failed to check unsubmitted AVAC notification (non-fatal):', err);
+          });
+        }
+
+        // Schedule weekly summary and check incomplete drafts after logs are loaded
+        if (logs.length > 0) {
+          // Schedule weekly summary
+          const totalMinutes = logs.reduce((sum, log) => sum + log.minutesOvertime, 0);
+          const totalHours = totalMinutes / 60;
+          const draftLogs = getDraftLogs();
+          const readyLogs = getReadyLogs();
+          const pendingCount = draftLogs.length + readyLogs.length;
+          
+          notificationManager.scheduleWeeklySummary(totalHours, pendingCount).catch(err => {
+            debug.error('Failed to schedule weekly summary (non-fatal):', err);
+          });
+
+          // Check incomplete draft reminders
+          const draftLogsForNotification = draftLogs.map(log => ({
+            id: log.id,
+            date: log.date,
+            createdAt: log.createdAt,
+            isActiveShift: log.isActiveShift
+          }));
+          notificationManager.checkAndScheduleIncompleteDraftReminder(draftLogsForNotification).catch(err => {
+            debug.error('Failed to check incomplete draft reminder (non-fatal):', err);
+          });
+        }
 
         // Check and refresh OTA templates (non-blocking)
         if (templateOTAEnabled) {
@@ -176,8 +252,14 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-      <Stack>
+      <View style={styles.rootContainer}>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            contentStyle: { backgroundColor: '#007AFF' },
+            animation: 'none', // Disable animation to prevent white flash
+          }}
+        >
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="auth/welcome" options={{ headerShown: false }} />
         <Stack.Screen name="auth/sign-in" options={{ headerShown: false }} />
@@ -195,6 +277,21 @@ export default function RootLayout() {
           name="log/new" 
           options={{ 
             title: 'New Log',
+            presentation: 'modal',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colorScheme === 'dark' ? '#000' : '#fff',
+            },
+            headerTintColor: colorScheme === 'dark' ? '#fff' : '#000',
+            headerTitleStyle: {
+              color: colorScheme === 'dark' ? '#fff' : '#000',
+            },
+          }} 
+        />
+        <Stack.Screen 
+          name="log/shift-swap" 
+          options={{ 
+            title: 'Shift Swap',
             presentation: 'modal',
             headerShown: true,
             headerStyle: {
@@ -322,6 +419,12 @@ export default function RootLayout() {
             headerShown: false 
           }} 
         />
+        <Stack.Screen 
+          name="notifications-settings" 
+          options={{ 
+            headerShown: false 
+          }} 
+        />
         <Stack.Screen
           name="subscription/paywall"
           options={{
@@ -329,7 +432,17 @@ export default function RootLayout() {
             presentation: 'modal',
           }}
         />
-      </Stack>
+        </Stack>
+        {/* Global animated splash text overlay - stays visible until splash hides */}
+        <AnimatedSplashText />
+      </View>
     </ErrorBoundary>
   );
 }
+
+const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    backgroundColor: '#007AFF', // Match splash screen color
+  },
+});

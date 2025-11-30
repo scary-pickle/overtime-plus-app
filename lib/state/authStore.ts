@@ -14,6 +14,30 @@ import { clearCachedPdfsForBatches, deleteStoredPdfs } from '../storage/pdfStora
 const CURRENT_USER_ID_KEY = 'overtime_plus_current_user_id';
 const debug = createScopedLogger('authStore');
 
+// Simple client-side rate limiting to throttle repeated auth attempts
+const AUTH_RATE_LIMIT_WINDOW_MS = 60_000;
+const AUTH_MAX_ATTEMPTS = 5;
+type AuthAction = 'password' | 'otp';
+const authAttemptLog: Record<AuthAction, { timestamps: number[] }> = {
+  password: { timestamps: [] },
+  otp: { timestamps: [] },
+};
+
+function consumeAuthAttempt(action: AuthAction) {
+  const now = Date.now();
+  const windowStart = now - AUTH_RATE_LIMIT_WINDOW_MS;
+  const bucket = authAttemptLog[action];
+  bucket.timestamps = bucket.timestamps.filter(ts => ts >= windowStart);
+  if (bucket.timestamps.length >= AUTH_MAX_ATTEMPTS) {
+    throw new Error('Too many attempts. Please wait a moment and try again.');
+  }
+  bucket.timestamps.push(now);
+}
+
+function resetAuthAttempts(action: AuthAction) {
+  authAttemptLog[action].timestamps = [];
+}
+
 interface AuthState {
   user: any | null;
   session: any | null;
@@ -296,6 +320,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     debug.debug('===== SIGN IN START =====');
     debug.debug('signing in', { emailMasked, passwordLength: password.length });
     set({ isLoading: true, error: null });
+    try {
+      consumeAuthAttempt('password');
+    } catch (rateError: any) {
+      set({ isLoading: false, error: toFriendlyAuthMessage(rateError.message) });
+      return 'error';
+    }
     debug.debug('set isLoading to true');
     try {
       debug.debug('calling supabase.auth.signInWithPassword');
@@ -380,6 +410,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         hasCompletedOnboarding: onboardingStore.hasCompletedOnboarding,
         isLoading: false,
       });
+      resetAuthAttempts('password');
       debug.debug('===== SIGN IN COMPLETE - SUCCESS =====');
       return 'success';
     } catch (e) {
@@ -472,6 +503,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     debug.debug('sending OTP', { emailMasked, shouldCreateUser });
     set({ isLoading: true, error: null });
     try {
+      consumeAuthAttempt('otp');
+    } catch (rateError: any) {
+      set({ isLoading: false, error: toFriendlyAuthMessage(rateError.message) });
+      return false;
+    }
+    try {
       // @ts-ignore
       const { data, error } = await (supabase as any).auth.signInWithOtp({
         email,
@@ -497,6 +534,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       debug.debug('OTP sent successfully');
       set({ pendingEmail: email, isLoading: false });
+      resetAuthAttempts('otp');
       return true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to send code';
@@ -527,6 +565,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       emailVerified: get().emailVerified,
     });
     set({ isLoading: true, error: null });
+    try {
+      consumeAuthAttempt('otp');
+    } catch (rateError: any) {
+      set({ isLoading: false, error: toFriendlyAuthMessage(rateError.message) });
+      return 'error';
+    }
     debug.debug('set isLoading to true');
     try {
       const attemptTypes: Array<'email' | 'signup'> = ['email', 'signup'];
@@ -750,6 +794,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         hasCompletedOnboarding: onboardingStore.hasCompletedOnboarding,
         isLoading: false,
       });
+      resetAuthAttempts('otp');
       debug.debug('===== VERIFICATION COMPLETE - SUCCESS =====', { 
         hasUser: !!finalUser,
         emailVerified: true,
@@ -784,6 +829,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const userId = user?.id || null;
     const now = new Date().toISOString();
     set({ isDeletingAccount: true, error: null });
+    let cloudCleanupFailed = false;
 
     try {
       // Flag cloud data for deletion (best-effort, non-blocking)
@@ -794,7 +840,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           debug.error('[deleteAccount] Failed to mark profile deleted in Supabase', error);
         }
 
-        const tables = ['overtime_logs', 'usual_shifts', 'export_batches'] as const;
+        const tables = ['overtime_logs', 'shifts', 'export_batches'] as const;
         for (const table of tables) {
           try {
             await (supabase as any).from(table).update({ deleted_at: now }).eq('user_id', userId);
@@ -809,16 +855,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             throw new Error('Supabase functions client unavailable');
           }
 
-          const { error: hardDeleteError } = await functionsClient.invoke('delete-account', {
-            body: { reason: 'user_initiated' },
-          });
+          const invokeWithTimeout = async (ms: number) => {
+            return await Promise.race([
+              functionsClient.invoke('delete-account', { body: { reason: 'user_initiated' } }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Delete account timeout')), ms)),
+            ]) as any;
+          };
+
+          let hardDeleteError = null;
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            const result = await invokeWithTimeout(8000).catch(err => ({ error: err }));
+            hardDeleteError = (result as any)?.error || null;
+            if (!hardDeleteError) {
+              break;
+            }
+            debug.warn(`[deleteAccount] delete-account attempt ${attempt} failed`, hardDeleteError);
+            await new Promise(res => setTimeout(res, 300 * attempt));
+          }
 
           if (hardDeleteError) {
             throw hardDeleteError;
           }
         } catch (error) {
+          cloudCleanupFailed = true;
           debug.error('[deleteAccount] Hard delete function failed', error);
-          throw new Error('Failed to remove your cloud backups. Please try again.');
+          // Do not throw; continue to local wipe and sign-out
         }
       }
 
@@ -884,6 +945,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const subscriptionStore = useSubscriptionStore.getState();
       subscriptionStore.reset();
 
+      // Cancel all notifications and clear notification state
+      try {
+        const { notificationManager } = require('../notifications');
+        await notificationManager.clearAllNotificationState(userId);
+      } catch (error) {
+        debug.error('[deleteAccount] Failed to clear notifications (non-fatal):', error);
+      }
+
       set({
         user: null,
         session: null,
@@ -893,6 +962,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         pendingPassword: null,
         isLoading: false,
       });
+
+      if (cloudCleanupFailed) {
+        set({ error: 'Cloud cleanup may not have completed. Local data was wiped; please try again to ensure cloud data is removed.' });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to delete account';
       debug.error('[deleteAccount] Failed', e);
@@ -904,8 +977,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    const { user } = get();
+    let exportBatches: any[] = [];
     set({ isLoading: true, error: null });
     try {
+      // Prefetch export batches to clear cached PDFs on logout
+      if (user?.id) {
+        try {
+          await database.init();
+          exportBatches = await database.getExportBatches(user.id);
+        } catch (error) {
+          debug.error('[signOut] Failed to load export batches for cache cleanup (non-fatal):', error);
+        }
+      }
+
       // @ts-ignore
       const { error } = await (supabase as any).auth.signOut();
       if (error) throw error;
@@ -922,6 +1007,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       const subscriptionStore = useSubscriptionStore.getState();
       subscriptionStore.reset();
+
+      // Best-effort PDF cache cleanup so exports are removed on logout
+      if (exportBatches.length > 0) {
+        try {
+          await clearCachedPdfsForBatches(exportBatches);
+        } catch (error) {
+          debug.error('[signOut] Failed to clear cached PDFs (non-fatal):', error);
+        }
+      }
+      
+      // Cancel all notifications and clear notification state
+      try {
+        const { notificationManager } = require('../notifications');
+        await notificationManager.clearAllNotificationState(user?.id);
+      } catch (error) {
+        debug.error('[signOut] Failed to clear notifications (non-fatal):', error);
+      }
       
       set({
         user: null,

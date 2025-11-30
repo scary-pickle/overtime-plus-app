@@ -12,9 +12,10 @@ interface CalendarPickerProps {
   onChange: (date: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  onOpen?: () => void;
 }
 
-export function CalendarPicker({ value, onChange, placeholder = "Select date", disabled = false }: CalendarPickerProps) {
+export function CalendarPicker({ value, onChange, placeholder = "Select date", disabled = false, onOpen }: CalendarPickerProps) {
   const [isVisible, setIsVisible] = useState(false);
   
   // Parse the initial date properly to avoid timezone issues
@@ -93,6 +94,13 @@ export function CalendarPicker({ value, onChange, placeholder = "Select date", d
         setDisplayMonth(selectedDate.getMonth());
       }
       setIsVisible(true);
+      // Call onOpen callback if provided
+      if (onOpen) {
+        // Use setTimeout to ensure the calendar is rendered before scrolling
+        setTimeout(() => {
+          onOpen();
+        }, 100);
+      }
     }
   };
 

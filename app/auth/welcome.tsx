@@ -1,11 +1,15 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useHideSplashOnFocus } from '../../lib/utils/hideSplashOnFocus';
 
 export default function Welcome() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+  
+  // Hide splash screen when this screen is focused and ready
+  useHideSplashOnFocus();
 
   return (
     <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
@@ -90,13 +94,13 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   primaryButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#007AFF',
   },
   primaryButtonLight: {
     backgroundColor: '#000',
   },
   secondaryButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#007AFF',
   },
   secondaryButtonLight: {
     backgroundColor: '#000',

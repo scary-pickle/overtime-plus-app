@@ -47,7 +47,7 @@ export default function ForgotPassword() {
             keyboardType="email-address"
             style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
           />
-          <TouchableOpacity onPress={onSubmit} disabled={loading} style={{ backgroundColor: '#2563EB', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, opacity: loading ? 0.7 : 1 }}>
+          <TouchableOpacity onPress={onSubmit} disabled={loading} style={{ backgroundColor: '#007AFF', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8, opacity: loading ? 0.7 : 1 }}>
             <Text style={{ color: '#fff', fontWeight: '600' }}>{loading ? 'Sending…' : 'Send reset link'}</Text>
           </TouchableOpacity>
         </View>

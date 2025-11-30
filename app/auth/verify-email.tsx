@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Keyboard, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
+import { useHideSplashOnFocus } from '../../lib/utils/hideSplashOnFocus';
 
 import { createScopedLogger } from '../../lib/utils/logger';
 
@@ -17,6 +18,9 @@ const maskEmail = (email?: string | null) => {
 export default function VerifyEmail() {
   debug('[verify-email] component render');
   const router = useRouter();
+  
+  // Hide splash screen when this screen is focused and ready
+  useHideSplashOnFocus();
   const {
     user,
     emailVerified,
@@ -378,7 +382,7 @@ export default function VerifyEmail() {
             }}
             disabled={busy}
             style={{
-              backgroundColor: '#2563EB',
+              backgroundColor: '#007AFF',
               borderRadius: 12,
               padding: 14,
               alignItems: 'center',

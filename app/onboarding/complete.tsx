@@ -67,7 +67,7 @@ export default function OnboardingComplete() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B2239',
+    backgroundColor: '#007AFF',
   },
   content: {
     flex: 1,
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   button: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#007AFF',
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 12,

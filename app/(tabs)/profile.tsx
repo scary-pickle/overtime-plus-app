@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { EmptyState } from '../../components/EmptyState';
@@ -428,6 +429,7 @@ interface CollapsibleSectionProps {
   isEditing: boolean;
   animationValue: Animated.Value;
   onToggle: (sectionKey: string, animationValue: Animated.Value) => void;
+  onLayout?: (event: any) => void;
 }
 
 const CollapsibleSection = React.memo(({
@@ -443,6 +445,7 @@ const CollapsibleSection = React.memo(({
   isEditing,
   animationValue,
   onToggle,
+  onLayout,
 }: CollapsibleSectionProps) => {
   const rotateInterpolate = animationValue.interpolate({
     inputRange: [0, 1],
@@ -455,7 +458,10 @@ const CollapsibleSection = React.memo(({
   });
 
   return (
-    <View style={[styles.section, isDark && styles.darkCard]}>
+    <View 
+      style={[styles.section, isDark && styles.darkCard]}
+      onLayout={onLayout}
+    >
       <TouchableOpacity
         style={styles.sectionHeader}
         onPress={() => onToggle(sectionKey, animationValue)}
@@ -517,6 +523,13 @@ export default function ProfileScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+  
+  // ScrollView ref for auto-scrolling
+  const scrollViewRef = useRef<ScrollView>(null);
+  
+  // Section position refs for scrolling
+  const sectionPositions = useRef<Record<string, number>>({});
   
   // Use selective subscriptions to prevent unnecessary re-renders
   const profile = useProfileStore((state) => state.profile);
@@ -536,7 +549,6 @@ export default function ProfileScreen() {
     formDataKeys: Object.keys(formData),
   });
   
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [selectedHospital, setSelectedHospital] = useState('');
   const [isDelegateAutoFilled, setIsDelegateAutoFilled] = useState(false);
   const [isSMO, setIsSMO] = useState(false);
@@ -751,6 +763,25 @@ export default function ProfileScreen() {
       duration: 300,
       useNativeDriver: false,
     }).start();
+
+    // Scroll to section when expanding
+    if (willExpand && sectionPositions.current[sectionKey] !== undefined) {
+      // Small delay to allow the layout to update before scrolling
+      setTimeout(() => {
+        // Add safe area top inset + extra padding to prevent title from going into Dynamic Island
+        const scrollOffset = sectionPositions.current[sectionKey] - insets.top - 20;
+        scrollViewRef.current?.scrollTo({
+          y: Math.max(0, scrollOffset), // Ensure we don't scroll to negative values
+          animated: true,
+        });
+      }, 100);
+    }
+  };
+
+  // Handler to capture section positions
+  const handleSectionLayout = (sectionKey: string) => (event: any) => {
+    const { y } = event.nativeEvent.layout;
+    sectionPositions.current[sectionKey] = y;
   };
 
 
@@ -911,6 +942,7 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView 
+      ref={scrollViewRef}
       style={[styles.container, isDark && styles.darkContainer]} 
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
@@ -1025,6 +1057,7 @@ export default function ProfileScreen() {
           isEditing={isEditing}
           animationValue={employeeDetailsAnimation}
           onToggle={toggleSection}
+          onLayout={handleSectionLayout('employeeDetails')}
         >
           <FieldInput
             fieldKey="fullName"
@@ -1150,6 +1183,7 @@ export default function ProfileScreen() {
           isEditing={isEditing}
           animationValue={organisationAnimation}
           onToggle={toggleSection}
+          onLayout={handleSectionLayout('organisation')}
         >
           <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
@@ -1225,6 +1259,7 @@ export default function ProfileScreen() {
           isEditing={isEditing}
           animationValue={delegateDetailsAnimation}
           onToggle={toggleSection}
+          onLayout={handleSectionLayout('delegateDetails')}
         >
           <FieldInput
             fieldKey="delegateName"
@@ -1291,6 +1326,7 @@ export default function ProfileScreen() {
           isEditing={isEditing}
           animationValue={accountAnimation}
           onToggle={toggleSection}
+          onLayout={handleSectionLayout('account')}
         >
           {/* Email Address */}
           {user?.email && (
@@ -1354,6 +1390,7 @@ export default function ProfileScreen() {
           isEditing={isEditing}
           animationValue={settingsAnimation}
           onToggle={toggleSection}
+          onLayout={handleSectionLayout('settings')}
         >
           <TouchableOpacity
             style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
@@ -1365,6 +1402,21 @@ export default function ProfileScreen() {
               </Text>
               <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
                 Customize email template
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => router.push('/notifications-settings')}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Notifications
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Manage notification preferences
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
@@ -1429,18 +1481,6 @@ export default function ProfileScreen() {
             </View>
             <Ionicons name="chatbubbles-outline" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
-          
-          <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
-            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-              Notifications
-            </Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{ false: '#767577', true: '#81b0ff' }}
-              thumbColor={notificationsEnabled ? '#f5dd4b' : '#f4f3f4'}
-            />
-          </View>
           
           <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
             <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>

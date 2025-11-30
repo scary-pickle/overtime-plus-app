@@ -43,7 +43,7 @@ export default function ExportsScreen() {
   const isDark = colorScheme === 'dark';
   
   const { user } = useAuthStore();
-  const { exportBatches, loadExportBatches, deleteExportBatch, updateExportBatch, markBatchAsSubmitted, isLoading } = useLogsStore();
+  const { exportBatches, loadExportBatches, deleteExportBatch, updateExportBatch, markBatchAsSubmitted, isLoading, hasLoadedExportBatchesOnce } = useLogsStore();
   const { profile } = useProfileStore();
   const [refreshing, setRefreshing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -69,6 +69,22 @@ export default function ExportsScreen() {
       loadExportBatches(user?.id);
     }, [loadExportBatches, user?.id])
   );
+
+  // Check and schedule unsubmitted AVAC notification when export batches change
+  useEffect(() => {
+    if (user?.id && exportBatches.length > 0) {
+      const { notificationManager } = require('../../lib/notifications');
+      // Create a stable reference for the notification check
+      const batchesForNotification = exportBatches.map(b => ({
+        id: b.id,
+        createdAt: b.createdAt,
+        submittedAt: b.submittedAt
+      }));
+      notificationManager.checkAndScheduleUnsubmittedAVACNotification(batchesForNotification).catch(err => {
+        debug.error('Failed to check unsubmitted AVAC notification:', err);
+      });
+    }
+  }, [exportBatches.length, user?.id]);
 
   const handleToggleFilter = () => {
     setIsFilterExpanded(!isFilterExpanded);
@@ -1722,40 +1738,53 @@ export default function ExportsScreen() {
             Each export keeps the PDF, log count, total hours and submission status together.
           </Text>
 
-          <View style={[styles.previewExportCard, isDark && styles.darkPreviewExportCard]}>
-            <View style={styles.previewExportHeader}>
-              <View>
-                <Text style={[styles.previewExportTitle, isDark && styles.darkText]}>
+          <View style={[styles.exportCard, isDark && styles.darkCard, styles.previewExportCard]}>
+            <View style={styles.exportHeader}>
+              <View style={styles.titleContainer}>
+                <Text style={[styles.exportTitle, isDark && styles.darkText]}>
                   Oct AVAC batch
                 </Text>
-                <Text style={[styles.previewExportDate, isDark && styles.darkPreviewDescription]}>
-                  Created 15 Oct · 09:12
+              </View>
+              <View style={styles.headerRight}>
+                <View style={[styles.statusBadge, styles.notSubmittedBadge]}>
+                  <Ionicons name="ellipse" size={12} color="#a15c07" />
+                  <Text style={styles.notSubmittedText}>Not submitted</Text>
+                </View>
+                <TouchableOpacity style={styles.expandButton} disabled>
+                  <Ionicons 
+                    name="chevron-down" 
+                    size={18} 
+                    color={isDark ? "#999" : "#6b7280"} 
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <Text style={[styles.exportSubtitle, isDark && styles.darkSecondaryText]}>
+              Created 15 Oct • 09:12 · 5 logs · 18h 30m
+            </Text>
+
+            <View style={styles.expandedContent}>
+              <View style={styles.metaRow}>
+                <Ionicons name="list" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  Logs included: 5
                 </Text>
               </View>
-              <View style={styles.previewExportActions}>
-                <View style={[styles.previewDotButton, styles.previewDotPrimary]} />
-                <View style={[styles.previewDotButton, styles.previewDotSecondary]} />
-              </View>
-            </View>
 
-            <View style={styles.previewExportStats}>
-              <View style={styles.previewStatRow}>
-                <Text style={styles.previewStatLabel}>Logs included</Text>
-                <Text style={styles.previewStatValue}>5</Text>
+              <View style={styles.metaRow}>
+                <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  Total overtime: 18h 30m
+                </Text>
               </View>
-              <View style={styles.previewStatRow}>
-                <Text style={styles.previewStatLabel}>Total overtime</Text>
-                <Text style={styles.previewStatValue}>18h 30m</Text>
-              </View>
-              <View style={styles.previewStatRow}>
-                <Text style={styles.previewStatLabel}>Status</Text>
-                <Text style={styles.previewStatValue}>Not submitted</Text>
-              </View>
-            </View>
 
-            <View style={styles.previewExportFooter}>
-              <Ionicons name="mail" size={14} color="#4CAF50" />
-              <Text style={styles.previewFooterText}>Submit via email when you’re ready.</Text>
+              <View style={styles.metaRow}>
+                <Ionicons name="mail-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                  Submit via email when you're ready.
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -1766,7 +1795,8 @@ export default function ExportsScreen() {
       </View>
   );
 
-  if (isLoading && exportBatches.length === 0) {
+  // Only show full loading screen on initial load, not on subsequent navigations
+  if (isLoading && exportBatches.length === 0 && !hasLoadedExportBatchesOnce) {
     return (
       <View style={[styles.container, styles.centerContent, isDark && styles.darkContainer]}>
         <ActivityIndicator size="large" color="#007AFF" />
@@ -2393,77 +2423,7 @@ const styles = StyleSheet.create({
     color: '#2e7d32',
   },
   previewExportCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    padding: 16,
-    backgroundColor: '#fff',
-  },
-  darkPreviewExportCard: {
-    backgroundColor: '#2c2c2e',
-    borderColor: '#3a3a3c',
-  },
-  previewExportHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  previewExportTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  previewExportDate: {
-    fontSize: 13,
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  previewExportActions: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  previewDotButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-  },
-  previewDotPrimary: {
-    backgroundColor: '#34C759',
-  },
-  previewDotSecondary: {
-    backgroundColor: '#8E8E93',
-  },
-  previewExportStats: {
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#e5e7eb',
-    paddingVertical: 12,
-    marginBottom: 12,
-    gap: 6,
-  },
-  previewStatRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  previewStatLabel: {
-    fontSize: 13,
-    color: '#6b7280',
-  },
-  previewStatValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  previewExportFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  previewFooterText: {
-    fontSize: 13,
-    color: '#4CAF50',
+    marginTop: 12,
   },
   previewHelperText: {
     fontSize: 14,

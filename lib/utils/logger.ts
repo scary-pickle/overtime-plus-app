@@ -5,8 +5,10 @@
  * - Provides consistent logging interface across the app
  */
 
+// Control logging via env flag; default to off in production
 const isDev = process.env.NODE_ENV !== 'production';
 const isProduction = process.env.NODE_ENV === 'production';
+const enableVerboseLogs = process.env.EXPO_PUBLIC_DEBUG_MODE === 'true' || isDev;
 
 // Masking utilities
 const maskUserId = (value?: string | null): string | undefined => {
@@ -78,7 +80,7 @@ const maskSensitiveData = (obj: any, depth: number = 0): any => {
   
   if (typeof obj === 'string') {
     // Check if it looks like a token (long string, likely base64/JWT)
-    if (obj.length > 100 && /^[A-Za-z0-9+/=_-]+$/.test(obj)) {
+    if (obj.length > 40 && /^[A-Za-z0-9+/=_-]+$/.test(obj)) {
       return maskToken(obj);
     }
     return obj;
@@ -148,7 +150,7 @@ export const logger = {
    * Log debug information (only in development)
    */
   debug: (...args: any[]): void => {
-    if (!isDev) return;
+    if (!enableVerboseLogs) return;
     const masked = args.map(arg => maskSensitiveData(arg));
     console.log(...masked);
   },
@@ -199,7 +201,7 @@ export const logger = {
    * Log info (only in development)
    */
   info: (...args: any[]): void => {
-    if (!isDev) return;
+    if (!enableVerboseLogs) return;
     const masked = args.map(arg => maskSensitiveData(arg));
     console.info(...masked);
   },
@@ -208,7 +210,7 @@ export const logger = {
    * Log with a prefix (only in development)
    */
   log: (prefix: string, ...args: any[]): void => {
-    if (!isDev) return;
+    if (!enableVerboseLogs) return;
     const masked = args.map(arg => maskSensitiveData(arg));
     console.log(`[${prefix}]`, ...masked);
   },
@@ -226,5 +228,4 @@ export const createScopedLogger = (scope: string) => ({
 });
 
 // Export masking utilities for cases where manual masking is needed
-export { maskUserId, maskEmail, maskToken, maskKey, maskName };
-
+export { maskUserId, maskEmail, maskToken, maskKey, maskName, maskSensitiveData };

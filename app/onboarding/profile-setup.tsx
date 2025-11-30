@@ -376,7 +376,7 @@ export default function OnboardingProfileSetup() {
 
           {isDelegateAutoFilled && (
             <View style={[styles.infoBanner, isDark && styles.darkInfoBanner]}>
-              <Ionicons name="information-circle" size={20} color="#2563EB" />
+              <Ionicons name="information-circle" size={20} color="#007AFF" />
               <Text style={[styles.infoText, isDark && styles.darkInfoText]}>
                 Delegate details auto-filled from your department
               </Text>
@@ -454,7 +454,7 @@ export default function OnboardingProfileSetup() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B2239',
+    backgroundColor: '#007AFF',
   },
   darkContainer: {
     backgroundColor: '#000',
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
     color: '#90CAF9',
   },
   button: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#007AFF',
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 12,

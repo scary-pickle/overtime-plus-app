@@ -400,8 +400,19 @@ export const SQLiteStorageAdapter = {
             encryptedFlag = 1;
             debug.debug('Encrypted value (AEAD):', { originalLength: payloadBytes, storedLength: payload.length });
           } catch (encryptError) {
+            // Never store auth/session data unencrypted
+            if (isSupabaseSessionKey(key)) {
+              debug.error('Encryption failed for session payload, aborting write', encryptError);
+              throw encryptError;
+            }
             debug.warn('Encryption failed, storing unencrypted payload (non-fatal):', encryptError);
           }
+        }
+
+        // Refuse to persist sensitive auth/session keys if still unencrypted
+        if (isSupabaseSessionKey(key) && encryptedFlag === 0) {
+          debug.error('Refusing to persist unencrypted auth/session payload');
+          throw new Error('Session write blocked: encryption unavailable');
         }
 
         await database.setAuthSession(storageKey, payload, encryptedFlag);

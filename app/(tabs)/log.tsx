@@ -1036,7 +1036,10 @@ export default function LogScreen() {
             </View>
           </View>
         </View>
-        <View style={styles.emptyStateContainer}>
+        <ScrollView
+          contentContainerStyle={styles.emptyStateContainer}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
             <Text style={[styles.previewTitle, isDark && styles.darkText]}>
               Filter preview
@@ -1121,7 +1124,7 @@ export default function LogScreen() {
                 9 Oct · Needs delegate details before export
               </Text>
               <Text style={[styles.previewMetaText, isDark && styles.darkPreviewDescription]}>
-                Draft logs stay here until you’re ready to submit.
+                Draft logs stay here until you're ready to submit.
               </Text>
             </View>
           </View>
@@ -1129,7 +1132,7 @@ export default function LogScreen() {
           <Text style={[styles.previewHelperText, isDark && styles.darkPreviewDescription]}>
             Start tracking your overtime by creating your first log.
           </Text>
-        </View>
+        </ScrollView>
 
         {/* Add Button - positioned same as actual log list */}
         <TouchableOpacity style={styles.addButton} onPress={handleNewLog}>

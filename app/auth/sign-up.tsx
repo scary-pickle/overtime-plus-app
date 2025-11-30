@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../../lib/auth/validation';
@@ -48,63 +48,77 @@ export default function SignUp() {
 
   return (
     <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={[styles.title, isDark && styles.darkTitle]}>Create your account</Text>
-          <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>Use your @health.qld.gov.au email</Text>
-        </View>
-        <View style={[styles.card, isDark && styles.darkCard]}>
-          {localError ? <Text style={styles.error}>{localError}</Text> : null}
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Email</Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@health.qld.gov.au"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              style={[styles.input, isDark && styles.darkInput]}
-            />
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
+          <View style={styles.content}>
+            <View style={styles.header}>
+              <Text style={[styles.title, isDark && styles.darkTitle]}>Create your account</Text>
+              <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>Use your @health.qld.gov.au email</Text>
+            </View>
+            <View style={[styles.card, isDark && styles.darkCard]}>
+              {localError ? <Text style={styles.error}>{localError}</Text> : null}
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <View style={styles.field}>
+                <Text style={[styles.label, isDark && styles.darkLabel]}>Email</Text>
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@health.qld.gov.au"
+                  placeholderTextColor={isDark ? '#666' : '#999'}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  style={[styles.input, isDark && styles.darkInput]}
+                />
+              </View>
+              <View style={styles.field}>
+                <Text style={[styles.label, isDark && styles.darkLabel]}>Password</Text>
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor={isDark ? '#666' : '#999'}
+                  secureTextEntry
+                  style={[styles.input, isDark && styles.darkInput]}
+                />
+              </View>
+              <View style={styles.field}>
+                <Text style={[styles.label, isDark && styles.darkLabel]}>Confirm password</Text>
+                <TextInput
+                  value={confirm}
+                  onChangeText={setConfirm}
+                  placeholder="••••••••"
+                  placeholderTextColor={isDark ? '#666' : '#999'}
+                  secureTextEntry
+                  style={[styles.input, isDark && styles.darkInput]}
+                />
+              </View>
+              <TouchableOpacity 
+                onPress={onSubmit} 
+                disabled={isLoading} 
+                style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
+              >
+                <Text style={styles.buttonText}>{isLoading ? 'Creating...' : 'Create Account'}</Text>
+              </TouchableOpacity>
+              <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
+                We'll email you a 6-digit code to confirm your account inside the app.
+              </Text>
+            </View>
+            <Link href="/auth/sign-in">
+              <Text style={[styles.link, isDark && styles.darkLink]}>Already have an account? Sign in</Text>
+            </Link>
           </View>
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              secureTextEntry
-              style={[styles.input, isDark && styles.darkInput]}
-            />
-          </View>
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Confirm password</Text>
-            <TextInput
-              value={confirm}
-              onChangeText={setConfirm}
-              placeholder="••••••••"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              secureTextEntry
-              style={[styles.input, isDark && styles.darkInput]}
-            />
-          </View>
-          <TouchableOpacity 
-            onPress={onSubmit} 
-            disabled={isLoading} 
-            style={[styles.button, styles.secondaryButton, isLoading && styles.buttonDisabled]}
-          >
-            <Text style={styles.buttonText}>{isLoading ? 'Creating...' : 'Create Account'}</Text>
-          </TouchableOpacity>
-          <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
-            We'll email you a 6-digit code to confirm your account inside the app.
-          </Text>
-        </View>
-        <Link href="/auth/sign-in">
-          <Text style={[styles.link, isDark && styles.darkLink]}>Already have an account? Sign in</Text>
-        </Link>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -117,10 +131,20 @@ const styles = StyleSheet.create({
   darkContainer: {
     backgroundColor: '#000',
   },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
   content: {
     flex: 1,
     padding: 24,
     justifyContent: 'center',
+    minHeight: '100%',
   },
   header: {
     marginBottom: 32,
@@ -195,7 +219,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   secondaryButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: '#007AFF',
   },
   buttonDisabled: {
     opacity: 0.7,

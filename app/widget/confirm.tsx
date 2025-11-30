@@ -125,6 +125,10 @@ export default function WidgetConfirmScreen() {
 
       // Schedule 8-hour reminder notification
       const { notificationManager } = await import('../../lib/notifications');
+      
+      // Cancel shift start reminder for today (if it exists) since shift is now started
+      await notificationManager.cancelShiftStartReminder(today);
+      
       await notificationManager.scheduleActiveShiftReminder(draftLog.id, today, currentActualTime);
 
       const message = roster 

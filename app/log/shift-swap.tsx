@@ -436,19 +436,7 @@ export default function ShiftSwapScreen() {
 
   return (
     <SharedTimePickerProvider>
-      <View style={[styles.container, isDark && styles.darkContainer]}>
-        <View style={[styles.header, isDark && styles.darkHeader]}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Text style={[styles.backButtonText, isDark && styles.darkText]}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={[styles.title, isDark && styles.darkText]}>Shift Swap</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-
-        <ScrollView style={[styles.scrollView, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
+      <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
           <View style={styles.content}>
             {/* Info Banner */}
             <View style={[styles.infoBanner, isDark && styles.darkInfoBanner]}>
@@ -701,7 +689,6 @@ export default function ShiftSwapScreen() {
             </View>
           </View>
         </ScrollView>
-      </View>
     </SharedTimePickerProvider>
   );
 }
@@ -713,38 +700,6 @@ const styles = StyleSheet.create({
   },
   darkContainer: {
     backgroundColor: '#000',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  darkHeader: {
-    backgroundColor: '#1c1c1e',
-    borderBottomColor: '#333',
-  },
-  backButton: {
-    padding: 8,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  headerSpacer: {
-    width: 60,
-  },
-  scrollView: {
-    flex: 1,
   },
   content: {
     padding: 12,

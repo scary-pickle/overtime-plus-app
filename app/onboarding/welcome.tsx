@@ -2,15 +2,19 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useHideSplashOnFocus } from '../../lib/utils/hideSplashOnFocus';
 
 export default function OnboardingWelcome() {
   const router = useRouter();
+  
+  // Hide splash screen when this screen is focused and ready
+  useHideSplashOnFocus();
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <View style={styles.iconContainer}>
-          <Ionicons name="time-outline" size={80} color="#2563EB" />
+          <Ionicons name="time-outline" size={80} color="#007AFF" />
         </View>
         
         <Text style={styles.title}>Welcome to Overtime+</Text>
@@ -49,7 +53,7 @@ export default function OnboardingWelcome() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#FFFFFF',
   },
   content: {
     flex: 1,
@@ -63,13 +67,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#fff',
+    color: '#111',
     textAlign: 'center',
     marginBottom: 16,
   },
   description: {
     fontSize: 16,
-    color: '#cfe0f7',
+    color: '#333',
     textAlign: 'center',
     marginBottom: 40,
     lineHeight: 24,
@@ -86,10 +90,10 @@ const styles = StyleSheet.create({
   },
   featureText: {
     fontSize: 16,
-    color: '#fff',
+    color: '#333',
   },
   button: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#007AFF',
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 12,

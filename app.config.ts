@@ -9,9 +9,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
   splash: {
-    image: './assets/splash.png',
-    resizeMode: 'contain',
-    backgroundColor: '#ffffff'
+    backgroundColor: '#007AFF'
   },
   assetBundlePatterns: [
     '**/*'
@@ -20,7 +18,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     bundleIdentifier: 'com.overtimeplus.app',
     infoPlist: {
-      NSUserNotificationUsageDescription: 'Overtime+ uses notifications to remind you when your rostered shift ends and to send snoozed reminders.'
+      NSUserNotificationUsageDescription: 'Overtime+ uses notifications to remind you when your rostered shift ends and to send snoozed reminders.',
+      NSAllowsLocalNetworking: process.env.EXPO_PUBLIC_ALLOW_HTTP_IN_DEV === 'true',
     }
   },
   android: {
@@ -29,7 +28,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#ffffff'
     },
-    package: 'com.overtimeplus.app'
+    package: 'com.overtimeplus.app',
+    networkSecurityConfig: 'res/xml/network_security_config.xml'
   },
   web: {
     favicon: './assets/favicon.png'

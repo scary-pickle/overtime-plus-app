@@ -35,16 +35,16 @@ export class ProfileStorage {
         try {
           profileToSave.employeeInitial = await encrypt(profileToSave.employeeInitial);
         } catch (encryptError) {
-          debug.error('Failed to encrypt initials (non-fatal):', encryptError);
-          // Continue without encryption if it fails
+          debug.error('Failed to encrypt initials (blocking save):', encryptError);
+          throw new Error('Could not securely store profile data. Please try again.');
         }
       }
       if (profileToSave.email) {
         try {
           profileToSave.email = await encrypt(profileToSave.email);
         } catch (encryptError) {
-          debug.error('Failed to encrypt email (non-fatal):', encryptError);
-          // Continue without encryption if it fails
+          debug.error('Failed to encrypt email (blocking save):', encryptError);
+          throw new Error('Could not securely store profile data. Please try again.');
         }
       }
       

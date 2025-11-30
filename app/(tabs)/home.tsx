@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
+import { useHideSplashOnFocus } from '../../lib/utils/hideSplashOnFocus';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
@@ -33,6 +34,9 @@ export default function HomeScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  
+  // Hide splash screen when this screen is focused and ready
+  useHideSplashOnFocus();
   
   // Get user from auth store for userId
   const { user } = useAuthStore();
@@ -324,6 +328,9 @@ export default function HomeScreen() {
       await addLog(draftLog);
       setActiveShiftDraft(draftLog);
 
+      // Cancel shift start reminder for today (if it exists) since shift is now started
+      await notificationManager.cancelShiftStartReminder(today);
+
       // Schedule 8-hour reminder notification
       await notificationManager.scheduleActiveShiftReminder(draftLog.id, today, currentActualTime);
 
@@ -542,6 +549,50 @@ export default function HomeScreen() {
   const draftLogs = getDraftLogs();
   const readyLogs = getReadyLogs();
   const pendingCount = draftLogs.length + readyLogs.length;
+
+  // Check and schedule unexported logs notification when logs change
+  useEffect(() => {
+    if (hasProfile && isComplete) {
+      const unexportedCount = draftLogs.length + readyLogs.length;
+      notificationManager.checkAndScheduleUnexportedLogsNotification(unexportedCount).catch(err => {
+        debug.error('Failed to check unexported logs notification:', err);
+      });
+    }
+  }, [draftLogs.length, readyLogs.length, hasProfile, isComplete]);
+
+  // Check and schedule incomplete draft reminders when logs change
+  useEffect(() => {
+    if (hasProfile && isComplete) {
+      const draftLogsForNotification = draftLogs.map(log => ({
+        id: log.id,
+        date: log.date,
+        createdAt: log.createdAt,
+        isActiveShift: log.isActiveShift
+      }));
+      notificationManager.checkAndScheduleIncompleteDraftReminder(draftLogsForNotification).catch(err => {
+        debug.error('Failed to check incomplete draft reminder:', err);
+      });
+    }
+  }, [draftLogs.length, hasProfile, isComplete]);
+
+  // Schedule weekly summary notification (only on app start, not on every log change)
+  // Use a ref to track if we've already scheduled it in this session
+  const weeklySummaryScheduledRef = React.useRef(false);
+  
+  useEffect(() => {
+    if (hasProfile && isComplete && logs.length > 0 && !weeklySummaryScheduledRef.current) {
+      // Calculate total hours (convert minutes to hours)
+      const totalMinutes = logs.reduce((sum, log) => sum + log.minutesOvertime, 0);
+      const totalHours = totalMinutes / 60;
+      const pendingCount = draftLogs.length + readyLogs.length;
+      
+      notificationManager.scheduleWeeklySummary(totalHours, pendingCount).catch(err => {
+        debug.error('Failed to schedule weekly summary:', err);
+      });
+      
+      weeklySummaryScheduledRef.current = true;
+    }
+  }, [hasProfile, isComplete]);
 
   if (!hasProfile) {
     // Show welcome screen while profile loads

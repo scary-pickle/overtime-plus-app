@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -67,6 +67,8 @@ export default function NewShiftScreen() {
   const [createdFromTemplate, setCreatedFromTemplate] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [showLabelModal, setShowLabelModal] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const dateRangeSectionY = useRef<number>(0);
 
   useEffect(() => {
     // Load templates on mount
@@ -425,8 +427,24 @@ export default function NewShiftScreen() {
     </View>
   );
 
+  const handleToDateOpen = () => {
+    // Scroll to show the "To" date input and calendar when it opens
+    // The calendar appears below the input, so we scroll to approximately where
+    // the "To" input is (section title ~30px + From input ~80px + gap ~12px = ~122px offset)
+    if (scrollViewRef.current && dateRangeSectionY.current > 0) {
+      // Scroll to show the "To" input field and the calendar below it
+      scrollViewRef.current.scrollTo({ y: dateRangeSectionY.current + 120, animated: true });
+    }
+  };
+
   const renderDateRange = () => (
-    <View style={[styles.section, isDark && styles.darkCard]}>
+    <View 
+      onLayout={(event) => {
+        // Store the Y position of the date range section relative to ScrollView content
+        dateRangeSectionY.current = event.nativeEvent.layout.y;
+      }}
+      style={[styles.section, isDark && styles.darkCard]}
+    >
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
         Active Date Range
       </Text>
@@ -447,6 +465,7 @@ export default function NewShiftScreen() {
             value={activeTo}
             onChange={setActiveTo}
             placeholder="Select end date"
+            onOpen={handleToDateOpen}
           />
         </View>
       </View>
@@ -536,7 +555,11 @@ export default function NewShiftScreen() {
 
   return (
     <SharedTimePickerProvider>
-      <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={[styles.container, isDark && styles.darkContainer]} 
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.content}>
         {/* Template Selection */}
         {renderTemplateSelection()}

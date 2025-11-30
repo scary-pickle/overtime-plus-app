@@ -66,6 +66,7 @@ interface LogsState {
   logs: OvertimeLog[];
   exportBatches: ExportBatch[];
   isLoading: boolean;
+  hasLoadedExportBatchesOnce: boolean;
   error: string | null;
   
   // Actions
@@ -126,6 +127,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
   logs: [],
   exportBatches: [],
   isLoading: false,
+  hasLoadedExportBatchesOnce: false,
   error: null,
 
   loadLogs: async (userId?: string | null) => {
@@ -293,6 +295,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
             set({ 
               exportBatches: mergedBatches, 
               isLoading: false,
+              hasLoadedExportBatchesOnce: true,
               error: null 
             });
             return;
@@ -307,6 +310,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       set({ 
         exportBatches, 
         isLoading: false,
+        hasLoadedExportBatchesOnce: true,
         error: null 
       });
       
@@ -382,8 +386,10 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         });
       }
     } catch (error) {
+      const hasLoadedOnce = get().hasLoadedExportBatchesOnce;
       set({ 
-        isLoading: false, 
+        isLoading: false,
+        hasLoadedExportBatchesOnce: hasLoadedOnce, // Preserve the flag even on error
         error: error instanceof Error ? error.message : 'Failed to load export batches' 
       });
     }
@@ -953,6 +959,12 @@ export const useLogsStore = create<LogsState>((set, get) => ({
           debug.error('Background sync failed (non-fatal):', err);
         });
       }
+      
+      // Check and update unsubmitted AVAC notification after marking as submitted
+      const { notificationManager } = require('../notifications');
+      notificationManager.checkAndScheduleUnsubmittedAVACNotification(updatedBatches).catch(err => {
+        debug.error('Failed to check unsubmitted AVAC notification (non-fatal):', err);
+      });
     } catch (error) {
       set({ 
         isLoading: false, 
