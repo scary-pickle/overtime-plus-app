@@ -42,7 +42,6 @@ export function ShiftsCalendarView({
   const colorScheme = useColorScheme();
   const isDark = isDarkProp ?? colorScheme === 'dark';
   
-  const [isVisible, setIsVisible] = useState(true); // Open by default
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarDays, setCalendarDays] = useState<DayInfo[]>([]);
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getStartOfWeek(new Date()));
@@ -225,9 +224,6 @@ export function ShiftsCalendarView({
     return `${startDate.toLocaleDateString('en-US', options)} - ${endDate.toLocaleDateString('en-US', options)}`;
   };
 
-  const togglePicker = () => {
-    setIsVisible(!isVisible);
-  };
 
   const handleDayPress = (dayInfo: DayInfo) => {
     if (dayInfo.shifts.length > 0 && onDayPress) {
@@ -286,49 +282,8 @@ export function ShiftsCalendarView({
 
   return (
     <View style={styles.container}>
-      {/* Segmented Control Toggle */}
-      <View style={[styles.segmentedControl, isDark && styles.darkSegmentedControl]}>
-        <TouchableOpacity
-          style={[
-            styles.segment,
-            isVisible && styles.activeSegment,
-            isDark && styles.darkSegment,
-            isVisible && isDark && styles.darkActiveSegment,
-          ]}
-          onPress={() => setIsVisible(true)}
-        >
-          <Text style={[
-            styles.segmentText,
-            isVisible && styles.activeSegmentText,
-            isDark && styles.darkSegmentText,
-            isVisible && isDark && styles.darkActiveSegmentText,
-          ]}>
-            📅 Calendar
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={[
-            styles.segment,
-            !isVisible && styles.activeSegment,
-            isDark && styles.darkSegment,
-            !isVisible && isDark && styles.darkActiveSegment,
-          ]}
-          onPress={() => setIsVisible(false)}
-        >
-          <Text style={[
-            styles.segmentText,
-            !isVisible && styles.activeSegmentText,
-            isDark && styles.darkSegmentText,
-            !isVisible && isDark && styles.darkActiveSegmentText,
-          ]}>
-            ☰ List
-          </Text>
-        </TouchableOpacity>
-      </View>
-
       {/* Monthly Calendar View */}
-      {isVisible && viewMode === 'month' && (
+      {viewMode === 'month' && (
         <View style={[styles.calendarContainer, isDark && styles.darkCalendarContainer]}>
           {/* Header */}
           <View style={[styles.header, isDark && styles.darkHeader]}>
@@ -429,7 +384,7 @@ export function ShiftsCalendarView({
       )}
 
       {/* Weekly Calendar View */}
-      {isVisible && viewMode === 'week' && (
+      {viewMode === 'week' && (
         <View style={[styles.calendarContainer, isDark && styles.darkCalendarContainer]}>
           <View style={[styles.weekHeader, isDark && styles.darkHeader]}>
             <TouchableOpacity
@@ -520,53 +475,6 @@ export function ShiftsCalendarView({
 const styles = StyleSheet.create({
   container: {
     marginVertical: 0,
-  },
-  segmentedControl: {
-    flexDirection: 'row',
-    backgroundColor: '#f0f0f0',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  darkSegmentedControl: {
-    backgroundColor: '#2c2c2e',
-  },
-  segment: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  darkSegment: {
-    backgroundColor: 'transparent',
-  },
-  activeSegment: {
-    backgroundColor: '#007AFF',
-  },
-  darkActiveSegment: {
-    backgroundColor: '#007AFF',
-  },
-  segmentText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#666',
-  },
-  darkSegmentText: {
-    color: '#999',
-  },
-  activeSegmentText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  darkActiveSegmentText: {
-    color: '#fff',
   },
   darkText: {
     color: '#fff',

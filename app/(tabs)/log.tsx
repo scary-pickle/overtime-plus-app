@@ -969,19 +969,19 @@ export default function LogScreen() {
     return (
       <TouchableOpacity
         style={[
-          styles.filterButton,
-          isActive && styles.activeFilterButton,
-          isDark && styles.darkFilterButton,
-          isActive && isDark && styles.darkActiveFilterButton,
+          styles.secondaryFilterButton,
+          isActive && styles.activeSecondaryFilterButton,
+          isDark && styles.darkSecondaryFilterButton,
+          isActive && isDark && styles.darkActiveSecondaryFilterButton,
         ]}
         onPress={() => handleFilterChange(status)}
       >
         <Text
           style={[
-            styles.filterButtonText,
-            isActive && styles.activeFilterButtonText,
-            isDark && styles.darkFilterButtonText,
-            isActive && isDark && styles.darkActiveFilterButtonText,
+            styles.secondaryFilterButtonText,
+            isActive && styles.activeSecondaryFilterButtonText,
+            isDark && styles.darkSecondaryFilterButtonText,
+            isActive && isDark && styles.darkActiveSecondaryFilterButtonText,
           ]}
         >
           {label} ({statusCounts[status]})

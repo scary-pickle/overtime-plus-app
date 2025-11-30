@@ -75,7 +75,29 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           hasUser: !!user,
           hasError: !!error,
           errorMessage: error?.message,
+          hasAccessToken: !!session?.access_token,
+          hasRefreshToken: !!session?.refresh_token,
         });
+        
+        // If we have a session but no user, and we have a refresh token, try refreshing
+        if (session && !user && session.refresh_token) {
+          debug.debug('Session found but no user - attempting refresh on attempt ' + attempt);
+          try {
+            // @ts-ignore
+            const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
+              refresh_token: session.refresh_token,
+            });
+            if (!refreshError && refreshData?.session) {
+              session = refreshData.session;
+              user = session?.user ?? null;
+              debug.debug('Session refreshed successfully, user found:', !!user);
+            } else {
+              debug.debug('Refresh failed:', refreshError);
+            }
+          } catch (refreshErr) {
+            debug.debug('Refresh exception:', refreshErr);
+          }
+        }
         
         if (session && user) {
           debug.debug('Session found on attempt ' + attempt);
@@ -89,6 +111,104 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       if (error) throw error;
+
+      // If we have a session, check if the access token is expired and refresh if needed
+      if (session && user && session.access_token) {
+        // Check if access token is expired or about to expire (within 60 seconds)
+        try {
+          const tokenParts = session.access_token.split('.');
+          if (tokenParts.length === 3) {
+            const payload = JSON.parse(atob(tokenParts[1]));
+            const exp = payload.exp; // Expiration timestamp (seconds since epoch)
+            const now = Math.floor(Date.now() / 1000); // Current time in seconds
+            
+            // If token is expired or expires within 60 seconds, refresh it
+            if (exp && exp - now < 60) {
+              debug.debug('Access token expired or expiring soon, refreshing...', {
+                expiresIn: exp - now,
+                expired: exp - now < 0,
+              });
+              
+              // Try to refresh the session using the refresh token
+              if (session.refresh_token) {
+                // @ts-ignore
+                const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
+                  refresh_token: session.refresh_token,
+                });
+                
+                if (refreshError) {
+                  debug.error('Failed to refresh expired session:', refreshError);
+                  // Refresh failed - session is invalid, clear it
+                  await (supabase as any).auth.signOut();
+                  set({
+                    session: null,
+                    user: null,
+                    emailVerified: false,
+                    hasCompletedOnboarding: false,
+                    isLoading: false,
+                  });
+                  debug.debug('Session cleared due to refresh failure');
+                  return;
+                }
+                
+                if (refreshData?.session?.access_token) {
+                  debug.debug('Session refreshed successfully after expiration');
+                  session = refreshData.session;
+                  user = session.user;
+                } else {
+                  debug.error('Refresh succeeded but no session returned');
+                  await (supabase as any).auth.signOut();
+                  set({
+                    session: null,
+                    user: null,
+                    emailVerified: false,
+                    hasCompletedOnboarding: false,
+                    isLoading: false,
+                  });
+                  return;
+                }
+              } else {
+                debug.error('Access token expired but no refresh token available');
+                await (supabase as any).auth.signOut();
+                set({
+                  session: null,
+                  user: null,
+                  emailVerified: false,
+                  hasCompletedOnboarding: false,
+                  isLoading: false,
+                });
+                return;
+              }
+            }
+          }
+        } catch (tokenError) {
+          debug.warn('Could not parse access token, attempting refresh anyway:', tokenError);
+          // If we can't parse the token, try refreshing anyway
+          if (session.refresh_token) {
+            // @ts-ignore
+            const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
+              refresh_token: session.refresh_token,
+            });
+            
+            if (!refreshError && refreshData?.session?.access_token) {
+              debug.debug('Session refreshed successfully (token parse error case)');
+              session = refreshData.session;
+              user = session.user;
+            } else {
+              debug.error('Failed to refresh session after token parse error:', refreshError);
+              await (supabase as any).auth.signOut();
+              set({
+                session: null,
+                user: null,
+                emailVerified: false,
+                hasCompletedOnboarding: false,
+                isLoading: false,
+              });
+              return;
+            }
+          }
+        }
+      }
 
       // If we have a session, verify the user still exists in Supabase
       if (session && user) {
