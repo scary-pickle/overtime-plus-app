@@ -575,24 +575,8 @@ export default function HomeScreen() {
     }
   }, [draftLogs.length, hasProfile, isComplete]);
 
-  // Schedule weekly summary notification (only on app start, not on every log change)
-  // Use a ref to track if we've already scheduled it in this session
-  const weeklySummaryScheduledRef = React.useRef(false);
-  
-  useEffect(() => {
-    if (hasProfile && isComplete && logs.length > 0 && !weeklySummaryScheduledRef.current) {
-      // Calculate total hours (convert minutes to hours)
-      const totalMinutes = logs.reduce((sum, log) => sum + log.minutesOvertime, 0);
-      const totalHours = totalMinutes / 60;
-      const pendingCount = draftLogs.length + readyLogs.length;
-      
-      notificationManager.scheduleWeeklySummary(totalHours, pendingCount).catch(err => {
-        debug.error('Failed to schedule weekly summary:', err);
-      });
-      
-      weeklySummaryScheduledRef.current = true;
-    }
-  }, [hasProfile, isComplete]);
+  // Weekly summary notification is scheduled in app/_layout.tsx during app initialization
+  // No need to schedule it here to avoid duplicate scheduling
 
   if (!hasProfile) {
     // Show welcome screen while profile loads

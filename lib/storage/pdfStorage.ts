@@ -539,6 +539,119 @@ export function classifyPdfUri(uri?: string | null): 'cloud' | 'local' | 'unknow
 }
 
 /**
+ * Check if a PDF is cached locally and download it if not (non-blocking)
+ * This is used to proactively cache PDFs when export batches are loaded
+ * @param batch - Export batch with pdfUri
+ * @param profile - Optional profile for filename generation
+ * @returns Promise that resolves when check/download completes (fire-and-forget)
+ */
+export async function ensurePDFCached(
+  batch: { id: string; pdfUri: string; customName?: string | null },
+  profile?: { fullName?: string; isSMO?: boolean } | null
+): Promise<void> {
+  try {
+    // Only process cloud URLs
+    if (!isCloudURL(batch.pdfUri)) {
+      return; // Already local, no need to cache
+    }
+
+    // Check if file already exists in cache
+    const { getExportFileName } = await import('../utils/exportFilename');
+    const preferredFileName = getExportFileName(batch as any, profile as any);
+    
+    const fileName = preferredFileName || `${batch.id}.pdf`;
+    const finalFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+    
+    const cacheDir = Paths?.cache?.uri;
+    if (!cacheDir) {
+      return; // Cache directory not available
+    }
+    
+    const localCachePath = cacheDir.endsWith('/') 
+      ? `${cacheDir}${finalFileName}` 
+      : `${cacheDir}/${finalFileName}`;
+    
+    // Check if file exists in cache
+    try {
+      const { getInfoAsync } = await import('expo-file-system/legacy');
+      const cacheInfo = await getInfoAsync(localCachePath);
+      if (cacheInfo.exists) {
+        // Already cached, no need to download
+        if (isDevLoggingEnabled) {
+          debug.debug('PDF already cached, skipping download', { batchId: batch.id });
+        }
+        return;
+      }
+    } catch (cacheCheckError) {
+      // Cache doesn't exist, continue with download
+    }
+
+    // Check network connectivity before attempting download
+    const { sync } = await import('../supabase');
+    const isConnected = await sync.checkConnection().catch(() => false);
+    
+    if (!isConnected) {
+      if (isDevLoggingEnabled) {
+        debug.debug('Skipping PDF download - no network connection', { batchId: batch.id });
+      }
+      return; // No network, skip download (will be handled on-demand)
+    }
+
+    // Download in background (fire-and-forget)
+    downloadPDFFromStorage(batch.pdfUri, batch.id, preferredFileName)
+      .then(() => {
+        if (isDevLoggingEnabled) {
+          debug.debug('PDF cached successfully', { batchId: batch.id });
+        }
+      })
+      .catch((error) => {
+        // Non-fatal - log but don't throw
+        debug.warn('Failed to cache PDF (non-fatal):', {
+          batchId: batch.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  } catch (error) {
+    // Non-fatal - log but don't throw
+    debug.warn('Error checking/caching PDF (non-fatal):', {
+      batchId: batch.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Ensure multiple PDFs are cached (proactive caching for export batches)
+ * Downloads PDFs in background if they're cloud URLs and not already cached
+ * @param batches - Array of export batches
+ * @param profile - Optional profile for filename generation
+ */
+export async function ensurePDFsCached(
+  batches: Array<{ id: string; pdfUri: string; customName?: string | null }>,
+  profile?: { fullName?: string; isSMO?: boolean } | null
+): Promise<void> {
+  if (!batches || batches.length === 0) {
+    return;
+  }
+
+  // Process batches in parallel (but limit concurrency to avoid overwhelming network)
+  const MAX_CONCURRENT = 3;
+  const cloudBatches = batches.filter(batch => batch.pdfUri && isCloudURL(batch.pdfUri));
+  
+  if (cloudBatches.length === 0) {
+    return; // No cloud PDFs to cache
+  }
+
+  // Process in batches to limit concurrency
+  for (let i = 0; i < cloudBatches.length; i += MAX_CONCURRENT) {
+    const batch = cloudBatches.slice(i, i + MAX_CONCURRENT);
+    await Promise.allSettled(
+      batch.map(b => ensurePDFCached(b, profile))
+    );
+  }
+}
+
+/**
  * Clear cached PDF from local cache (for testing)
  * @param batchId - Export batch ID
  * @returns true if file was deleted, false if it didn't exist

@@ -16,10 +16,9 @@ export function useHideSplashOnFocus() {
     React.useCallback(() => {
       if (!hasHiddenSplash.current) {
         hasHiddenSplash.current = true;
-        // Delay to ensure screen is fully painted and for a smooth transition
-        // This creates a professional feel rather than a quick flash
-        // Longer delay for a more polished, professional appearance
-        const delay = Platform.OS === 'ios' ? 1200 : 1000;
+        // Very short delay - animation should start almost instantly
+        // Just enough time for the screen to be ready
+        const delay = Platform.OS === 'ios' ? 100 : 80;
         setTimeout(() => {
           SplashScreen.hideAsync().catch((error) => {
             // Splash may already be hidden, ignore error

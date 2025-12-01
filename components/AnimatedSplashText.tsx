@@ -1,24 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Platform } from 'react-native';
 
+interface AnimatedSplashTextProps {
+  onHide?: () => void;
+}
+
 /**
  * Animated welcome text component that matches the splash screen
  * Provides a smooth fade-in and scale animation
  * Stays visible until splash screen is hidden (matches hideSplashOnFocus timing)
  */
-export function AnimatedSplashText() {
+export function AnimatedSplashText({ onHide }: AnimatedSplashTextProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.6)).current;
   const overlayFadeAnim = useRef(new Animated.Value(1)).current;
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    // Start text animations immediately when component mounts
+    // Start text animations almost immediately when component mounts
     const startTimer = setTimeout(() => {
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 800,
+          duration: 600, // 0.6 seconds fade-in
           useNativeDriver: true,
         }),
         Animated.spring(scaleAnim, {
@@ -28,11 +32,10 @@ export function AnimatedSplashText() {
           useNativeDriver: true,
         }),
       ]).start();
-    }, 50);
+    }, 100); // Small delay to ensure component is ready
     
-    // Hide overlay after the same delay as splash screen hides
-    // This matches the timing in hideSplashOnFocus.ts (1200ms iOS, 1000ms Android)
-    const splashHideDelay = Platform.OS === 'ios' ? 1200 : 1000;
+    // Keep animated text visible for 1.2 seconds total
+    const displayDuration = Platform.OS === 'ios' ? 1200 : 1200; // 1.2 seconds total
     const hideTimer = setTimeout(() => {
       // Fade out the overlay smoothly
       Animated.timing(overlayFadeAnim, {
@@ -41,14 +44,15 @@ export function AnimatedSplashText() {
         useNativeDriver: true,
       }).start(() => {
         setIsVisible(false);
+        onHide?.(); // Notify parent to unmount component
       });
-    }, splashHideDelay);
+    }, displayDuration);
     
     return () => {
       clearTimeout(startTimer);
       clearTimeout(hideTimer);
     };
-  }, [fadeAnim, scaleAnim, overlayFadeAnim]);
+  }, [fadeAnim, scaleAnim, overlayFadeAnim, onHide]);
 
   if (!isVisible) {
     return null;

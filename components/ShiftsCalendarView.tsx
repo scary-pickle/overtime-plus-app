@@ -436,9 +436,12 @@ export function ShiftsCalendarView({
                   key={`${dayInfo.date}-${index}`}
                   style={[
                     styles.weekDayCell,
+                    isDark && styles.darkWeekDayCell,
                     dayInfo.isToday && styles.weekTodayCell,
                     isSelected && styles.weekSelectedCell,
+                    isSelected && isDark && styles.darkWeekSelectedCell,
                     !hasShifts && styles.weekDisabledCell,
+                    !hasShifts && isDark && styles.darkWeekDisabledCell,
                   ]}
                   onPress={() => handleDayPress(dayInfo)}
                   disabled={!hasShifts}
@@ -446,7 +449,7 @@ export function ShiftsCalendarView({
                   <Text
                     style={[
                       styles.weekDayName,
-                      isDark && styles.darkDayText,
+                      isDark && !isSelected && styles.darkWeekDayName,
                       isSelected && styles.weekSelectedDayName,
                     ]}
                   >
@@ -455,7 +458,7 @@ export function ShiftsCalendarView({
                   <Text
                     style={[
                       styles.weekDayNumber,
-                      isDark && styles.darkDayText,
+                      isDark && !isSelected && styles.darkWeekDayNumber,
                       isSelected && styles.weekSelectedDayNumber,
                     ]}
                   >
@@ -709,6 +712,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
   },
+  darkWeekDayCell: {
+    backgroundColor: '#2c2c2e',
+  },
   weekTodayCell: {
     borderWidth: 2,
     borderColor: '#007AFF',
@@ -716,13 +722,22 @@ const styles = StyleSheet.create({
   weekSelectedCell: {
     backgroundColor: '#007AFF',
   },
+  darkWeekSelectedCell: {
+    backgroundColor: '#0A84FF',
+  },
   weekDisabledCell: {
     opacity: 0.4,
+  },
+  darkWeekDisabledCell: {
+    opacity: 0.3,
   },
   weekDayName: {
     fontSize: 12,
     fontWeight: '600',
     color: '#666',
+  },
+  darkWeekDayName: {
+    color: '#a0a0a0',
   },
   weekSelectedDayName: {
     color: '#fff',
@@ -732,6 +747,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#333',
     marginTop: 4,
+  },
+  darkWeekDayNumber: {
+    color: '#fff',
   },
   weekSelectedDayNumber: {
     color: '#fff',

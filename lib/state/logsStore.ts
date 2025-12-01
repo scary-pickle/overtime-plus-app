@@ -3,6 +3,7 @@ import { OvertimeLog, ExportBatch, MinutesCalculation } from '../../types';
 import { database } from '../db/sqlite';
 import { computeMinutes, roundToNearest5, getPreviousISODate, getCurrentDate } from '../time';
 import { useAuthStore } from './authStore';
+import { useProfileStore } from './profileStore';
 import { logsSync, exportSync } from '../supabase';
 import { uploadPDFToStorage, isLocalPath } from '../storage/pdfStorage';
 import { syncQueue } from '../sync/queue';
@@ -235,11 +236,12 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // If we have a userId, also sync from Supabase to ensure we have the latest data
       // This prevents showing stale "not submitted" status
       // Use Promise.race with a timeout to avoid hanging if Supabase is slow
+      // Increased timeout to 10 seconds to handle slower mobile data connections
       if (userId) {
         try {
           const syncPromise = exportSync.downloadExportBatches(userId);
           const timeoutPromise = new Promise<ExportBatch[]>((resolve) => {
-            setTimeout(() => resolve([]), 2000); // 2 second timeout
+            setTimeout(() => resolve([]), 10000); // 10 second timeout (increased from 2s for mobile data)
           });
           const remoteBatches = await Promise.race([syncPromise, timeoutPromise]);
           if (remoteBatches.length > 0) {
@@ -298,6 +300,17 @@ export const useLogsStore = create<LogsState>((set, get) => ({
               hasLoadedExportBatchesOnce: true,
               error: null 
             });
+            
+            // Proactively cache PDFs in background (non-blocking)
+            // This ensures PDFs are available offline, especially when switching devices
+            if (mergedBatches.length > 0) {
+              const { ensurePDFsCached } = await import('../storage/pdfStorage');
+              const { profile } = useProfileStore.getState();
+              ensurePDFsCached(mergedBatches, profile).catch((error) => {
+                debug.warn('Failed to proactively cache PDFs (non-fatal):', error);
+              });
+            }
+            
             return;
           }
         } catch (syncError) {
@@ -314,16 +327,40 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         error: null 
       });
       
+      // Proactively cache PDFs in background (non-blocking)
+      // This ensures PDFs are available offline, especially when switching devices
+      if (exportBatches.length > 0) {
+        const { ensurePDFsCached } = await import('../storage/pdfStorage');
+        const { profile } = useProfileStore.getState();
+        ensurePDFsCached(exportBatches, profile).catch((error) => {
+          debug.warn('Failed to proactively cache PDFs (non-fatal):', error);
+        });
+      }
+      
       // Continue syncing in background for future updates
+      // This ensures we get batches even if the initial sync timed out
       if (userId) {
         exportSync.downloadExportBatches(userId).then(async (remoteBatches) => {
-          if (remoteBatches.length > 0) {
-            debug.debug('Syncing export batches from Supabase in background');
-            // Get current batches from store (may have been updated since initial load)
-            const currentBatches = get().exportBatches;
-            const localBatchMap = new Map(currentBatches.map(batch => [batch.id, batch]));
-            const remoteBatchMap = new Map(remoteBatches.map(batch => [batch.id, batch]));
-            
+          // Always process remote batches, even if empty (to handle updates)
+          debug.debug('Syncing export batches from Supabase in background', { count: remoteBatches.length });
+          
+          // Get current batches from store (may have been updated since initial load)
+          const currentBatches = get().exportBatches;
+          const localBatchMap = new Map(currentBatches.map(batch => [batch.id, batch]));
+          const remoteBatchMap = new Map(remoteBatches.map(batch => [batch.id, batch]));
+          
+          // Check if we have new batches that aren't in local
+          const hasNewBatches = remoteBatches.some(batch => !localBatchMap.has(batch.id));
+          const hasUpdatedBatches = remoteBatches.some(batch => {
+            const local = localBatchMap.get(batch.id);
+            return local && (
+              (batch.submittedAt && !local.submittedAt) ||
+              (batch.submittedAt && local.submittedAt && new Date(batch.submittedAt) > new Date(local.submittedAt))
+            );
+          });
+          
+          // Only update if we have new or updated batches
+          if (remoteBatches.length > 0 && (hasNewBatches || hasUpdatedBatches)) {
             // Merge with smart conflict resolution for submittedAt
             // Use a Map to ensure no duplicates by ID
             const mergedMap = new Map<string, ExportBatch>();
@@ -356,10 +393,10 @@ export const useLogsStore = create<LogsState>((set, get) => ({
                   mergedMap.set(batchId, remoteBatch);
                 }
               } else if (remoteBatch) {
-                // Only remote exists
+                // Only remote exists - this is a new batch from another device
                 mergedMap.set(batchId, remoteBatch);
               } else if (localBatch) {
-                // Only local exists
+                // Only local exists - keep it
                 mergedMap.set(batchId, localBatch);
               }
             }
@@ -380,6 +417,25 @@ export const useLogsStore = create<LogsState>((set, get) => ({
                 // Ignore errors - this is just to keep local DB in sync
               });
             }
+            
+            // Proactively cache PDFs in background (non-blocking)
+            // This ensures PDFs are available offline, especially when switching devices
+            if (mergedBatches.length > 0) {
+              const { ensurePDFsCached } = await import('../storage/pdfStorage');
+              const { profile } = useProfileStore.getState();
+              ensurePDFsCached(mergedBatches, profile).catch((error) => {
+                debug.warn('Failed to proactively cache PDFs in background sync (non-fatal):', error);
+              });
+            }
+            
+            debug.debug('Background sync completed, updated export batches', { 
+              total: mergedBatches.length,
+              new: hasNewBatches,
+              updated: hasUpdatedBatches
+            });
+          } else if (remoteBatches.length === 0 && currentBatches.length === 0) {
+            // No batches anywhere - this is fine, just log it
+            debug.debug('No export batches found in Supabase or local storage');
           }
         }).catch(err => {
           debug.error('Background sync failed (non-fatal):', err);

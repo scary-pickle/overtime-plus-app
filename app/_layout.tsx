@@ -42,6 +42,7 @@ export default function RootLayout() {
   const initializeSubscription = useSubscriptionStore((state) => state.init);
   const resetSubscription = useSubscriptionStore((state) => state.reset);
   const [appIsReady, setAppIsReady] = React.useState(false);
+  const [showSplashText, setShowSplashText] = React.useState(true);
 
   useEffect(() => {
     (async () => {
@@ -434,7 +435,7 @@ export default function RootLayout() {
         />
         </Stack>
         {/* Global animated splash text overlay - stays visible until splash hides */}
-        <AnimatedSplashText />
+        {showSplashText && <AnimatedSplashText onHide={() => setShowSplashText(false)} />}
       </View>
     </ErrorBoundary>
   );

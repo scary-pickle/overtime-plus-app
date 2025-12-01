@@ -165,10 +165,7 @@ class NotificationManager {
                 sound: true,
                 priority: Notifications.AndroidNotificationPriority.HIGH,
               },
-              trigger: {
-                date: notificationTime,
-                channelId: 'overtime-reminders'
-              }
+              trigger: this.buildDateTrigger(notificationTime)
             });
           }
           
@@ -215,10 +212,7 @@ class NotificationManager {
           sound: true,
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
-        trigger: {
-          date: snoozeTime,
-          channelId: 'overtime-reminders'
-        }
+        trigger: this.buildDateTrigger(snoozeTime)
       });
       
       debug.debug(`Scheduled snooze notification for ${snoozeMinutes} minutes`);
@@ -341,10 +335,7 @@ class NotificationManager {
           sound: true,
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
-        trigger: {
-          date: reminderDate,
-          channelId: 'overtime-reminders'
-        }
+        trigger: this.buildDateTrigger(reminderDate)
       });
 
       debug.debug(`Scheduled shift start reminder for ${date} at ${reminderDate.toISOString()}`);
@@ -355,6 +346,8 @@ class NotificationManager {
 
   /**
    * Cancel shift start reminder for a specific date
+   * Also cancels any shift start reminders scheduled to fire soon (within 5 minutes)
+   * to prevent notifications from firing immediately after a shift is started
    * @param date - The date of the shift (YYYY-MM-DD)
    */
   async cancelShiftStartReminder(date: string): Promise<void> {
@@ -362,6 +355,36 @@ class NotificationManager {
       const notificationId = `shift_start_reminder_${date}`;
       await Notifications.cancelScheduledNotificationAsync(notificationId);
       debug.debug(`Cancelled shift start reminder for ${date}`);
+      
+      // Also cancel any shift start reminders that are scheduled to fire soon
+      // This prevents notifications from firing immediately after a shift is started
+      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+      const now = new Date();
+      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+      
+      const soonToFireReminders = scheduledNotifications.filter(notification => {
+        const isShiftStartReminder = notification.identifier.startsWith('shift_start_reminder_');
+        if (!isShiftStartReminder) return false;
+        
+        // Cancel if it's scheduled to fire soon (within 5 minutes)
+        if (notification.trigger && 'date' in notification.trigger) {
+          const triggerDate = new Date(notification.trigger.date);
+          if (triggerDate <= fiveMinutesFromNow) {
+            debug.debug(`Found shift start reminder scheduled to fire soon: ${notification.identifier} at ${triggerDate.toISOString()}`);
+            return true;
+          }
+        }
+        return false;
+      });
+      
+      for (const notification of soonToFireReminders) {
+        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+        debug.debug(`Cancelled shift start reminder scheduled to fire soon: ${notification.identifier}`);
+      }
+      
+      if (soonToFireReminders.length > 0) {
+        debug.debug(`Cancelled ${soonToFireReminders.length} shift start reminder(s) scheduled to fire soon`);
+      }
     } catch (error) {
       debug.error('Failed to cancel shift start reminder:', error);
     }
@@ -400,23 +423,63 @@ class NotificationManager {
     try {
       if (!this.settings.enabled || !this.settings.activeShift8HourReminder) return;
 
+      // Get current time FIRST - this is the source of truth
+      const now = new Date();
+      
       // Cancel any existing active shift reminders first to prevent old notifications from firing
+      // Do this multiple times to ensure all are cancelled (in case of race conditions)
       await this.cancelAllActiveShiftReminders();
+      // Small delay to ensure cancellation completes
+      await new Promise(resolve => setTimeout(resolve, 200));
+      // Cancel again to catch any that might have been scheduled in the meantime
+      await this.cancelAllActiveShiftReminders();
+      // One more check after another delay
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Verify no reminders are still scheduled
+      const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+      const existingReminders = scheduledNotifications.filter(n => 
+        n.identifier.startsWith('active_shift_reminder_')
+      );
+      
+      if (existingReminders.length > 0) {
+        debug.warn(`Found ${existingReminders.length} existing active shift reminder(s) after cancellation, force cancelling them`);
+        for (const reminder of existingReminders) {
+          try {
+            await Notifications.cancelScheduledNotificationAsync(reminder.identifier);
+            if (reminder.trigger && 'date' in reminder.trigger) {
+              const triggerDate = new Date(reminder.trigger.date);
+              const minutesUntilFire = (triggerDate.getTime() - now.getTime()) / (1000 * 60);
+              debug.debug(`Force cancelled reminder: ${reminder.identifier} (scheduled for ${minutesUntilFire.toFixed(1)} minutes from now)`);
+            } else {
+              debug.debug(`Force cancelled reminder: ${reminder.identifier}`);
+            }
+          } catch (cancelError) {
+            debug.warn(`Failed to cancel reminder ${reminder.identifier}:`, cancelError);
+          }
+        }
+        // Wait a bit more to ensure cancellation completes
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
 
-      // Parse start time to calculate 8 hours later
-      const [hours, minutes] = startTime.split(':').map(Number);
-      const [year, month, day] = shiftDate.split('-').map(Number);
+      // Calculate 8 hours from NOW (since the shift just started)
+      // This is more reliable than parsing date strings which can have timezone issues
+      const reminderDate = new Date(now.getTime() + 8 * 60 * 60 * 1000); // 8 hours from now
       
-      // Create date for when shift started
-      const shiftStartDate = new Date(year, month - 1, day, hours, minutes, 0);
+      // Add a buffer (10 minutes) to ensure we're scheduling well in the future
+      const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
       
-      // Add 8 hours
-      const reminderDate = new Date(shiftStartDate);
-      reminderDate.setHours(reminderDate.getHours() + 8);
-      
-      // Only schedule if reminder time is in the future
-      if (reminderDate <= new Date()) {
-        debug.debug('8-hour reminder time has already passed, not scheduling');
+      // Only schedule if reminder time is at least 10 minutes in the future
+      // This prevents scheduling notifications that would fire immediately
+      if (reminderDate <= tenMinutesFromNow) {
+        debug.debug('8-hour reminder time is too soon, not scheduling', {
+          reminderDate: reminderDate.toISOString(),
+          now: now.toISOString(),
+          tenMinutesFromNow: tenMinutesFromNow.toISOString(),
+          startTime,
+          shiftDate,
+          minutesUntilReminder: (reminderDate.getTime() - now.getTime()) / (1000 * 60)
+        });
         return;
       }
 
@@ -435,13 +498,38 @@ class NotificationManager {
           sound: true,
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
-        trigger: {
-          date: reminderDate,
-          channelId: 'overtime-reminders'
-        }
+        trigger: this.buildDateTrigger(reminderDate)
       });
 
-      debug.debug(`Scheduled 8-hour reminder for shift ${shiftId} at ${reminderDate.toISOString()}`);
+      // Verify the notification was scheduled correctly
+      const verifyNotifications = await Notifications.getAllScheduledNotificationsAsync();
+      const scheduledReminder = verifyNotifications.find(n => n.identifier === notificationId);
+      
+      if (scheduledReminder && scheduledReminder.trigger && 'date' in scheduledReminder.trigger) {
+        const scheduledDate = new Date(scheduledReminder.trigger.date);
+        const hoursUntilFire = (scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+        const minutesUntilFire = (scheduledDate.getTime() - now.getTime()) / (1000 * 60);
+        
+        if (hoursUntilFire < 7.5) {
+          debug.warn(`WARNING: Scheduled reminder is less than 7.5 hours away!`, {
+            scheduledDate: scheduledDate.toISOString(),
+            now: now.toISOString(),
+            hoursUntilFire: hoursUntilFire.toFixed(2),
+            minutesUntilFire: minutesUntilFire.toFixed(1)
+          });
+        } else {
+          debug.debug(`Verified notification scheduled correctly: ${hoursUntilFire.toFixed(2)} hours (${minutesUntilFire.toFixed(1)} minutes) from now`);
+        }
+      } else {
+        debug.warn(`WARNING: Could not verify scheduled notification ${notificationId}`);
+      }
+
+      debug.debug(`Scheduled 8-hour reminder for shift ${shiftId}`, {
+        reminderDate: reminderDate.toISOString(),
+        now: now.toISOString(),
+        hoursUntilReminder: (reminderDate.getTime() - now.getTime()) / (1000 * 60 * 60),
+        minutesUntilReminder: (reminderDate.getTime() - now.getTime()) / (1000 * 60)
+      });
     } catch (error) {
       debug.error('Failed to schedule active shift reminder:', error);
     }
@@ -464,38 +552,49 @@ class NotificationManager {
   /**
    * Cancel all active shift reminder notifications
    * This is useful when starting a new shift to ensure no old reminders fire
-   * Also cancels any notifications that are scheduled to fire very soon (within next 5 minutes)
+   * Cancels ALL active shift reminders, regardless of when they're scheduled
    */
   async cancelAllActiveShiftReminders(): Promise<void> {
     try {
       const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
       const now = new Date();
-      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
       
+      // Filter for ALL active shift reminders (not just ones scheduled to fire soon)
       const activeShiftReminders = scheduledNotifications.filter(notification => {
         const isActiveShiftReminder = notification.identifier.startsWith('active_shift_reminder_');
         if (!isActiveShiftReminder) return false;
         
-        // Also check if notification is scheduled to fire soon (within 5 minutes)
-        // This catches notifications that might fire immediately
+        // Log details about the notification we're cancelling
         if (notification.trigger && 'date' in notification.trigger) {
           const triggerDate = new Date(notification.trigger.date);
-          // Cancel if it's in the past or within next 5 minutes
-          if (triggerDate <= fiveMinutesFromNow) {
-            debug.debug(`Found active shift reminder scheduled to fire soon: ${notification.identifier} at ${triggerDate.toISOString()}`);
-            return true;
-          }
+          const isInPast = triggerDate <= now;
+          const minutesUntilFire = (triggerDate.getTime() - now.getTime()) / (1000 * 60);
+          
+          debug.debug(`Found active shift reminder to cancel: ${notification.identifier}`, {
+            triggerDate: triggerDate.toISOString(),
+            now: now.toISOString(),
+            isInPast,
+            minutesUntilFire: minutesUntilFire.toFixed(1)
+          });
         }
-        return true;
+        
+        return true; // Cancel ALL active shift reminders
       });
       
+      // Cancel all found notifications
       for (const notification of activeShiftReminders) {
-        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
-        debug.debug(`Cancelled active shift reminder: ${notification.identifier}`);
+        try {
+          await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+          debug.debug(`Cancelled active shift reminder: ${notification.identifier}`);
+        } catch (cancelError) {
+          debug.warn(`Failed to cancel notification ${notification.identifier}:`, cancelError);
+        }
       }
       
       if (activeShiftReminders.length > 0) {
-        debug.debug(`Cancelled ${activeShiftReminders.length} active shift reminder(s) (including any scheduled to fire soon)`);
+        debug.debug(`Cancelled ${activeShiftReminders.length} active shift reminder(s)`);
+      } else {
+        debug.debug('No active shift reminders found to cancel');
       }
     } catch (error) {
       debug.error('Failed to cancel all active shift reminders:', error);
@@ -530,6 +629,17 @@ class NotificationManager {
    */
   getSettings(): NotificationSettings {
     return { ...this.settings };
+  }
+
+  /**
+   * Build a date-based trigger that keeps the reminders channel
+   */
+  private buildDateTrigger(date: Date): Notifications.SchedulableNotificationTriggerInput {
+    return {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date,
+      channelId: 'overtime-reminders'
+    };
   }
 
   /**
@@ -708,10 +818,7 @@ class NotificationManager {
               sound: true,
               priority: Notifications.AndroidNotificationPriority.HIGH,
             },
-            trigger: {
-              date: nextNotificationTime,
-              channelId: 'overtime-reminders'
-            }
+            trigger: this.buildDateTrigger(nextNotificationTime)
           });
 
           // Update stored state
@@ -751,10 +858,7 @@ class NotificationManager {
               sound: true,
               priority: Notifications.AndroidNotificationPriority.HIGH,
             },
-            trigger: {
-              date: immediateTime,
-              channelId: 'overtime-reminders'
-            }
+            trigger: this.buildDateTrigger(immediateTime)
           });
 
           const isFirstNotification = !storedState || !storedState.firstNotificationTime;
@@ -903,10 +1007,7 @@ class NotificationManager {
           sound: true,
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
-        trigger: {
-          date: notificationTime,
-          channelId: 'overtime-reminders'
-        }
+        trigger: this.buildDateTrigger(notificationTime)
       });
 
       debug.debug(`Scheduled unsubmitted AVAC notification for ${notificationTime.toISOString()} (${batchCount} batch(es))`);
@@ -1022,10 +1123,7 @@ class NotificationManager {
               sound: true,
               priority: Notifications.AndroidNotificationPriority.HIGH,
             },
-            trigger: {
-              date: notificationTime,
-              channelId: 'overtime-reminders'
-            }
+            trigger: this.buildDateTrigger(notificationTime)
           });
 
           debug.debug(`Scheduled incomplete draft reminder #${day + 1} for ${notificationTime.toISOString()}`);
@@ -1125,34 +1223,24 @@ class NotificationManager {
         }
       }
 
-      // If a notification was sent recently (within last 6 days), don't reschedule
+      // If we've scheduled a notification recently (within last 6 days), don't reschedule
       // This prevents the notification from being rescheduled every time the app opens
-      // But only if the stored time is in the past (actually sent) or if there's a scheduled notification
+      // even if cancelAllNotifications() was called
       if (lastSentTime) {
-        const timeSinceLastSent = now.getTime() - lastSentTime.getTime();
+        const timeSinceLastScheduled = now.getTime() - lastSentTime.getTime();
         const sixDaysInMs = 6 * 24 * 60 * 60 * 1000;
         
-        // If lastSentTime is in the past and recent, skip rescheduling
-        if (timeSinceLastSent > 0 && timeSinceLastSent < sixDaysInMs) {
-          debug.debug(`Weekly summary was sent ${Math.floor(timeSinceLastSent / (24 * 60 * 60 * 1000))} days ago, skipping reschedule`);
-          // Still cancel any old scheduled notifications
+        // If we scheduled one recently (whether it was sent or just scheduled), don't reschedule
+        // This prevents the notification from appearing every time the app opens
+        if (Math.abs(timeSinceLastScheduled) < sixDaysInMs) {
+          if (timeSinceLastScheduled > 0) {
+            debug.debug(`Weekly summary was scheduled ${Math.floor(timeSinceLastScheduled / (24 * 60 * 60 * 1000))} days ago, skipping reschedule`);
+          } else {
+            debug.debug(`Weekly summary is scheduled for ${Math.floor(-timeSinceLastScheduled / (24 * 60 * 60 * 1000))} days from now, skipping reschedule`);
+          }
+          // Still cancel any old scheduled notifications to clean up
           await this.cancelWeeklySummary();
           return;
-        }
-        
-        // If lastSentTime is in the future (scheduled time) but no notification exists,
-        // it was probably cancelled, so we should reschedule
-        if (timeSinceLastSent < 0) {
-          // Stored time is in the future - this means we stored a scheduled time
-          // If there's no existing notification, it was cancelled, so we should reschedule
-          if (!existingWeeklySummary) {
-            debug.debug('Stored scheduled time found but no notification exists (was cancelled), will reschedule');
-            // Continue to reschedule below
-          } else {
-            // There is a scheduled notification, so we're good
-            debug.debug('Weekly summary already scheduled, skipping');
-            return;
-          }
         }
       }
 
@@ -1192,10 +1280,7 @@ class NotificationManager {
             sound: true,
             priority: Notifications.AndroidNotificationPriority.HIGH,
           },
-          trigger: {
-            date: nextSunday,
-            channelId: 'overtime-reminders'
-          }
+          trigger: this.buildDateTrigger(nextSunday)
         });
 
         // Store the scheduled time (we'll update it to the actual sent time when it fires)

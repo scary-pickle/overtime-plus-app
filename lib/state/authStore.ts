@@ -38,6 +38,49 @@ function resetAuthAttempts(action: AuthAction) {
   authAttemptLog[action].timestamps = [];
 }
 
+/**
+ * Determines if an error is network-related (offline, connection failure, etc.)
+ * Network errors should not cause logout when we have a valid cached session
+ */
+function isNetworkError(error: any): boolean {
+  if (!error) return false;
+  
+  const errorMessage = error?.message || '';
+  const errorCode = error?.code || '';
+  const errorStatus = error?.status || '';
+  
+  // Check for common network error indicators
+  const networkErrorPatterns = [
+    'Network request failed',
+    'fetch',
+    'network',
+    'offline',
+    'ECONNREFUSED',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'timeout',
+    'ERR_INTERNET_DISCONNECTED',
+    'ERR_NETWORK_CHANGED',
+  ];
+  
+  const hasNetworkPattern = networkErrorPatterns.some(pattern => 
+    errorMessage.toLowerCase().includes(pattern.toLowerCase()) ||
+    errorCode.toLowerCase().includes(pattern.toLowerCase())
+  );
+  
+  // Supabase-specific network errors
+  const isSupabaseNetworkError = 
+    errorStatus === 0 || // Status 0 usually means network failure
+    errorCode === 'PGRST116' || // PostgREST connection error
+    (errorMessage && (
+      errorMessage.includes('Failed to fetch') ||
+      errorMessage.includes('NetworkError') ||
+      errorMessage.includes('Load failed')
+    ));
+  
+  return hasNetworkPattern || isSupabaseNetworkError;
+}
+
 interface AuthState {
   user: any | null;
   session: any | null;
@@ -161,18 +204,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 });
                 
                 if (refreshError) {
-                  debug.error('Failed to refresh expired session:', refreshError);
-                  // Refresh failed - session is invalid, clear it
-                  await (supabase as any).auth.signOut();
-                  set({
-                    session: null,
-                    user: null,
-                    emailVerified: false,
-                    hasCompletedOnboarding: false,
-                    isLoading: false,
-                  });
-                  debug.debug('Session cleared due to refresh failure');
-                  return;
+                  // Check if this is a network error
+                  if (isNetworkError(refreshError)) {
+                    debug.warn('Failed to refresh expired session due to network error - allowing offline use with cached session', {
+                      errorMessage: refreshError.message,
+                    });
+                    // Don't clear session on network errors - allow offline use
+                    // The token may be expired, but we'll keep the session for offline access
+                    // It will be refreshed when network is available
+                  } else {
+                    debug.error('Failed to refresh expired session (non-network error):', refreshError);
+                    // This is an actual auth error - clear session
+                    await (supabase as any).auth.signOut();
+                    set({
+                      session: null,
+                      user: null,
+                      emailVerified: false,
+                      hasCompletedOnboarding: false,
+                      isLoading: false,
+                    });
+                    debug.debug('Session cleared due to refresh failure');
+                    return;
+                  }
                 }
                 
                 if (refreshData?.session?.access_token) {
@@ -219,7 +272,81 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               session = refreshData.session;
               user = session.user;
             } else {
-              debug.error('Failed to refresh session after token parse error:', refreshError);
+              // Check if this is a network error
+              if (isNetworkError(refreshError)) {
+                debug.warn('Failed to refresh session after token parse error due to network error - allowing offline use', {
+                  errorMessage: refreshError?.message,
+                });
+                // Don't clear session on network errors - allow offline use
+              } else {
+                debug.error('Failed to refresh session after token parse error (non-network error):', refreshError);
+                await (supabase as any).auth.signOut();
+                set({
+                  session: null,
+                  user: null,
+                  emailVerified: false,
+                  hasCompletedOnboarding: false,
+                  isLoading: false,
+                });
+                return;
+              }
+            }
+          }
+        }
+      }
+
+      // If we have a session, verify the user still exists in Supabase
+      // IMPORTANT: Only verify if we have network connectivity. If offline, trust the cached session.
+      if (session && user) {
+        debug.debug('Verifying user still exists...', { userId: maskUserId(user.id) });
+        try {
+          // Verify the user still exists by calling getUser() - this will fail if user was deleted
+          // @ts-ignore
+          const { data: userData, error: userError } = await (supabase as any).auth.getUser();
+          if (userError) {
+            // Check if this is a network error - if so, allow offline use with cached session
+            if (isNetworkError(userError)) {
+              debug.warn('User verification failed due to network error - allowing offline use with cached session', {
+                errorMessage: userError.message,
+                hasCachedSession: !!session,
+                hasCachedUser: !!user,
+              });
+              // Don't clear session on network errors - allow offline use
+              // The session is valid, we just can't verify it right now
+            } else {
+              // This is an actual auth error (user deleted, invalid token, etc.) - clear session
+              debug.error('User validation failed - user may have been deleted:', userError);
+              await (supabase as any).auth.signOut();
+              set({
+                session: null,
+                user: null,
+                emailVerified: false,
+                hasCompletedOnboarding: false,
+                isLoading: false,
+              });
+              debug.debug('Session cleared due to invalid user');
+              return;
+            }
+          } else {
+            debug.debug('User verified successfully');
+          }
+        } catch (verifyError) {
+          // Check if this is a network error
+          if (isNetworkError(verifyError)) {
+            debug.warn('User verification failed due to network error - allowing offline use with cached session', {
+              errorMessage: verifyError instanceof Error ? verifyError.message : String(verifyError),
+              hasCachedSession: !!session,
+              hasCachedUser: !!user,
+            });
+            // Don't clear session on network errors - allow offline use
+          } else {
+            // This is an unexpected error - log it but don't clear session unless it's clearly an auth error
+            debug.error('Error verifying user (non-network):', verifyError);
+            // Only clear session if it's clearly an authentication error
+            // For unknown errors, be conservative and allow offline use
+            const errorMessage = verifyError instanceof Error ? verifyError.message : String(verifyError);
+            if (errorMessage.includes('Invalid') || errorMessage.includes('expired') || errorMessage.includes('revoked')) {
+              debug.debug('Session cleared due to authentication error');
               await (supabase as any).auth.signOut();
               set({
                 session: null,
@@ -229,46 +356,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 isLoading: false,
               });
               return;
+            } else {
+              debug.warn('Unknown verification error - allowing offline use to be safe');
             }
           }
-        }
-      }
-
-      // If we have a session, verify the user still exists in Supabase
-      if (session && user) {
-        debug.debug('Verifying user still exists...', { userId: maskUserId(user.id) });
-        try {
-          // Verify the user still exists by calling getUser() - this will fail if user was deleted
-          // @ts-ignore
-          const { data: userData, error: userError } = await (supabase as any).auth.getUser();
-          if (userError) {
-            debug.error('User validation failed - user may have been deleted:', userError);
-            // User was likely deleted or session is invalid - clear it
-            await (supabase as any).auth.signOut();
-            set({
-              session: null,
-              user: null,
-              emailVerified: false,
-              hasCompletedOnboarding: false,
-              isLoading: false,
-            });
-            debug.debug('Session cleared due to invalid user');
-            return;
-          }
-          debug.debug('User verified successfully');
-        } catch (verifyError) {
-          debug.error('Error verifying user:', verifyError);
-          // If verification fails, clear the session to be safe
-          await (supabase as any).auth.signOut();
-          set({
-            session: null,
-            user: null,
-            emailVerified: false,
-            hasCompletedOnboarding: false,
-            isLoading: false,
-          });
-          debug.debug('Session cleared due to verification error');
-          return;
         }
       }
 
@@ -302,7 +393,48 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       debug.debug('State set complete');
     } catch (e) {
       debug.error('Error getting session:', e);
-      // Clear session on error
+      
+      // Check if this is a network error - if so, try to preserve any cached session
+      if (isNetworkError(e)) {
+        debug.warn('Session check failed due to network error - attempting to use cached session');
+        try {
+          // Try to get session from Supabase storage (should work offline)
+          // @ts-ignore
+          const { data: cachedSessionData } = await (supabase as any).auth.getSession();
+          if (cachedSessionData?.session && cachedSessionData?.session?.user) {
+            const cachedSession = cachedSessionData.session;
+            const cachedUser = cachedSession.user;
+            debug.debug('Using cached session for offline access', {
+              hasSession: !!cachedSession,
+              hasUser: !!cachedUser,
+              userId: maskUserId(cachedUser?.id),
+            });
+            
+            // Use cached session for offline access
+            const onboardingStore = useOnboardingStore.getState();
+            const hasCompletedOnboarding = await onboardingStore.checkOnboardingStatus(cachedUser?.id);
+            
+            if (cachedUser?.id) {
+              await SecureStore.setItemAsync(CURRENT_USER_ID_KEY, cachedUser.id);
+            }
+            
+            set({
+              session: cachedSession,
+              user: cachedUser,
+              emailVerified: !!cachedUser?.email_confirmed_at,
+              hasCompletedOnboarding,
+              isLoading: false,
+              error: null, // Don't show error for network issues when we have cached session
+            });
+            return;
+          }
+        } catch (cacheError) {
+          debug.warn('Failed to retrieve cached session:', cacheError);
+        }
+      }
+      
+      // If we get here, either it's not a network error, or we couldn't get a cached session
+      // Clear session on non-network errors or when no cached session is available
       await (supabase as any).auth.signOut();
       set({
         session: null,
