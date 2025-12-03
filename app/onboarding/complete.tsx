@@ -67,7 +67,7 @@ export default function OnboardingComplete() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#FFFFFF',
   },
   content: {
     flex: 1,
@@ -89,13 +89,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#fff',
+    color: '#111',
     textAlign: 'center',
     marginBottom: 16,
   },
   description: {
     fontSize: 16,
-    color: '#cfe0f7',
+    color: '#333',
     textAlign: 'center',
     marginBottom: 40,
     lineHeight: 24,
@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
   },
   featureText: {
     fontSize: 16,
-    color: '#fff',
+    color: '#111',
   },
   button: {
     backgroundColor: '#007AFF',

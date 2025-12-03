@@ -81,10 +81,12 @@ export default function HomeScreen() {
       // 1. The shift's date matches today
       // 2. The shift has actually completed (has a finish time)
       // 3. The shift is in ready or exported status
+      // 4. The shift is NOT a shift swap (shift swaps are handled separately)
       const hasLogged = loggedShift !== null && 
                         loggedShift.date === today && 
                         loggedShift.actualFinish !== 'N/A' &&
-                        (loggedShift.status === 'ready' || loggedShift.status === 'exported');
+                        (loggedShift.status === 'ready' || loggedShift.status === 'exported') &&
+                        !loggedShift.isShiftSwap;
       
       setHasLoggedToday(hasLogged);
       setTodayLoggedShift(hasLogged ? loggedShift : null);
@@ -196,10 +198,12 @@ export default function HomeScreen() {
         // 1. The shift's date matches today
         // 2. The shift has actually completed (has a finish time)
         // 3. The shift is in ready or exported status
+        // 4. The shift is NOT a shift swap (shift swaps are handled separately)
         const hasLogged = loggedShift !== null && 
                           loggedShift.date === today && 
                           loggedShift.actualFinish !== 'N/A' &&
-                          (loggedShift.status === 'ready' || loggedShift.status === 'exported');
+                          (loggedShift.status === 'ready' || loggedShift.status === 'exported') &&
+                          !loggedShift.isShiftSwap;
         
         setHasLoggedToday(hasLogged);
         setTodayLoggedShift(hasLogged ? loggedShift : null);
@@ -549,6 +553,9 @@ export default function HomeScreen() {
   const draftLogs = getDraftLogs();
   const readyLogs = getReadyLogs();
   const pendingCount = draftLogs.length + readyLogs.length;
+  
+  // Filter out shift swaps from analytics - shift swaps shouldn't count as normal overtime
+  const normalLogs = logs.filter(log => !log.isShiftSwap);
 
   // Check and schedule unexported logs notification when logs change
   useEffect(() => {
@@ -726,7 +733,7 @@ export default function HomeScreen() {
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
                 <Text style={[styles.statNumber, isDark && styles.darkText]}>
-                  {logs.length}
+                  {normalLogs.length}
                 </Text>
                 <Text style={[styles.statLabel, isDark && styles.darkText]}>
                   Total Logs
@@ -735,7 +742,7 @@ export default function HomeScreen() {
               
               <View style={styles.statItem}>
                 <Text style={[styles.statNumber, isDark && styles.darkText]}>
-                  {formatMinutes(logs.reduce((sum, log) => sum + log.minutesOvertime, 0))}
+                  {formatMinutes(normalLogs.reduce((sum, log) => sum + log.minutesOvertime, 0))}
                 </Text>
                 <Text style={[styles.statLabel, isDark && styles.darkText]}>
                   Overtime
@@ -753,11 +760,11 @@ export default function HomeScreen() {
             </View>
           </TouchableOpacity>
 
-          {logs.length > 0 && (
+          {normalLogs.length > 0 && (
             <>
               <View style={[styles.divider, isDark && styles.darkDivider]} />
               
-              {logs.slice(0, 3).map((log) => (
+              {normalLogs.slice(0, 3).map((log) => (
                 <View key={log.id} style={styles.recentItem}>
                   <Text style={[styles.recentDate, isDark && styles.darkText]}>
                     {new Date(log.date).toLocaleDateString('en-AU', { 

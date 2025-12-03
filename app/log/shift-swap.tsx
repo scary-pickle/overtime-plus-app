@@ -31,7 +31,8 @@ export default function ShiftSwapScreen() {
   const { user } = useAuthStore();
   const { addShiftSwapLogs } = useLogsStore();
   
-  const [selectedDate, setSelectedDate] = useState(getCurrentDate());
+  const [personADate, setPersonADate] = useState(getCurrentDate());
+  const [personBDate, setPersonBDate] = useState(getCurrentDate()); // Default to same date
   const [mealBreakMinutes, setMealBreakMinutes] = useState(30);
   const [showMealBreakPicker, setShowMealBreakPicker] = useState(false);
   
@@ -54,37 +55,29 @@ export default function ShiftSwapScreen() {
   const [personBActualStart, setPersonBActualStart] = useState('');
   const [personBActualFinish, setPersonBActualFinish] = useState('');
   
+  // Track if dates are different
+  const isDifferentDates = personADate !== personBDate;
+  
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
   const [personACalculation, setPersonACalculation] = useState<any>(null);
   const [personBCalculation, setPersonBCalculation] = useState<any>(null);
 
   // Auto-populate Person B's times from Person A's times
+  // Simplified: User only enters Person A rostered and actual times
   useEffect(() => {
-    if (personARosteredTimesNA) {
-      // If Person A's rostered times are N/A, Person B's actual times should also be N/A
-      setPersonBActualStart('N/A');
-      setPersonBActualFinish('N/A');
-      // Person B's rostered times come from Person A's actual times (if set)
-      if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
-        setPersonBRosteredStart(personAActualStart);
-        setPersonBRosteredFinish(personAActualFinish);
-        setPersonBRosteredTimesNA(false);
-      } else {
-        setPersonBRosteredStart('');
-        setPersonBRosteredFinish('');
-        setPersonBRosteredTimesNA(false);
-      }
-    } else {
-      // Person A's rostered times become Person B's actual times
-      if (personARosteredStart && personARosteredFinish) {
+    if (isDifferentDates) {
+      // DIFFERENT DATES:
+      // Person B actual times (Date 1) = Person A rostered times (Date 1)
+      if (personARosteredStart && personARosteredFinish && !personARosteredTimesNA) {
         setPersonBActualStart(personARosteredStart);
         setPersonBActualFinish(personARosteredFinish);
       } else {
         setPersonBActualStart('');
         setPersonBActualFinish('');
       }
-      // Person A's actual times become Person B's rostered times
+      
+      // Person B rostered times (Date 2) = Person A actual times (Date 2)
       if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
         setPersonBRosteredStart(personAActualStart);
         setPersonBRosteredFinish(personAActualFinish);
@@ -94,57 +87,149 @@ export default function ShiftSwapScreen() {
         setPersonBRosteredFinish('');
         setPersonBRosteredTimesNA(false);
       }
+    } else {
+      // SAME DATE: Use existing logic
+      if (personARosteredTimesNA) {
+        // If Person A's rostered times are N/A, Person B's actual times should also be N/A
+        setPersonBActualStart('N/A');
+        setPersonBActualFinish('N/A');
+        // Person B's rostered times come from Person A's actual times (if set)
+        if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
+          setPersonBRosteredStart(personAActualStart);
+          setPersonBRosteredFinish(personAActualFinish);
+          setPersonBRosteredTimesNA(false);
+        } else {
+          setPersonBRosteredStart('');
+          setPersonBRosteredFinish('');
+          setPersonBRosteredTimesNA(false);
+        }
+      } else {
+        // Person A's rostered times become Person B's actual times
+        if (personARosteredStart && personARosteredFinish) {
+          setPersonBActualStart(personARosteredStart);
+          setPersonBActualFinish(personARosteredFinish);
+        } else {
+          setPersonBActualStart('');
+          setPersonBActualFinish('');
+        }
+        // Person A's actual times become Person B's rostered times
+        if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
+          setPersonBRosteredStart(personAActualStart);
+          setPersonBRosteredFinish(personAActualFinish);
+          setPersonBRosteredTimesNA(false);
+        } else {
+          setPersonBRosteredStart('');
+          setPersonBRosteredFinish('');
+          setPersonBRosteredTimesNA(false);
+        }
+      }
     }
-  }, [personARosteredStart, personARosteredFinish, personAActualStart, personAActualFinish, personARosteredTimesNA]);
+  }, [personARosteredStart, personARosteredFinish, personAActualStart, personAActualFinish, personARosteredTimesNA, isDifferentDates]);
+  
+  // Sync Person B date with Person A date when they're the same (for convenience)
+  useEffect(() => {
+    if (!isDifferentDates && personADate !== personBDate) {
+      setPersonBDate(personADate);
+    }
+  }, [personADate, isDifferentDates]);
 
   useEffect(() => {
     // Auto-calculate when times change
-    if (personAActualStart && personAActualFinish && personARosteredStart && personARosteredFinish && !personARosteredTimesNA) {
-      try {
-        const calc = computeMinutes(
-          personAActualStart,
-          personAActualFinish,
-          personARosteredStart,
-          personARosteredFinish,
-          mealBreakMinutes
-        );
-        setPersonACalculation(calc);
-      } catch (error) {
-        debug.error('Person A calculation error:', error);
+    if (isDifferentDates) {
+      // For different dates, we need to calculate for Person A Date 1 (rostered filled, actual 'N/A')
+      // This represents the original shift that wasn't worked
+      if (personARosteredStart && personARosteredFinish && !personARosteredTimesNA) {
+        try {
+          const calc = computeMinutes(
+            'N/A', // Actual times are N/A for Date 1
+            'N/A',
+            personARosteredStart,
+            personARosteredFinish,
+            mealBreakMinutes
+          );
+          setPersonACalculation(calc);
+        } catch (error) {
+          debug.error('Person A calculation error:', error);
+          setPersonACalculation(null);
+        }
+      } else {
+        setPersonACalculation(null);
       }
     } else {
-      setPersonACalculation(null);
+      // Same date: existing logic
+      if (personAActualStart && personAActualFinish && personARosteredStart && personARosteredFinish && !personARosteredTimesNA) {
+        try {
+          const calc = computeMinutes(
+            personAActualStart,
+            personAActualFinish,
+            personARosteredStart,
+            personARosteredFinish,
+            mealBreakMinutes
+          );
+          setPersonACalculation(calc);
+        } catch (error) {
+          debug.error('Person A calculation error:', error);
+        }
+      } else {
+        setPersonACalculation(null);
+      }
     }
-  }, [personAActualStart, personAActualFinish, personARosteredStart, personARosteredFinish, personARosteredTimesNA, mealBreakMinutes]);
+  }, [personAActualStart, personAActualFinish, personARosteredStart, personARosteredFinish, personARosteredTimesNA, mealBreakMinutes, isDifferentDates]);
 
   useEffect(() => {
     // Auto-calculate when times change
-    // Person B's rostered times come from Person A's actual times
-    // Person B's actual times come from Person A's rostered times
-    if (personBActualStart && personBActualFinish && personBRosteredStart && personBRosteredFinish 
-        && personBActualStart !== 'N/A' && personBActualFinish !== 'N/A'
-        && personBRosteredStart !== 'N/A' && personBRosteredFinish !== 'N/A') {
-      try {
-        const calc = computeMinutes(
-          personBActualStart,
-          personBActualFinish,
-          personBRosteredStart,
-          personBRosteredFinish,
-          mealBreakMinutes
-        );
-        setPersonBCalculation(calc);
-      } catch (error) {
-        debug.error('Person B calculation error:', error);
+    if (isDifferentDates) {
+      // For different dates, Person B Date 2: rostered filled (from Person A actual), actual 'N/A'
+      // We calculate for Date 2 (original shift with rostered, actual 'N/A')
+      // Person B's rostered = Person A's actual (auto-populated)
+      // Person B's actual on Date 2 is always 'N/A' (they didn't work their original shift)
+      // Use Person A's actual times directly since they auto-populate Person B's rostered
+      if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
+        try {
+          const calc = computeMinutes(
+            'N/A',
+            'N/A',
+            personAActualStart, // Person B's rostered = Person A's actual
+            personAActualFinish,
+            mealBreakMinutes
+          );
+          setPersonBCalculation(calc);
+        } catch (error) {
+          debug.error('Person B calculation error:', error);
+          setPersonBCalculation(null);
+        }
+      } else {
         setPersonBCalculation(null);
       }
-    } else if (personBActualStart === 'N/A' && personBActualFinish === 'N/A') {
-      // If Person B actual times are N/A, calculation should be null
-      setPersonBCalculation(null);
     } else {
-      // Times are not fully set yet
-      setPersonBCalculation(null);
+      // Same date: existing logic
+      // Person B's rostered times come from Person A's actual times
+      // Person B's actual times come from Person A's rostered times
+      if (personBActualStart && personBActualFinish && personBRosteredStart && personBRosteredFinish 
+          && personBActualStart !== 'N/A' && personBActualFinish !== 'N/A'
+          && personBRosteredStart !== 'N/A' && personBRosteredFinish !== 'N/A') {
+        try {
+          const calc = computeMinutes(
+            personBActualStart,
+            personBActualFinish,
+            personBRosteredStart,
+            personBRosteredFinish,
+            mealBreakMinutes
+          );
+          setPersonBCalculation(calc);
+        } catch (error) {
+          debug.error('Person B calculation error:', error);
+          setPersonBCalculation(null);
+        }
+      } else if (personBActualStart === 'N/A' && personBActualFinish === 'N/A') {
+        // If Person B actual times are N/A, calculation should be null
+        setPersonBCalculation(null);
+      } else {
+        // Times are not fully set yet
+        setPersonBCalculation(null);
+      }
     }
-  }, [personBActualStart, personBActualFinish, personBRosteredStart, personBRosteredFinish, mealBreakMinutes]);
+  }, [personBActualStart, personBActualFinish, personBRosteredStart, personBRosteredFinish, personAActualStart, personAActualFinish, mealBreakMinutes, isDifferentDates]);
 
   const validateForm = (): string[] => {
     const errors: string[] = [];
@@ -155,10 +240,6 @@ export default function ShiftSwapScreen() {
       if (!personARosteredStart || !personARosteredFinish) {
         errors.push('Person A rostered times are required (or mark as N/A)');
       }
-    }
-    
-    if (!personAActualStart || !personAActualFinish) {
-      errors.push('Person A actual times are required');
     }
     
     // Person B validation
@@ -176,28 +257,60 @@ export default function ShiftSwapScreen() {
       errors.push('Person B payroll number is required');
     }
     
-    // Person B times are auto-populated, so we just need to check they're set
-    // Person B rostered times come from Person A's actual times
-    if (!personARosteredTimesNA) {
-      // If Person A has actual times, Person B should have rostered times
-      if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
-        if (!personBRosteredStart || !personBRosteredFinish) {
-          errors.push('Person B rostered times should be auto-populated from Person A actual times');
-        }
+    if (isDifferentDates) {
+      // DIFFERENT DATES validation - simplified
+      // Person A Date 1: rostered filled, actual 'N/A' (handled in store, not validated here)
+      // Person A Date 2: rostered 'N/A', actual filled (user enters this)
+      if (!personAActualStart || !personAActualFinish || personAActualStart === 'N/A' || personAActualFinish === 'N/A') {
+        errors.push('Person A actual times are required (these represent the shift worked on Date 2)');
       }
-    }
-    
-    // Person B actual times come from Person A's rostered times
-    if (!personARosteredTimesNA) {
-      if (personARosteredStart && personARosteredFinish) {
+      
+      // Person A rostered times are required for Date 1
+      if (!personARosteredTimesNA && (!personARosteredStart || !personARosteredFinish)) {
+        errors.push('Person A rostered times are required (or mark as N/A)');
+      }
+      
+      // Person B times are auto-populated, so we just verify they're set
+      // Person B actual (Date 1) = Person A rostered (auto-populated)
+      if (!personARosteredTimesNA) {
         if (!personBActualStart || !personBActualFinish || personBActualStart === 'N/A' || personBActualFinish === 'N/A') {
           errors.push('Person B actual times should be auto-populated from Person A rostered times');
         }
       }
+      
+      // Person B rostered (Date 2) = Person A actual (auto-populated)
+      if (!personBRosteredStart || !personBRosteredFinish || personBRosteredStart === 'N/A' || personBRosteredFinish === 'N/A') {
+        errors.push('Person B rostered times should be auto-populated from Person A actual times');
+      }
     } else {
-      // If Person A rostered is N/A, Person B actual should also be N/A
-      if (personBActualStart !== 'N/A' || personBActualFinish !== 'N/A') {
-        errors.push('Person B actual times should be N/A when Person A rostered times are N/A');
+      // SAME DATE validation (existing logic)
+      if (!personAActualStart || !personAActualFinish) {
+        errors.push('Person A actual times are required');
+      }
+      
+      // Person B times are auto-populated, so we just need to check they're set
+      // Person B rostered times come from Person A's actual times
+      if (!personARosteredTimesNA) {
+        // If Person A has actual times, Person B should have rostered times
+        if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
+          if (!personBRosteredStart || !personBRosteredFinish) {
+            errors.push('Person B rostered times should be auto-populated from Person A actual times');
+          }
+        }
+      }
+      
+      // Person B actual times come from Person A's rostered times
+      if (!personARosteredTimesNA) {
+        if (personARosteredStart && personARosteredFinish) {
+          if (!personBActualStart || !personBActualFinish || personBActualStart === 'N/A' || personBActualFinish === 'N/A') {
+            errors.push('Person B actual times should be auto-populated from Person A rostered times');
+          }
+        }
+      } else {
+        // If Person A rostered is N/A, Person B actual should also be N/A
+        if (personBActualStart !== 'N/A' || personBActualFinish !== 'N/A') {
+          errors.push('Person B actual times should be N/A when Person A rostered times are N/A');
+        }
       }
     }
     
@@ -208,51 +321,93 @@ export default function ShiftSwapScreen() {
     // Check all required fields are filled
     // Person A initials come from profile, no need to validate
     
-    if (!personAActualStart || !personAActualFinish || personAActualStart === 'N/A' || personAActualFinish === 'N/A') {
-      return false;
-    }
-    
-    if (!personARosteredTimesNA && (!personARosteredStart || !personARosteredFinish)) {
-      return false;
-    }
-    
     if (!personBInitials.trim() || personBInitials.trim().length < 2 || personBInitials.trim().length > 3) {
+      debug.debug('Validation failed: Person B initials');
       return false;
     }
     
     if (!personBName.trim()) {
+      debug.debug('Validation failed: Person B name');
       return false;
     }
     
     if (!personBPayrollNumber.trim()) {
+      debug.debug('Validation failed: Person B payroll number');
       return false;
     }
     
-    // Person B times should be auto-populated
-    if (!personARosteredTimesNA) {
-      if (!personBActualStart || !personBActualFinish || personBActualStart === 'N/A' || personBActualFinish === 'N/A') {
+    if (isDifferentDates) {
+      // DIFFERENT DATES validation - simplified
+      // Person A rostered times (Date 1)
+      if (!personARosteredTimesNA && (!personARosteredStart || !personARosteredFinish)) {
+        debug.debug('Validation failed: Person A rostered times', { personARosteredStart, personARosteredFinish, personARosteredTimesNA });
         return false;
       }
-      if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
-        if (!personBRosteredStart || !personBRosteredFinish) {
+      
+      // Person A actual times (Date 2)
+      if (!personAActualStart || !personAActualFinish || personAActualStart === 'N/A' || personAActualFinish === 'N/A') {
+        debug.debug('Validation failed: Person A actual times', { personAActualStart, personAActualFinish });
+        return false;
+      }
+      
+      // Person B times are auto-populated, verify they're set
+      if (!personARosteredTimesNA) {
+        if (!personBActualStart || !personBActualFinish || personBActualStart === 'N/A' || personBActualFinish === 'N/A') {
+          debug.debug('Validation failed: Person B actual times', { personBActualStart, personBActualFinish, personARosteredTimesNA });
           return false;
         }
       }
-    } else {
-      // If Person A rostered is N/A, Person B actual should be N/A
-      if (personBActualStart !== 'N/A' || personBActualFinish !== 'N/A') {
+      
+      if (!personBRosteredStart || !personBRosteredFinish || personBRosteredStart === 'N/A' || personBRosteredFinish === 'N/A') {
+        debug.debug('Validation failed: Person B rostered times', { personBRosteredStart, personBRosteredFinish });
         return false;
       }
-    }
-    
-    // Check that calculations exist; allow 0m overtime for shift swaps
-    if (!personACalculation) {
-      return false;
-    }
-    
-    // Person B calculation might be 0m for a straight swap; just require it exists
-    if (!personBCalculation) {
-      return false;
+      
+      // Check calculations exist
+      if (!personACalculation) {
+        debug.debug('Validation failed: Person A calculation missing', { personACalculation });
+        return false;
+      }
+      if (!personBCalculation) {
+        debug.debug('Validation failed: Person B calculation missing', { personBCalculation });
+        return false;
+      }
+    } else {
+      // SAME DATE validation (existing logic)
+      if (!personAActualStart || !personAActualFinish || personAActualStart === 'N/A' || personAActualFinish === 'N/A') {
+        return false;
+      }
+      
+      if (!personARosteredTimesNA && (!personARosteredStart || !personARosteredFinish)) {
+        return false;
+      }
+      
+      // Person B times should be auto-populated
+      if (!personARosteredTimesNA) {
+        if (!personBActualStart || !personBActualFinish || personBActualStart === 'N/A' || personBActualFinish === 'N/A') {
+          return false;
+        }
+        if (personAActualStart && personAActualFinish && personAActualStart !== 'N/A' && personAActualFinish !== 'N/A') {
+          if (!personBRosteredStart || !personBRosteredFinish) {
+            return false;
+          }
+        }
+      } else {
+        // If Person A rostered is N/A, Person B actual should be N/A
+        if (personBActualStart !== 'N/A' || personBActualFinish !== 'N/A') {
+          return false;
+        }
+      }
+      
+      // Check that calculations exist; allow 0m overtime for shift swaps
+      if (!personACalculation) {
+        return false;
+      }
+      
+      // Person B calculation might be 0m for a straight swap; just require it exists
+      if (!personBCalculation) {
+        return false;
+      }
     }
     
     return true;
@@ -276,12 +431,13 @@ export default function ShiftSwapScreen() {
     try {
       await addShiftSwapLogs(
         {
-          date: selectedDate,
+          personADate,
+          personBDate,
           personAInitials: (initials || profile?.employeeInitial || '').trim().toUpperCase(),
           personARosteredStart: personARosteredTimesNA ? 'N/A' : personARosteredStart,
           personARosteredFinish: personARosteredTimesNA ? 'N/A' : personARosteredFinish,
-          personAActualStart,
-          personAActualFinish,
+          personAActualStart, // For different dates, this represents Person A's actual times on Date 2 (Person B's rostered)
+          personAActualFinish, // For different dates, this represents Person A's actual times on Date 2 (Person B's rostered)
           personBInitials: personBInitials.trim().toUpperCase(),
           personBName: personBName.trim(),
           personBPayrollNumber: personBPayrollNumber.trim(),
@@ -391,14 +547,16 @@ export default function ShiftSwapScreen() {
         
         {/* Actual Times */}
         <View style={styles.inputGroup}>
-          <Text style={[styles.label, isDark && styles.darkText]}>Actual Times (New Shift) *</Text>
+          <Text style={[styles.label, isDark && styles.darkText]}>
+            Actual Times {isDifferentDates && title === 'Person A (You)' ? '(Date 2: the shift you worked)' : ''} *
+          </Text>
           <View style={styles.timeRow}>
             <View style={styles.timeInput}>
               <Text style={[styles.timeLabel, isDark && styles.darkText]}>Start</Text>
               <TimeInput
                 value={actualStart}
                 onChange={setActualStart}
-                placeholder="Select actual start time"
+                placeholder={isDifferentDates && title === 'Person A (You)' ? "Enter shift start time (Date 2)" : "Select actual start time"}
                 inputId={`${title.toLowerCase()}-actual-start`}
               />
             </View>
@@ -407,11 +565,16 @@ export default function ShiftSwapScreen() {
               <TimeInput
                 value={actualFinish}
                 onChange={setActualFinish}
-                placeholder="Select actual finish time"
+                placeholder={isDifferentDates && title === 'Person A (You)' ? "Enter shift finish time (Date 2)" : "Select actual finish time"}
                 inputId={`${title.toLowerCase()}-actual-finish`}
               />
             </View>
           </View>
+          {isDifferentDates && title === 'Person A (You)' && (
+            <Text style={[styles.autoPopulatedLabel, isDark && styles.darkSecondaryText, { marginTop: 4 }]}>
+              This becomes Person B's rostered times for Date 2
+            </Text>
+          )}
         </View>
         
         {/* Calculation */}
@@ -441,20 +604,51 @@ export default function ShiftSwapScreen() {
             {/* Info Banner */}
             <View style={[styles.infoBanner, isDark && styles.darkInfoBanner]}>
               <Text style={[styles.infoText, isDark && styles.darkText]}>
-                Create a shift swap entry. Person B's times will automatically populate from Person A's times. Enter Person A's shift details, then fill in Person B's name and details.
+                {isDifferentDates 
+                  ? 'Create a shift swap across different dates. Enter Person A\'s rostered times (Date 1) and actual times (Date 2). Person B\'s times will auto-populate. This creates 4 log entries.'
+                  : 'Create a shift swap entry. Person B\'s times will automatically populate from Person A\'s times. Enter Person A\'s shift details, then fill in Person B\'s name and details.'}
               </Text>
             </View>
 
             {/* Date Selection */}
             <View style={[styles.section, isDark && styles.darkCard]}>
               <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-                Date
+                Dates
               </Text>
-              <CalendarPicker
-                value={selectedDate}
-                onChange={setSelectedDate}
-                placeholder="Select date"
-              />
+              
+              {/* Person A Date */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, isDark && styles.darkText]}>
+                  Person A's Original Shift Date
+                </Text>
+                <CalendarPicker
+                  value={personADate}
+                  onChange={setPersonADate}
+                  placeholder="Select Person A's date"
+                />
+              </View>
+              
+              {/* Person B Date */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, isDark && styles.darkText]}>
+                  Person B's Original Shift Date
+                </Text>
+                <CalendarPicker
+                  value={personBDate}
+                  onChange={setPersonBDate}
+                  placeholder="Select Person B's date"
+                />
+                {isDifferentDates && (
+                  <Text style={[styles.infoText, isDark && styles.darkSecondaryText, { marginTop: 8, fontSize: 12 }]}>
+                    Different dates selected - will create 4 log entries
+                  </Text>
+                )}
+                {!isDifferentDates && (
+                  <Text style={[styles.infoText, isDark && styles.darkSecondaryText, { marginTop: 8, fontSize: 12 }]}>
+                    Same date - will create 2 log entries (same date swap)
+                  </Text>
+                )}
+              </View>
             </View>
 
             {/* Person A Section */}
@@ -532,12 +726,14 @@ export default function ShiftSwapScreen() {
                 />
               </View>
               
-              {/* Rostered Times (Auto-populated from Person A's actual times) */}
+              {/* Rostered Times */}
               <View style={styles.inputGroup}>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.label, isDark && styles.darkText]}>Rostered Times</Text>
-                  <Text style={[styles.autoPopulatedLabel, isDark && styles.darkSecondaryText]}>
-                    (Auto from Person A's actual times)
+                <View>
+                  <Text style={[styles.label, isDark && styles.darkText]}>
+                    Rostered Times {isDifferentDates ? '(Date 2: Person B\'s original shift)' : ''}
+                  </Text>
+                  <Text style={[styles.autoPopulatedLabel, isDark && styles.darkSecondaryText, { marginLeft: 0, marginTop: 4 }]}>
+                    {isDifferentDates ? 'Auto-populated from Person A\'s actual times (Date 2)' : '(Auto from Person A\'s actual times)'}
                   </Text>
                 </View>
                 <View style={styles.timeRow}>
@@ -564,10 +760,10 @@ export default function ShiftSwapScreen() {
                 </View>
               </View>
               
-              {/* Actual Times (Auto-populated from Person A's rostered times) */}
+              {/* Actual Times */}
               <View style={styles.inputGroup}>
                 <Text style={[styles.label, isDark && styles.darkText]}>
-                  Actual Times (New Shift) *
+                  Actual Times {isDifferentDates ? '(Date 1: Person B worked Person A\'s shift)' : '(New Shift)'} *
                   <Text style={[styles.autoPopulatedLabel, isDark && styles.darkSecondaryText]}>
                     {' '}(Auto from Person A's rostered times)
                   </Text>
@@ -594,6 +790,11 @@ export default function ShiftSwapScreen() {
                     />
                   </View>
                 </View>
+                {isDifferentDates && (
+                  <Text style={[styles.autoPopulatedLabel, isDark && styles.darkSecondaryText, { marginTop: 4 }]}>
+                    Auto-populated from Person A's rostered times (Date 1)
+                  </Text>
+                )}
               </View>
               
               {/* Calculation */}
@@ -788,6 +989,9 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     color: '#666',
     marginLeft: 8,
+    flexWrap: 'wrap',
+    flexShrink: 1,
+    flex: 1,
   },
   timeRow: {
     gap: 8,

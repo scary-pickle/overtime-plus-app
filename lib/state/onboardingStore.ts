@@ -7,6 +7,22 @@ const debug = createScopedLogger('onboardingStore');
 
 const ONBOARDING_STATUS_KEY = 'overtime_plus_onboarding_complete';
 
+/**
+ * Wraps a promise with a timeout to prevent hanging when offline
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutError: Error = new Error('Request timed out')
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(timeoutError), timeoutMs)
+    ),
+  ]);
+}
+
 interface OnboardingState {
   hasCompletedOnboarding: boolean;
   isLoading: boolean;
@@ -49,19 +65,35 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
       }
 
       // If we have a userId, also check Supabase user metadata AND profile
+      // Use timeouts to prevent hanging when offline
       if (userId) {
         try {
           debug.debug('Checking Supabase metadata');
           
-          // First ensure we have a session
+          // First ensure we have a session (with timeout)
+          try {
           // @ts-ignore
-          let sessionResult = await (supabase as any).auth.getSession();
+            const sessionPromise = (supabase as any).auth.getSession();
+            const sessionResult = await withTimeout(
+              sessionPromise,
+              2000, // 2 second timeout
+              new Error('getSession timeout - likely offline')
+            );
+            
           if (sessionResult?.error || !sessionResult?.data?.session) {
             debug.debug('No session available, skipping Supabase check');
             // Continue with local storage check only
           } else {
+              // Try to get user metadata (with timeout)
+              try {
             // @ts-ignore
-            const { data, error } = await (supabase as any).auth.getUser();
+                const getUserPromise = (supabase as any).auth.getUser();
+                const { data, error } = await withTimeout(
+                  getUserPromise,
+                  5000, // 5 second timeout
+                  new Error('getUser timeout - likely offline')
+                );
+                
             if (!error && data?.user) {
               const metadata = data.user.user_metadata || {};
               const hasCompleted = metadata.hasCompletedOnboarding === true;
@@ -83,14 +115,22 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
               // MIGRATION HELPER: Check if user has a profile in Supabase
               // This helps users who lost onboarding status due to migration/storage clear
               // The profiles table stores profile data in metadata JSONB, so just check if a row exists
+                  // Use timeout to prevent hanging when offline
               try {
                 debug.debug('Checking for existing profile in Supabase');
-                const { data: profileData, error: profileError } = await (supabase as any)
+                    // @ts-ignore
+                    const profileQueryPromise = (supabase as any)
                   .from('profiles')
                   .select('user_id, display_name, email')
                   .eq('user_id', userId)
                   .single();
                 
+                    const { data: profileData, error: profileError } = await withTimeout(
+                      profileQueryPromise,
+                      5000, // 5 second timeout
+                      new Error('Profile query timeout - likely offline')
+                    );
+                    
                 debug.debug('Profile query result:', {
                   hasData: !!profileData,
                   hasError: !!profileError,
@@ -114,15 +154,20 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                     // Mark onboarding as complete both locally and in Supabase
                     await SecureStore.setItemAsync(storageKey, 'true');
                     
-                    // Update Supabase metadata
+                        // Update Supabase metadata (with timeout, non-blocking)
                     try {
                       // @ts-ignore
-                      await (supabase as any).auth.updateUser({
+                          const updatePromise = (supabase as any).auth.updateUser({
                         data: { hasCompletedOnboarding: true }
                       });
+                          await withTimeout(
+                            updatePromise,
+                            5000, // 5 second timeout
+                            new Error('Update user timeout - non-fatal')
+                          );
                       debug.debug('Updated Supabase metadata with onboarding flag');
                     } catch (updateError) {
-                      debug.debug('Failed to update Supabase metadata:', updateError);
+                          debug.debug('Failed to update Supabase metadata (non-fatal):', updateError);
                       // Non-fatal - local storage is sufficient
                     }
                     
@@ -135,16 +180,24 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                   debug.debug('No profile found or query error');
                 }
               } catch (profileCheckError) {
-                debug.debug('Error checking profile:', profileCheckError);
-                // Continue with regular flow
+                    debug.debug('Error checking profile (likely offline):', profileCheckError);
+                    // Continue with regular flow - offline is OK
               }
             } else if (error) {
-              debug.debug('Error getting user:', error);
+                  debug.debug('Error getting user (likely offline):', error);
             }
+              } catch (getUserError) {
+                debug.debug('getUser timed out or failed (likely offline):', getUserError);
+                // Continue with local storage check - offline is OK
+              }
+            }
+          } catch (sessionError) {
+            debug.debug('getSession timed out or failed (likely offline):', sessionError);
+            // Continue with local storage check - offline is OK
           }
         } catch (e) {
-          debug.debug('Error checking Supabase onboarding status:', e);
-          // Continue with local storage check
+          debug.debug('Error checking Supabase onboarding status (likely offline):', e);
+          // Continue with local storage check - offline is OK
         }
       }
 

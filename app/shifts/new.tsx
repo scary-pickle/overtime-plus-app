@@ -140,7 +140,7 @@ export default function NewShiftScreen() {
     return true;
   };
 
-  const handleSave = async (saveAsTemplate: boolean = false) => {
+  const handleSave = async (saveAsTemplate: boolean = false, skipPrompt: boolean = false) => {
     debug.debug('Save button pressed');
     debug.debug('Form data:', {
       label,
@@ -160,13 +160,14 @@ export default function NewShiftScreen() {
     }
 
     // If not created from template and not already saving as template, show prompt
-    if (!createdFromTemplate && !saveAsTemplate && label && rosteredStart && rosteredFinish) {
+    // Skip prompt if explicitly requested (e.g., when user already chose an option)
+    if (!createdFromTemplate && !saveAsTemplate && !skipPrompt && label && rosteredStart && rosteredFinish) {
       Alert.alert(
         'Save as Template?',
         'Would you like to save this shift configuration as a template for quick selection next time?',
         [
-          { text: 'Save Shift Only', style: 'cancel', onPress: () => handleSave(false) },
-          { text: 'Save Shift & Template', onPress: () => handleSave(true) },
+          { text: 'Save Shift Only', style: 'cancel', onPress: () => handleSave(false, true) },
+          { text: 'Save Shift & Template', onPress: () => handleSave(true, true) },
         ]
       );
       return;

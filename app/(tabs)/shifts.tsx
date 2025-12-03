@@ -105,34 +105,36 @@ export default function ShiftsScreen() {
   const getNextShiftOccurrence = (shift: UsualShift): string => {
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize to midnight for accurate date comparison
+    const todayStr = formatDateToISO(today);
     const dayOfWeek = shift.dayOfWeek;
     
-    // Start from today and look ahead up to 7 days
-    for (let i = 0; i < 7; i++) {
+    // Start from today and look ahead up to 14 days (to handle biweekly shifts)
+    for (let i = 0; i < 14; i++) {
       const checkDate = new Date(today);
       checkDate.setDate(today.getDate() + i);
       checkDate.setHours(0, 0, 0, 0); // Normalize to midnight
+      const dateStr = formatDateToISO(checkDate);
       
-      if (checkDate.getDay() === dayOfWeek) {
-        const dateStr = formatDateToISO(checkDate);
-        
-        // Check if shift is active on this date
-        // Use string comparison for dates to avoid timezone issues
-        if (shift.activeFrom <= dateStr && (!shift.activeTo || shift.activeTo >= dateStr)) {
+      // Check if shift is active on this date
+      // Use string comparison for dates to avoid timezone issues
+      if (shift.activeFrom <= dateStr && (!shift.activeTo || shift.activeTo >= dateStr)) {
+        // Check if this date matches the shift's day of week
+        if (checkDate.getDay() === dayOfWeek) {
           // For biweekly shifts, check week index
           if (shift.type === 'biweekly' && shift.weekIndex) {
             const weekIndex = getWeekIndex(checkDate);
             if (weekIndex === shift.weekIndex) {
               return dateStr;
             }
-          } else if (shift.type === 'weekly') {
+          } else if (shift.type === 'weekly' || shift.type === 'custom') {
+            // Handle both weekly and custom shifts
             return dateStr;
           }
         }
       }
     }
     
-    // If no occurrence found in next 7 days, return a far future date for sorting
+    // If no occurrence found in next 14 days, return a far future date for sorting
     return '9999-12-31';
   };
 
@@ -216,11 +218,18 @@ export default function ShiftsScreen() {
   // Calculate the next shift once for all items
   const today = formatDateToISO(new Date());
   const nextShifts = activeShifts
-    .map(shift => ({
-      shift,
-      nextDate: getNextShiftOccurrence(shift)
-    }))
-    .filter(({ nextDate }) => nextDate !== '9999-12-31' && nextDate >= today)
+    .map(shift => {
+      const nextDate = getNextShiftOccurrence(shift);
+      return {
+        shift,
+        nextDate
+      };
+    })
+    .filter(({ nextDate }) => {
+      // Include shifts that have a valid next occurrence (not far future date)
+      // and that occur today or in the future
+      return nextDate !== '9999-12-31' && nextDate >= today;
+    })
     .sort((a, b) => a.nextDate.localeCompare(b.nextDate));
   
   const nextShiftId = nextShifts.length > 0 ? nextShifts[0].shift.id : null;

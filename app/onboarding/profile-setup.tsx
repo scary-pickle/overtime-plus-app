@@ -9,7 +9,6 @@ import {
   SafeAreaView,
   Alert,
   Switch,
-  useColorScheme,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,9 +27,6 @@ const debug = createScopedLogger('OnboardingProfileSetup');
 
 export default function OnboardingProfileSetup() {
   const router = useRouter();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  
   const { user } = useAuthStore();
   const { saveProfile } = useProfileStore();
 
@@ -179,91 +175,91 @@ export default function OnboardingProfileSetup() {
   const canContinue = validation.isValid;
 
   return (
-    <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
+    <SafeAreaView style={styles.container}>
       <ScrollView 
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={[styles.title, isDark && styles.darkText]}>Set Up Your Profile</Text>
-          <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>
+          <Text style={styles.title}>Set Up Your Profile</Text>
+          <Text style={styles.subtitle}>
             Let's get your profile ready. We'll use this information to generate your AVAC forms.
           </Text>
         </View>
 
         {/* Personal Information */}
-        <View style={[styles.section, isDark && styles.darkSection]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>Personal Information</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Personal Information</Text>
           
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Email Address
             </Text>
             <TextInput
-              style={[styles.input, styles.disabledInput, isDark && styles.darkInput]}
+              style={[styles.input, styles.disabledInput]}
               value={formData.email}
               editable={false}
               placeholder="your.email@health.qld.gov.au"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
             />
-            <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
+            <Text style={styles.helperText}>
               This is the email you signed in with
             </Text>
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Full Name <Text style={styles.required}>*</Text>
             </Text>
             <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
+              style={styles.input}
               value={formData.fullName}
               onChangeText={handleFullNameChange}
               placeholder="Enter your full name"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
             />
-            <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
+            <Text style={styles.helperText}>
               {formData.fullName ? 'You can edit this if needed' : 'Auto-filled from your email'}
             </Text>
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Payroll Number <Text style={styles.required}>*</Text>
             </Text>
             <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
+              style={styles.input}
               value={formData.payrollNumber}
               onChangeText={(value) => setFormData(prev => ({ ...prev, payrollNumber: value }))}
               placeholder="Enter payroll number"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Employee Initial <Text style={styles.required}>*</Text>
             </Text>
             <TextInput
-              style={[styles.input, styles.disabledInput, isDark && styles.darkInput]}
+              style={[styles.input, styles.disabledInput]}
               value={formData.employeeInitial}
               editable={false}
               placeholder="Auto-generated"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
             />
-            <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
+            <Text style={styles.helperText}>
               Auto-generated from your name
             </Text>
           </View>
         </View>
 
         {/* Organizational Details */}
-        <View style={[styles.section, isDark && styles.darkSection]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>Organizational Details</Text>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Organizational Details</Text>
           
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Hospital <Text style={styles.required}>*</Text>
             </Text>
             <HospitalDropdown
@@ -277,7 +273,7 @@ export default function OnboardingProfileSetup() {
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Department <Text style={styles.required}>*</Text>
             </Text>
             <DepartmentDropdown
@@ -296,28 +292,28 @@ export default function OnboardingProfileSetup() {
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Organisation Unit No (Optional)
             </Text>
             <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
+              style={styles.input}
               value={formData.orgUnitNo}
               onChangeText={(value) => setFormData(prev => ({ ...prev, orgUnitNo: value }))}
               placeholder="Enter org unit number"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
               maxLength={8}
             />
-            <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
+            <Text style={styles.helperText}>
               You can skip this for now. We'll remind you before exporting AVAC forms.
             </Text>
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Are you an SMO? <Text style={styles.required}>*</Text>
             </Text>
-            <View style={[styles.toggleContainer, isDark && styles.darkToggleContainer]}>
-              <Text style={[styles.toggleLabel, isDark && styles.darkLabel]}>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>
                 {formData.isSMO ? 'Yes' : 'No'}
               </Text>
               <Switch
@@ -338,101 +334,101 @@ export default function OnboardingProfileSetup() {
           {/* Pay Level - only show when not SMO */}
           {!formData.isSMO && (
             <View style={styles.field}>
-              <Text style={[styles.label, isDark && styles.darkLabel]}>
+              <Text style={styles.label}>
                 Pay Level <Text style={styles.required}>*</Text>
               </Text>
               <TextInput
-                style={[styles.input, isDark && styles.darkInput]}
+                style={styles.input}
                 value={formData.payLevel}
                 onChangeText={(value) => setFormData(prev => ({ ...prev, payLevel: value }))}
                 placeholder="Enter pay level"
-                placeholderTextColor={isDark ? '#666' : '#999'}
+                placeholderTextColor="#999"
               />
             </View>
           )}
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
+            <Text style={styles.label}>
               Service Enquiry Number (Optional)
             </Text>
             <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
+              style={styles.input}
               value={formData.serviceEnquiryNumber}
               onChangeText={(value) => setFormData(prev => ({ ...prev, serviceEnquiryNumber: value }))}
               placeholder="Optional"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
             />
           </View>
         </View>
 
         {/* Delegate Information - Optional */}
-        <View style={[styles.section, isDark && styles.darkSection]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
             Delegate Information (Optional)
           </Text>
-          <Text style={[styles.sectionDescription, isDark && styles.darkSubtitle]}>
+          <Text style={styles.sectionDescription}>
             You can skip this for now and add it later. Delegate information is required when generating PDFs.
           </Text>
 
           {isDelegateAutoFilled && (
-            <View style={[styles.infoBanner, isDark && styles.darkInfoBanner]}>
+            <View style={styles.infoBanner}>
               <Ionicons name="information-circle" size={20} color="#007AFF" />
-              <Text style={[styles.infoText, isDark && styles.darkInfoText]}>
+              <Text style={styles.infoText}>
                 Delegate details auto-filled from your department
               </Text>
             </View>
           )}
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Delegate Name</Text>
+            <Text style={styles.label}>Delegate Name</Text>
             <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
+              style={styles.input}
               value={formData.delegateName}
               onChangeText={(value) => {
                 setFormData(prev => ({ ...prev, delegateName: value }));
                 setIsDelegateAutoFilled(false);
               }}
               placeholder="Enter delegate name"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Delegate Position</Text>
+            <Text style={styles.label}>Delegate Position</Text>
             <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
+              style={styles.input}
               value={formData.delegatePosition}
               onChangeText={(value) => {
                 setFormData(prev => ({ ...prev, delegatePosition: value }));
                 setIsDelegateAutoFilled(false);
               }}
               placeholder="Enter delegate position"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Area Code</Text>
+            <Text style={styles.label}>Area Code</Text>
             <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
+              style={styles.input}
               value={formData.delegateAreaCode}
               onChangeText={(value) => setFormData(prev => ({ ...prev, delegateAreaCode: value }))}
               placeholder="(07)"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
             />
           </View>
 
           <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Phone Number</Text>
+            <Text style={styles.label}>Phone Number</Text>
             <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
+              style={styles.input}
               value={formData.delegatePhone}
               onChangeText={(value) => {
                 setFormData(prev => ({ ...prev, delegatePhone: value }));
                 setIsDelegateAutoFilled(false);
               }}
               placeholder="Enter phone number"
-              placeholderTextColor={isDark ? '#666' : '#999'}
+              placeholderTextColor="#999"
               keyboardType="phone-pad"
             />
           </View>
@@ -454,10 +450,7 @@ export default function OnboardingProfileSetup() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#007AFF',
-  },
-  darkContainer: {
-    backgroundColor: '#000',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -470,30 +463,31 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700',
-    color: '#fff',
-    marginBottom: 8,
+    color: '#111',
+    marginBottom: 16,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
-    color: '#cfe0f7',
-    lineHeight: 22,
+    color: '#333',
+    lineHeight: 24,
+    textAlign: 'center',
   },
   section: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
-  },
-  darkSection: {
-    backgroundColor: '#1c1c1e',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
+    color: '#111',
+    marginBottom: 16,
   },
   sectionDescription: {
     fontSize: 14,
@@ -507,11 +501,8 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#111',
     marginBottom: 8,
-  },
-  darkLabel: {
-    color: '#fff',
   },
   required: {
     color: '#ff4444',
@@ -519,16 +510,11 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    padding: 12,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
-    color: '#333',
-  },
-  darkInput: {
-    backgroundColor: '#2c2c2e',
-    borderColor: '#444',
-    color: '#fff',
+    color: '#111',
   },
   disabledInput: {
     backgroundColor: '#f5f5f5',
@@ -539,26 +525,19 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
-  darkHelperText: {
-    color: '#999',
-  },
   toggleContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
     padding: 12,
     backgroundColor: '#fff',
   },
-  darkToggleContainer: {
-    backgroundColor: '#2c2c2e',
-    borderColor: '#444',
-  },
   toggleLabel: {
     fontSize: 16,
-    color: '#333',
+    color: '#111',
     fontWeight: '500',
   },
   infoBanner: {
@@ -570,16 +549,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 8,
   },
-  darkInfoBanner: {
-    backgroundColor: '#1a237e',
-  },
   infoText: {
     fontSize: 14,
     color: '#1565C0',
     flex: 1,
-  },
-  darkInfoText: {
-    color: '#90CAF9',
   },
   button: {
     backgroundColor: '#007AFF',
@@ -590,21 +563,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
+    width: '100%',
   },
   buttonDisabled: {
-    backgroundColor: '#666',
+    backgroundColor: '#9CA3AF',
     opacity: 0.6,
   },
   buttonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '600',
-  },
-  darkText: {
-    color: '#fff',
-  },
-  darkSubtitle: {
-    color: '#cfe0f7',
   },
 });
 

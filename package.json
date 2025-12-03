@@ -9,7 +9,11 @@
     "web": "expo start --web",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "env:local": "./scripts/use-local-env.sh",
+    "env:production": "./scripts/use-production-env.sh",
+    "prebuild:ios": "npx expo prebuild --platform ios --clean",
+    "prebuild:android": "npx expo prebuild --platform android --clean"
   },
   "dependencies": {
     "@expo/cli": "^54.0.13",

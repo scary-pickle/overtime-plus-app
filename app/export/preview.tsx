@@ -163,8 +163,74 @@ export default function ExportPreviewScreen() {
         continue;
       }
       
-      // If this is a shift swap, handle both logs together to ensure correct order
-      if (log.isShiftSwap && log.linkedLogId) {
+      // If this is a shift swap, handle all related logs together
+      if (log.isShiftSwap && log.shiftSwapId) {
+        // Find all logs with the same shiftSwapId
+        const swapLogs = logs.filter(l => 
+          l.shiftSwapId === log.shiftSwapId && 
+          (l.status === 'ready' || l.status === 'exported') &&
+          !processedLogIds.has(l.id)
+        );
+        
+        if (swapLogs.length > 0) {
+          // Determine which logs are Person A (matches profile initials) and which are Person B
+          const personALogs: OvertimeLog[] = [];
+          const personBLogs: OvertimeLog[] = [];
+          
+          for (const swapLog of swapLogs) {
+            const matchesProfile = swapLog.initials && profile.employeeInitial && 
+                                  swapLog.initials.toUpperCase() === profile.employeeInitial.toUpperCase();
+            if (matchesProfile) {
+              personALogs.push(swapLog);
+            } else {
+              personBLogs.push(swapLog);
+            }
+          }
+          
+          // Sort Person A logs: Date 1 (rostered) first, then Date 2 (actual)
+          personALogs.sort((a, b) => {
+            // First sort by date
+            const dateCompare = a.date.localeCompare(b.date);
+            if (dateCompare !== 0) return dateCompare;
+            // If same date, rostered (actual='N/A') comes before actual (rostered='N/A')
+            const aIsRostered = a.actualStart === 'N/A' && a.actualFinish === 'N/A';
+            const bIsRostered = b.actualStart === 'N/A' && b.actualFinish === 'N/A';
+            if (aIsRostered && !bIsRostered) return -1;
+            if (!aIsRostered && bIsRostered) return 1;
+            // If still same, sort by createdAt
+            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          });
+          
+          // Sort Person B logs: Date 2 (rostered) first, then Date 1 (actual)
+          personBLogs.sort((a, b) => {
+            // First sort by date (descending - Date 2 before Date 1)
+            const dateCompare = b.date.localeCompare(a.date);
+            if (dateCompare !== 0) return dateCompare;
+            // If same date, rostered (actual='N/A') comes before actual (rostered='N/A')
+            const aIsRostered = a.actualStart === 'N/A' && a.actualFinish === 'N/A';
+            const bIsRostered = b.actualStart === 'N/A' && b.actualFinish === 'N/A';
+            if (aIsRostered && !bIsRostered) return -1;
+            if (!aIsRostered && bIsRostered) return 1;
+            // If still same, sort by createdAt
+            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          });
+          
+          // Add in order: Person A logs first, then Person B logs
+          for (const personALog of personALogs) {
+            expandedLogs.push(personALog);
+            processedLogIds.add(personALog.id);
+          }
+          for (const personBLog of personBLogs) {
+            expandedLogs.push(personBLog);
+            processedLogIds.add(personBLog.id);
+          }
+        } else {
+          // No related logs found, just add current log
+          expandedLogs.push(log);
+          processedLogIds.add(log.id);
+        }
+      } else if (log.isShiftSwap && log.linkedLogId) {
+        // Fallback for 2-log swaps (same date)
         const linkedLog = logs.find(l => l.id === log.linkedLogId);
         if (linkedLog && (linkedLog.status === 'ready' || linkedLog.status === 'exported')) {
           // Determine which is Person A (matches profile initials) and which is Person B
@@ -218,10 +284,16 @@ export default function ExportPreviewScreen() {
       // Generate custom filename if provided
       const customFileName = customName.trim() ? `${customName.trim()}.pdf` : undefined;
       
-      // Use SMO template if user is SMO, otherwise use regular template
-      const pdfUri = profile.isSMO 
-        ? await buildSMOAVAC(profile, expandedLogs, customFileName)
-        : await buildAVAC(profile, expandedLogs, customFileName);
+      // Check if any logs are shift swaps - shift swaps must always use normal template
+      const hasShiftSwaps = expandedLogs.some(log => log.isShiftSwap);
+      
+      // Use SMO template if user is SMO and no shift swaps, otherwise use regular template
+      // Shift swaps always require the normal template (SMO template doesn't support shift swaps)
+      const pdfUri = hasShiftSwaps
+        ? await buildAVAC(profile, expandedLogs, customFileName)  // Force normal template for shift swaps
+        : (profile.isSMO 
+            ? await buildSMOAVAC(profile, expandedLogs, customFileName)
+            : await buildAVAC(profile, expandedLogs, customFileName));
       setPdfUri(pdfUri);
       
       // Get userId for cloud upload

@@ -49,6 +49,7 @@ export default function RecentlyDeletedScreen() {
     permanentlyDeleteShift,
     permanentlyDeleteBatch,
     cleanupOldItems,
+    deleteAllItems,
     clearError,
   } = useDeletedItemsStore();
 
@@ -151,6 +152,39 @@ export default function RecentlyDeletedScreen() {
     );
   };
 
+  const handleDeleteAll = () => {
+    const totalItems = allDeletedItems.length;
+    if (totalItems === 0) {
+      Alert.alert('Info', 'No items to delete');
+      return;
+    }
+
+    Alert.alert(
+      'Delete All Items',
+      `This will permanently delete all ${totalItems} recently deleted item(s). This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await deleteAllItems(user?.id);
+              const total = result.logsDeleted + result.shiftsDeleted + result.batchesDeleted;
+              if (total > 0) {
+                Alert.alert('Success', `Deleted ${total} item(s)`);
+              } else {
+                Alert.alert('Info', 'No items to delete');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete all items. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleCleanupOld = () => {
     Alert.alert(
       'Clean Up Old Items',
@@ -173,6 +207,26 @@ export default function RecentlyDeletedScreen() {
               Alert.alert('Error', 'Failed to clean up old items. Please try again.');
             }
           },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteButtonPress = () => {
+    Alert.alert(
+      'Delete Options',
+      'Choose an option to permanently delete items:',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All Items',
+          style: 'destructive',
+          onPress: handleDeleteAll,
+        },
+        {
+          text: 'Delete Items Older Than 30 Days',
+          style: 'destructive',
+          onPress: handleCleanupOld,
         },
       ]
     );
@@ -225,7 +279,7 @@ export default function RecentlyDeletedScreen() {
         </Text>
         <TouchableOpacity
           style={styles.cleanupButton}
-          onPress={handleCleanupOld}
+          onPress={handleDeleteButtonPress}
         >
           <Ionicons name="trash-outline" size={22} color={isDark ? '#ff6b6b' : '#d32f2f'} />
         </TouchableOpacity>

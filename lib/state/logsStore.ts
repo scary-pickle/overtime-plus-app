@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { OvertimeLog, ExportBatch, MinutesCalculation } from '../../types';
 import { database } from '../db/sqlite';
-import { computeMinutes, roundToNearest5, getPreviousISODate, getCurrentDate } from '../time';
+import { computeMinutes, roundToNearest5, getPreviousISODate, getCurrentDate, calculateDuration } from '../time';
 import { useAuthStore } from './authStore';
 import { useProfileStore } from './profileStore';
 import { logsSync, exportSync } from '../supabase';
@@ -75,7 +75,8 @@ interface LogsState {
   loadExportBatches: (userId?: string | null) => Promise<void>;
   addLog: (log: OvertimeLog, userId?: string | null) => Promise<void>;
   addShiftSwapLogs: (data: {
-    date: string;
+    personADate: string;
+    personBDate: string;
     personAInitials: string;
     personARosteredStart: string | 'N/A';
     personARosteredFinish: string | 'N/A';
@@ -569,122 +570,347 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       // Get userId from authStore if not provided
       const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
       
-      // Validate reciprocal swap
-      if (data.personARosteredStart !== 'N/A' && data.personBRosteredStart !== 'N/A') {
-        if (data.personAActualStart !== data.personBRosteredStart || data.personAActualFinish !== data.personBRosteredFinish) {
-          throw new Error('Person A actual times must match Person B rostered times (reciprocal swap)');
+      const isSameDate = data.personADate === data.personBDate;
+      
+      // Validate based on scenario
+      if (isSameDate) {
+        // Same date: validate reciprocal swap
+        if (data.personARosteredStart !== 'N/A' && data.personBRosteredStart !== 'N/A') {
+          if (data.personAActualStart !== data.personBRosteredStart || data.personAActualFinish !== data.personBRosteredFinish) {
+            throw new Error('Person A actual times must match Person B rostered times (reciprocal swap)');
+          }
+          if (data.personBActualStart !== data.personARosteredStart || data.personBActualFinish !== data.personARosteredFinish) {
+            throw new Error('Person B actual times must match Person A rostered times (reciprocal swap)');
+          }
         }
-        if (data.personBActualStart !== data.personARosteredStart || data.personBActualFinish !== data.personARosteredFinish) {
-          throw new Error('Person B actual times must match Person A rostered times (reciprocal swap)');
+      } else {
+        // Different dates: simplified validation
+        // Person A Date 1: rostered filled, actual 'N/A' (handled in log creation)
+        // Person A Date 2: rostered 'N/A', actual filled (user enters this)
+        // Person B Date 2: rostered = Person A actual (auto-populated), actual 'N/A' (handled in log creation)
+        // Person B Date 1: rostered 'N/A', actual = Person A rostered (auto-populated)
+        
+        // Person A actual times are required (these become Person B's rostered times)
+        if (!data.personAActualStart || !data.personAActualFinish || data.personAActualStart === 'N/A' || data.personAActualFinish === 'N/A') {
+          throw new Error('Person A actual times are required (these represent the shift worked on Date 2)');
         }
+        
+        // Person A rostered times are required (these become Person B's actual times)
+        if (data.personARosteredStart === 'N/A' || data.personARosteredFinish === 'N/A') {
+          throw new Error('Person A rostered times are required (or mark as N/A)');
+        }
+        
+        // Person B times are auto-populated, so validation happens in UI
+        // Store validation just ensures Person A times are provided
       }
       
       // Generate shared shift swap ID
       const shiftSwapId = `shift_swap_${Date.now()}`;
-      const timestamp = Date.now();
+      const baseTimestamp = Date.now();
+      // Use slightly different timestamps to ensure correct order when sorted by createdAt
+      const timestamp = baseTimestamp;
       
-      // Calculate overtime for both entries
-      const personACalc = computeMinutes(
-        data.personAActualStart,
-        data.personAActualFinish,
-        data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
-        data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
-        data.mealBreakMinutes
-      );
-      
-      const personBCalc = computeMinutes(
-        data.personBActualStart,
-        data.personBActualFinish,
-        data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
-        data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
-        data.mealBreakMinutes
-      );
-      
-      // Create Person A log
-      const logA: OvertimeLog = {
-        id: `log_${timestamp}_A`,
-        date: data.date,
-        rosteredStart: data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
-        rosteredFinish: data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
-        actualStart: data.personAActualStart,
-        actualFinish: data.personAActualFinish,
-        mealBreakMinutes: data.mealBreakMinutes || undefined,
-        minutesOvertime: personACalc.roundedOvertime,
-        category: 'Change shift',
-        comments: 'Shift swap',
-        initials: data.personAInitials,
-        status: data.status,
-        source: 'manual',
-        shiftSwapId,
-        linkedLogId: `log_${timestamp}_B`,
-        isShiftSwap: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      
-      // Create Person B log (store Person B's details in swapPartner fields for PDF generation)
-      const logB: OvertimeLog = {
-        id: `log_${timestamp}_B`,
-        date: data.date,
-        rosteredStart: data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
-        rosteredFinish: data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
-        actualStart: data.personBActualStart,
-        actualFinish: data.personBActualFinish,
-        mealBreakMinutes: data.mealBreakMinutes || undefined,
-        minutesOvertime: personBCalc.roundedOvertime,
-        category: 'Change shift',
-        comments: 'Shift swap',
-        initials: data.personBInitials,
-        status: data.status,
-        source: 'manual',
-        shiftSwapId,
-        linkedLogId: `log_${timestamp}_A`,
-        isShiftSwap: true,
-        // Store Person B's details (these will be used for PDF generation)
-        swapPartnerName: data.personBName,
-        swapPartnerPayrollNumber: data.personBPayrollNumber,
-        swapPartnerPayLevel: data.personBPayLevel,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      
-      // Also store Person B's details in Person A's log for reference
-      logA.swapPartnerName = data.personBName;
-      logA.swapPartnerPayrollNumber = data.personBPayrollNumber;
-      logA.swapPartnerPayLevel = data.personBPayLevel;
-      
-      // Save both logs to local SQLite
-      await database.createOvertimeLog(logA, finalUserId);
-      await database.createOvertimeLog(logB, finalUserId);
-      
-      const { logs } = get();
-      set({ 
-        logs: [logA, logB, ...logs], 
-        isLoading: false,
-        error: null 
-      });
-      
-      // Sync to Supabase in background (non-blocking)
-      if (finalUserId) {
-        logsSync.uploadLog(logA, finalUserId).catch(err => {
-          debug.error('Background sync failed for log A (non-fatal):', err);
-          syncQueue.add({
-            type: 'log',
-            operation: 'create',
-            data: logA,
-            userId: finalUserId,
-          }).catch(() => {});
+      if (isSameDate) {
+        // SAME DATE: Create 2 logs (existing behavior)
+        // For same date swaps, overtime is the difference between the two shifts
+        // Person A's shift duration (rostered)
+        const personAShiftDuration = data.personARosteredStart !== 'N/A' && data.personARosteredFinish !== 'N/A'
+          ? calculateDuration(data.personARosteredStart, data.personARosteredFinish) - data.mealBreakMinutes
+          : 0;
+        
+        // Person B's shift duration (rostered, which equals Person A's actual)
+        const personBShiftDuration = data.personBRosteredStart !== 'N/A' && data.personBRosteredFinish !== 'N/A'
+          ? calculateDuration(data.personBRosteredStart, data.personBRosteredFinish) - data.mealBreakMinutes
+          : 0;
+        
+        // Person A overtime = Person B's shift - Person A's shift (only if positive)
+        const personAOvertime = Math.max(0, personBShiftDuration - personAShiftDuration);
+        const personAOvertimeRounded = roundToNearest5(personAOvertime);
+        
+        // Person B overtime = Person A's shift - Person B's shift (only if positive)
+        const personBOvertime = Math.max(0, personAShiftDuration - personBShiftDuration);
+        const personBOvertimeRounded = roundToNearest5(personBOvertime);
+        
+        // Calculate for display purposes (but we'll override minutesOvertime)
+        const personACalc = computeMinutes(
+          data.personAActualStart,
+          data.personAActualFinish,
+          data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+          data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+          data.mealBreakMinutes
+        );
+        
+        const personBCalc = computeMinutes(
+          data.personBActualStart,
+          data.personBActualFinish,
+          data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
+          data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
+          data.mealBreakMinutes
+        );
+        
+        // Create Person A log
+        const logA: OvertimeLog = {
+          id: `log_${timestamp}_A`,
+          date: data.personADate,
+          rosteredStart: data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+          rosteredFinish: data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+          actualStart: data.personAActualStart,
+          actualFinish: data.personAActualFinish,
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: personAOvertimeRounded, // Only the difference between shifts
+          category: 'Change shift',
+          comments: 'Shift swap',
+          initials: data.personAInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_B`,
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        // Create Person B log
+        const logB: OvertimeLog = {
+          id: `log_${timestamp}_B`,
+          date: data.personBDate,
+          rosteredStart: data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
+          rosteredFinish: data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
+          actualStart: data.personBActualStart,
+          actualFinish: data.personBActualFinish,
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: personBOvertimeRounded, // Only the difference between shifts
+          category: 'Change shift',
+          comments: 'Shift swap',
+          initials: data.personBInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_A`,
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        // Save both logs to local SQLite
+        await database.createOvertimeLog(logA, finalUserId);
+        await database.createOvertimeLog(logB, finalUserId);
+        
+        const { logs } = get();
+        set({ 
+          logs: [logA, logB, ...logs], 
+          isLoading: false,
+          error: null 
         });
         
-        logsSync.uploadLog(logB, finalUserId).catch(err => {
-          debug.error('Background sync failed for log B (non-fatal):', err);
-          syncQueue.add({
-            type: 'log',
-            operation: 'create',
-            data: logB,
-            userId: finalUserId,
-          }).catch(() => {});
+        // Sync to Supabase in background (non-blocking)
+        if (finalUserId) {
+          logsSync.uploadLog(logA, finalUserId).catch(err => {
+            debug.error('Background sync failed for log A (non-fatal):', err);
+            syncQueue.add({
+              type: 'log',
+              operation: 'create',
+              data: logA,
+              userId: finalUserId,
+            }).catch(() => {});
+          });
+          
+          logsSync.uploadLog(logB, finalUserId).catch(err => {
+            debug.error('Background sync failed for log B (non-fatal):', err);
+            syncQueue.add({
+              type: 'log',
+              operation: 'create',
+              data: logB,
+              userId: finalUserId,
+            }).catch(() => {});
+          });
+        }
+      } else {
+        // DIFFERENT DATES: Create 4 logs in order:
+        // 1. Person A, Date 1 - rostered filled, actual 'N/A'
+        // 2. Person A, Date 2 - rostered 'N/A', actual filled
+        // 3. Person B, Date 2 - rostered filled, actual 'N/A'
+        // 4. Person B, Date 1 - rostered 'N/A', actual filled
+        
+        // Calculate shift durations for overtime calculation
+        // Person A's original shift duration (rostered)
+        const personAShiftDuration = data.personARosteredStart !== 'N/A' && data.personARosteredFinish !== 'N/A'
+          ? calculateDuration(data.personARosteredStart, data.personARosteredFinish) - data.mealBreakMinutes
+          : 0;
+        
+        // Person B's original shift duration (Person A's actual times)
+        const personBShiftDuration = data.personAActualStart !== 'N/A' && data.personAActualFinish !== 'N/A'
+          ? calculateDuration(data.personAActualStart, data.personAActualFinish) - data.mealBreakMinutes
+          : 0;
+        
+        // Overtime is only the difference between the two shifts
+        // Person A overtime = Person B's shift - Person A's shift (only if positive)
+        const personAOvertime = Math.max(0, personBShiftDuration - personAShiftDuration);
+        const personAOvertimeRounded = roundToNearest5(personAOvertime);
+        
+        // Person B overtime = Person A's shift - Person B's shift (only if positive)
+        const personBOvertime = Math.max(0, personAShiftDuration - personBShiftDuration);
+        const personBOvertimeRounded = roundToNearest5(personBOvertime);
+        
+        // Log 1: Person A, Date 1 - rostered filled, actual 'N/A'
+        const logA1Calc = computeMinutes(
+          'N/A',
+          'N/A',
+          data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+          data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+          data.mealBreakMinutes
+        );
+        
+        // Create timestamps with slight offsets to ensure correct order when sorted by createdAt DESC
+        // Since ORDER BY date DESC, created_at DESC, later timestamps appear first
+        // To show Person A before Person B on same date, Person A needs LATER timestamps
+        const now = Date.now();
+        // Person A logs get later timestamps (appear first when sorted DESC)
+        const logA1CreatedAt = new Date(now + 3).toISOString(); // Person A Date 1 (rostered)
+        const logA2CreatedAt = new Date(now + 2).toISOString(); // Person A Date 2 (actual)
+        // Person B logs get earlier timestamps (appear after Person A when sorted DESC)
+        const logB2CreatedAt = new Date(now + 1).toISOString(); // Person B Date 2 (rostered)
+        const logB1CreatedAt = new Date(now).toISOString(); // Person B Date 1 (actual)
+        
+        const logA1: OvertimeLog = {
+          id: `log_${timestamp}_A1`,
+          date: data.personADate,
+          rosteredStart: data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+          rosteredFinish: data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+          actualStart: 'N/A',
+          actualFinish: 'N/A',
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: 0, // No overtime for original shift (not worked)
+          category: 'Change shift',
+          comments: 'Shift swap - original shift',
+          initials: data.personAInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_B2`, // Link to Person B's original shift
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: logA1CreatedAt,
+          updatedAt: logA1CreatedAt,
+        };
+        
+        // Log 2: Person A, Date 2 - rostered 'N/A', actual filled (Person B's rostered)
+        // Overtime = Person B's shift - Person A's shift (only the difference)
+        const logA2: OvertimeLog = {
+          id: `log_${timestamp}_A2`,
+          date: data.personBDate,
+          rosteredStart: 'N/A',
+          rosteredFinish: 'N/A',
+          actualStart: data.personAActualStart,
+          actualFinish: data.personAActualFinish,
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: personAOvertimeRounded, // Only the difference
+          category: 'Change shift',
+          comments: 'Shift swap - working Person B\'s shift',
+          initials: data.personAInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_B1`, // Link to Person B working Person A's shift
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: logA2CreatedAt,
+          updatedAt: logA2CreatedAt,
+        };
+        
+        // Log 3: Person B, Date 2 - rostered filled, actual 'N/A' (Person B's original shift)
+        // Person B's rostered = Person A's actual (auto-populated)
+        const logB2: OvertimeLog = {
+          id: `log_${timestamp}_B2`,
+          date: data.personBDate,
+          rosteredStart: data.personAActualStart !== 'N/A' ? data.personAActualStart : undefined,
+          rosteredFinish: data.personAActualFinish !== 'N/A' ? data.personAActualFinish : undefined,
+          actualStart: 'N/A',
+          actualFinish: 'N/A',
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: 0, // No overtime for original shift (not worked)
+          category: 'Change shift',
+          comments: 'Shift swap - original shift',
+          initials: data.personBInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_A1`, // Link to Person A's original shift
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: logB2CreatedAt,
+          updatedAt: logB2CreatedAt,
+        };
+        
+        // Log 4: Person B, Date 1 - rostered 'N/A', actual filled (Person A's rostered)
+        // Overtime = Person A's shift - Person B's shift (only the difference)
+        const logB1: OvertimeLog = {
+          id: `log_${timestamp}_B1`,
+          date: data.personADate,
+          rosteredStart: 'N/A',
+          rosteredFinish: 'N/A',
+          actualStart: data.personARosteredStart !== 'N/A' ? data.personARosteredStart : 'N/A',
+          actualFinish: data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : 'N/A',
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: personBOvertimeRounded, // Only the difference
+          category: 'Change shift',
+          comments: 'Shift swap - working Person A\'s shift',
+          initials: data.personBInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_A2`, // Link to Person A working Person B's shift
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: logB1CreatedAt,
+          updatedAt: logB1CreatedAt,
+        };
+        
+        // Save all 4 logs to local SQLite in order: A1, A2, B2, B1
+        // Order: Person A rostered (Date 1), Person A actual (Date 2), Person B rostered (Date 2), Person B actual (Date 1)
+        await database.createOvertimeLog(logA1, finalUserId);
+        await database.createOvertimeLog(logA2, finalUserId);
+        await database.createOvertimeLog(logB2, finalUserId);
+        await database.createOvertimeLog(logB1, finalUserId);
+        
+        const { logs } = get();
+        // Set logs in order: Person A rostered, Person A actual, Person B rostered, Person B actual
+        set({ 
+          logs: [logA1, logA2, logB2, logB1, ...logs], 
+          isLoading: false,
+          error: null 
         });
+        
+        // Sync to Supabase in background (non-blocking)
+        if (finalUserId) {
+          // Sync in the same order: Person A rostered, Person A actual, Person B rostered, Person B actual
+          const syncLogs = [logA1, logA2, logB2, logB1];
+          for (const log of syncLogs) {
+            logsSync.uploadLog(log, finalUserId).catch(err => {
+              debug.error(`Background sync failed for log ${log.id} (non-fatal):`, err);
+              syncQueue.add({
+                type: 'log',
+                operation: 'create',
+                data: log,
+                userId: finalUserId,
+              }).catch(() => {});
+            });
+          }
+        }
       }
     } catch (error) {
       set({ 
@@ -1134,7 +1360,8 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     const { logs } = get();
     return logs.some(log => 
       log.date === date && 
-      (log.status === 'ready' || log.status === 'exported')
+      (log.status === 'ready' || log.status === 'exported') &&
+      !log.isShiftSwap // Exclude shift swap logs
     );
   },
   
@@ -1142,7 +1369,8 @@ export const useLogsStore = create<LogsState>((set, get) => ({
     const { logs } = get();
     return logs.find(log => 
       log.date === date && 
-      (log.status === 'ready' || log.status === 'exported')
+      (log.status === 'ready' || log.status === 'exported') &&
+      !log.isShiftSwap // Exclude shift swap logs
     ) || null;
   },
   

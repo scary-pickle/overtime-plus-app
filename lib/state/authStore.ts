@@ -81,6 +81,22 @@ function isNetworkError(error: any): boolean {
   return hasNetworkPattern || isSupabaseNetworkError;
 }
 
+/**
+ * Wraps a promise with a timeout to prevent hanging when offline
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  timeoutError: Error = new Error('Request timed out')
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(timeoutError), timeoutMs)
+    ),
+  ]);
+}
+
 interface AuthState {
   user: any | null;
   session: any | null;
@@ -121,66 +137,152 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       debug.debug('Getting session from Supabase...');
       
-      // Supabase automatically restores session from storage when client is initialized
-      // However, this happens asynchronously, so we may need to wait a bit
-      // Try getSession() with a small delay to allow restoration to complete
+      // CRITICAL: Try reading from SecureStore FIRST before attempting getSession()
+      // This ensures we can use cached session immediately when offline
+      // Supabase's getSession() might try to make network requests even when offline
       let session = null;
       let user = null;
       let error: any = null;
+      let gotSessionFromCache = false;
       
-      // Try up to 3 times with increasing delays to allow session restoration
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        // @ts-ignore
-        const result = await (supabase as any).auth.getSession();
-        error = result?.error;
-        session = result?.data?.session ?? null;
-        user = session?.user ?? null;
-        
-        debug.debug('getSession attempt ' + attempt + ':', {
-          hasData: !!result?.data,
-          hasSession: !!session,
-          hasUser: !!user,
-          hasError: !!error,
-          errorMessage: error?.message,
-          hasAccessToken: !!session?.access_token,
-          hasRefreshToken: !!session?.refresh_token,
-        });
-        
-        // If we have a session but no user, and we have a refresh token, try refreshing
-        if (session && !user && session.refresh_token) {
-          debug.debug('Session found but no user - attempting refresh on attempt ' + attempt);
-          try {
-            // @ts-ignore
-            const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
-              refresh_token: session.refresh_token,
-            });
-            if (!refreshError && refreshData?.session) {
-              session = refreshData.session;
-              user = session?.user ?? null;
-              debug.debug('Session refreshed successfully, user found:', !!user);
-            } else {
-              debug.debug('Refresh failed:', refreshError);
+      // First, try to read session directly from SecureStore (fast, works offline)
+      debug.debug('Attempting to read session directly from SecureStore first...');
+      try {
+        const { SecureStoreAdapter } = await import('../auth/storageAdapter');
+        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+        if (supabaseUrl) {
+          // Extract project ref from URL (e.g., https://xyzabc.supabase.co -> xyzabc)
+          const urlMatch = supabaseUrl.match(/https?:\/\/([^.]+)\.supabase\.co/);
+          const projectRef = urlMatch ? urlMatch[1] : supabaseUrl.split('//')[1]?.split('.')[0];
+          
+          if (projectRef) {
+            // Try the standard Supabase session key format
+            const possibleKeys = [
+              `sb-${projectRef}-auth-token`,
+              `sb-${projectRef}-auth-token-session-data`, // SQLite adapter format
+            ];
+            
+            for (const sessionKey of possibleKeys) {
+              debug.debug('Attempting to read session directly from SecureStore:', sessionKey.substring(0, 30) + '...');
+              try {
+                const sessionData = await SecureStoreAdapter.getItem(sessionKey);
+                if (sessionData) {
+                  debug.debug('Found session data in SecureStore, length:', sessionData.length);
+                  try {
+                    const parsed = JSON.parse(sessionData);
+                    // Check if it's a session object with required fields
+                    if (parsed?.access_token && parsed?.user) {
+                      debug.debug('✅ Successfully read session from SecureStore directly (offline mode)');
+                      session = parsed;
+                      user = parsed.user;
+                      gotSessionFromCache = true;
+                      break; // Break out of key loop
+                    } else if (parsed?.session?.access_token && parsed?.session?.user) {
+                      // Sometimes Supabase wraps it in a session property
+                      debug.debug('✅ Found wrapped session in SecureStore (offline mode)');
+                      session = parsed.session;
+                      user = parsed.session.user;
+                      gotSessionFromCache = true;
+                      break; // Break out of key loop
+                    } else {
+                      debug.debug('Session data found but missing required fields:', {
+                        hasAccessToken: !!parsed?.access_token,
+                        hasUser: !!parsed?.user,
+                        hasWrappedSession: !!parsed?.session,
+                        keys: Object.keys(parsed || {}),
+                      });
+                    }
+                  } catch (parseError) {
+                    debug.warn('Failed to parse session data from SecureStore:', parseError);
+                  }
+                }
+              } catch (keyError) {
+                debug.debug('Failed to read key', sessionKey.substring(0, 30) + '...:', keyError);
+              }
             }
-          } catch (refreshErr) {
-            debug.debug('Refresh exception:', refreshErr);
           }
         }
-        
-        if (session && user) {
-          debug.debug('Session found on attempt ' + attempt);
-          break;
-        }
-        
-        // If no session found and not the last attempt, wait a bit before retrying
-        if (attempt < 3) {
-          await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+      } catch (fallbackError) {
+        debug.warn('Direct SecureStore read failed:', fallbackError);
+      }
+      
+      // If we got session from cache, skip getSession() entirely (we're offline)
+      if (!gotSessionFromCache) {
+        debug.debug('No cached session found, trying getSession()...');
+        // Try getSession() with a short timeout - if it times out, we're likely offline
+        try {
+          // @ts-ignore
+          const result = await withTimeout(
+            (supabase as any).auth.getSession(),
+            2000, // 2 second timeout - if offline, this will timeout quickly
+            new Error('getSession timeout - likely offline')
+          );
+          error = result?.error;
+          const resultSession = result?.data?.session ?? null;
+          const resultUser = resultSession?.user ?? null;
+          
+          if (resultSession && resultUser) {
+            debug.debug('Got session from getSession()');
+            session = resultSession;
+            user = resultUser;
+          } else if (error && !isNetworkError(error)) {
+            throw error;
+          }
+        } catch (timeoutError) {
+          debug.warn('getSession timed out - likely offline, using cached session if available');
+          error = timeoutError;
+          // If getSession times out, we're offline - use cached session if we found one
+          // If we didn't find a cached session, we'll handle that below
         }
       }
       
-      if (error) throw error;
+      debug.debug('Session check result:', {
+        hasSession: !!session,
+        hasUser: !!user,
+        gotSessionFromCache,
+        hasError: !!error,
+        errorMessage: error?.message,
+      });
+      
+      // If we have an error and it's not a network error, and we don't have a cached session, throw it
+      if (error && !isNetworkError(error) && !gotSessionFromCache) {
+        throw error;
+      }
+      
+      // If we don't have a session at this point, we can't proceed
+      if (!session || !user) {
+        debug.warn('No session found - user needs to sign in');
+        // Clear any partial state
+        // Wrap signOut in timeout to prevent hanging when offline
+        // If offline, signOut will fail but we don't care - we're just clearing local state
+        try {
+          await withTimeout(
+            (supabase as any).auth.signOut(),
+            2000, // 2 second timeout
+            new Error('signOut timeout - likely offline')
+          );
+        } catch (signOutError) {
+          // Ignore signOut errors when offline - we're just clearing local state anyway
+          debug.debug('signOut failed (likely offline), continuing with local state clear:', signOutError);
+        }
+        set({
+          session: null,
+          user: null,
+          emailVerified: false,
+          hasCompletedOnboarding: false,
+          isLoading: false,
+        });
+        return;
+      }
+      
+      // If we got session from cache, skip all network operations (we're offline)
+      if (gotSessionFromCache) {
+        debug.debug('Using cached session, skipping token refresh and user verification (offline mode)');
+      }
 
       // If we have a session, check if the access token is expired and refresh if needed
-      if (session && user && session.access_token) {
+      // Skip this if we got session from cache (we're offline)
+      if (session && user && session.access_token && !gotSessionFromCache) {
         // Check if access token is expired or about to expire (within 60 seconds)
         try {
           const tokenParts = session.access_token.split('.');
@@ -197,11 +299,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               });
               
               // Try to refresh the session using the refresh token
+              // Use timeout to prevent hanging when offline
               if (session.refresh_token) {
+                try {
                 // @ts-ignore
-                const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
+                  const refreshPromise = (supabase as any).auth.refreshSession({
                   refresh_token: session.refresh_token,
                 });
+                  const { data: refreshData, error: refreshError } = await withTimeout(
+                    refreshPromise,
+                    5000, // 5 second timeout
+                    new Error('Token refresh timeout - likely offline')
+                  );
                 
                 if (refreshError) {
                   // Check if this is a network error
@@ -215,7 +324,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                   } else {
                     debug.error('Failed to refresh expired session (non-network error):', refreshError);
                     // This is an actual auth error - clear session
-                    await (supabase as any).auth.signOut();
+                    // Wrap signOut in timeout to prevent hanging when offline
+                    try {
+                      await withTimeout(
+                        (supabase as any).auth.signOut(),
+                        2000, // 2 second timeout
+                        new Error('signOut timeout - likely offline')
+                      );
+                    } catch (signOutError) {
+                      debug.debug('signOut failed (likely offline), continuing with local state clear:', signOutError);
+                    }
                     set({
                       session: null,
                       user: null,
@@ -234,7 +352,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                   user = session.user;
                 } else {
                   debug.error('Refresh succeeded but no session returned');
-                  await (supabase as any).auth.signOut();
+                  // Wrap signOut in timeout to prevent hanging when offline
+                  try {
+                    await withTimeout(
+                      (supabase as any).auth.signOut(),
+                      2000, // 2 second timeout
+                      new Error('signOut timeout - likely offline')
+                    );
+                  } catch (signOutError) {
+                    debug.debug('signOut failed (likely offline), continuing with local state clear:', signOutError);
+                  }
                   set({
                     session: null,
                     user: null,
@@ -243,10 +370,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                     isLoading: false,
                   });
                   return;
+                  }
+                } catch (refreshTimeoutError) {
+                  // Timeout or network error - allow offline use with cached session
+                  if (isNetworkError(refreshTimeoutError)) {
+                    debug.warn('Token refresh timed out due to network - allowing offline use with cached session');
+                    // Continue with cached session
+                  } else {
+                    throw refreshTimeoutError;
+                  }
                 }
               } else {
                 debug.error('Access token expired but no refresh token available');
-                await (supabase as any).auth.signOut();
+                // Wrap signOut in timeout to prevent hanging when offline
+                try {
+                  await withTimeout(
+                    (supabase as any).auth.signOut(),
+                    2000, // 2 second timeout
+                    new Error('signOut timeout - likely offline')
+                  );
+                } catch (signOutError) {
+                  debug.debug('signOut failed (likely offline), continuing with local state clear:', signOutError);
+                }
                 set({
                   session: null,
                   user: null,
@@ -262,10 +407,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           debug.warn('Could not parse access token, attempting refresh anyway:', tokenError);
           // If we can't parse the token, try refreshing anyway
           if (session.refresh_token) {
+            try {
             // @ts-ignore
-            const { data: refreshData, error: refreshError } = await (supabase as any).auth.refreshSession({
+              const refreshPromise = (supabase as any).auth.refreshSession({
               refresh_token: session.refresh_token,
             });
+              const { data: refreshData, error: refreshError } = await withTimeout(
+                refreshPromise,
+                5000, // 5 second timeout
+                new Error('Token refresh timeout - likely offline')
+              );
             
             if (!refreshError && refreshData?.session?.access_token) {
               debug.debug('Session refreshed successfully (token parse error case)');
@@ -280,7 +431,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 // Don't clear session on network errors - allow offline use
               } else {
                 debug.error('Failed to refresh session after token parse error (non-network error):', refreshError);
-                await (supabase as any).auth.signOut();
+                // Wrap signOut in timeout to prevent hanging when offline
+                try {
+                  await withTimeout(
+                    (supabase as any).auth.signOut(),
+                    2000, // 2 second timeout
+                    new Error('signOut timeout - likely offline')
+                  );
+                } catch (signOutError) {
+                  debug.debug('signOut failed (likely offline), continuing with local state clear:', signOutError);
+                }
                 set({
                   session: null,
                   user: null,
@@ -289,6 +449,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                   isLoading: false,
                 });
                 return;
+                }
+              }
+            } catch (refreshTimeoutError) {
+              // Timeout or network error - allow offline use with cached session
+              if (isNetworkError(refreshTimeoutError)) {
+                debug.warn('Token refresh timed out after parse error - allowing offline use');
+                // Continue with cached session
+              } else {
+                throw refreshTimeoutError;
               }
             }
           }
@@ -297,12 +466,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       // If we have a session, verify the user still exists in Supabase
       // IMPORTANT: Only verify if we have network connectivity. If offline, trust the cached session.
-      if (session && user) {
+      // Skip verification if we got the session from cache (we're offline)
+      if (session && user && !gotSessionFromCache) {
         debug.debug('Verifying user still exists...', { userId: maskUserId(user.id) });
         try {
           // Verify the user still exists by calling getUser() - this will fail if user was deleted
+          // Use timeout to prevent hanging when offline
           // @ts-ignore
-          const { data: userData, error: userError } = await (supabase as any).auth.getUser();
+          const getUserPromise = (supabase as any).auth.getUser();
+          const { data: userData, error: userError } = await withTimeout(
+            getUserPromise,
+            5000, // 5 second timeout - if offline, this will timeout quickly
+            new Error('User verification timeout - likely offline')
+          );
           if (userError) {
             // Check if this is a network error - if so, allow offline use with cached session
             if (isNetworkError(userError)) {
@@ -316,7 +492,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             } else {
               // This is an actual auth error (user deleted, invalid token, etc.) - clear session
               debug.error('User validation failed - user may have been deleted:', userError);
-              await (supabase as any).auth.signOut();
+              // Wrap signOut in timeout to prevent hanging when offline
+              try {
+                await withTimeout(
+                  (supabase as any).auth.signOut(),
+                  2000, // 2 second timeout
+                  new Error('signOut timeout - likely offline')
+                );
+              } catch (signOutError) {
+                debug.debug('signOut failed (likely offline), continuing with local state clear:', signOutError);
+              }
               set({
                 session: null,
                 user: null,
@@ -331,7 +516,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             debug.debug('User verified successfully');
           }
         } catch (verifyError) {
-          // Check if this is a network error
+          // Check if this is a network error or timeout
           if (isNetworkError(verifyError)) {
             debug.warn('User verification failed due to network error - allowing offline use with cached session', {
               errorMessage: verifyError instanceof Error ? verifyError.message : String(verifyError),
@@ -347,7 +532,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             const errorMessage = verifyError instanceof Error ? verifyError.message : String(verifyError);
             if (errorMessage.includes('Invalid') || errorMessage.includes('expired') || errorMessage.includes('revoked')) {
               debug.debug('Session cleared due to authentication error');
-              await (supabase as any).auth.signOut();
+              // Wrap signOut in timeout to prevent hanging when offline
+              try {
+                await withTimeout(
+                  (supabase as any).auth.signOut(),
+                  2000, // 2 second timeout
+                  new Error('signOut timeout - likely offline')
+                );
+              } catch (signOutError) {
+                debug.debug('signOut failed (likely offline), continuing with local state clear:', signOutError);
+              }
               set({
                 session: null,
                 user: null,
@@ -361,11 +555,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             }
           }
         }
+      } else if (gotSessionFromCache && session && user) {
+        debug.debug('Using cached session, skipping user verification (offline mode)', {
+          userId: maskUserId(user.id),
+          hasSession: !!session,
+          hasUser: !!user,
+        });
       }
 
       // Check onboarding status and get the result directly
+      // Wrap in timeout to prevent hanging when offline
       const onboardingStore = useOnboardingStore.getState();
-      const hasCompletedOnboarding = await onboardingStore.checkOnboardingStatus(user?.id);
+      let hasCompletedOnboarding = false;
+      try {
+        hasCompletedOnboarding = await withTimeout(
+          onboardingStore.checkOnboardingStatus(user?.id),
+          3000, // 3 second timeout - should be fast if using local storage
+          new Error('checkOnboardingStatus timeout - likely offline')
+        );
+      } catch (onboardingError) {
+        // If checkOnboardingStatus times out or fails, default to false
+        // User can complete onboarding when online
+        debug.warn('checkOnboardingStatus timed out or failed, defaulting to false:', onboardingError);
+        hasCompletedOnboarding = false;
+      }
 
       // Store current user ID in SecureStore for widget access
       if (user?.id) {
@@ -394,13 +607,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (e) {
       debug.error('Error getting session:', e);
       
-      // Check if this is a network error - if so, try to preserve any cached session
-      if (isNetworkError(e)) {
-        debug.warn('Session check failed due to network error - attempting to use cached session');
+      // Check if this is a network error or timeout - if so, try to preserve any cached session
+      // Timeout errors should be treated as network errors
+      const isTimeoutError = e instanceof Error && (
+        e.message.includes('timeout') || 
+        e.message.includes('timed out') ||
+        e.message.includes('Request timed out')
+      );
+      if (isNetworkError(e) || isTimeoutError) {
+        debug.warn('Session check failed due to network error or timeout - attempting to use cached session');
         try {
           // Try to get session from Supabase storage (should work offline)
+          // Use timeout to prevent hanging even here
           // @ts-ignore
-          const { data: cachedSessionData } = await (supabase as any).auth.getSession();
+          const cachedSessionPromise = (supabase as any).auth.getSession();
+          const cachedSessionResult = await withTimeout(
+            cachedSessionPromise,
+            2000, // 2 second timeout
+            new Error('getSession timeout in catch block')
+          );
+          const cachedSessionData = cachedSessionResult?.data;
           if (cachedSessionData?.session && cachedSessionData?.session?.user) {
             const cachedSession = cachedSessionData.session;
             const cachedUser = cachedSession.user;
@@ -411,8 +637,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             });
             
             // Use cached session for offline access
+            // Check onboarding status with timeout to prevent hanging
             const onboardingStore = useOnboardingStore.getState();
-            const hasCompletedOnboarding = await onboardingStore.checkOnboardingStatus(cachedUser?.id);
+            let hasCompletedOnboarding = false;
+            try {
+              // Use timeout to prevent hanging - if it times out, default to false
+              hasCompletedOnboarding = await withTimeout(
+                onboardingStore.checkOnboardingStatus(cachedUser?.id),
+                3000, // 3 second timeout
+                new Error('checkOnboardingStatus timeout')
+              );
+            } catch (onboardingError) {
+              debug.warn('checkOnboardingStatus timed out or failed, defaulting to false:', onboardingError);
+              // Default to false if check fails - user can complete onboarding when online
+              hasCompletedOnboarding = false;
+            }
             
             if (cachedUser?.id) {
               await SecureStore.setItemAsync(CURRENT_USER_ID_KEY, cachedUser.id);
@@ -430,12 +669,68 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           }
         } catch (cacheError) {
           debug.warn('Failed to retrieve cached session:', cacheError);
+          // If we can't get cached session, try one more time without timeout
+          // This is a last resort - getSession should work offline
+          try {
+            // @ts-ignore
+            const directCachedResult = await (supabase as any).auth.getSession();
+            if (directCachedResult?.data?.session && directCachedResult?.data?.session?.user) {
+              const cachedSession = directCachedResult.data.session;
+              const cachedUser = cachedSession.user;
+              debug.debug('Using cached session from direct call', {
+                hasSession: !!cachedSession,
+                hasUser: !!cachedUser,
+                userId: maskUserId(cachedUser?.id),
+              });
+              
+              const onboardingStore = useOnboardingStore.getState();
+              let hasCompletedOnboarding = false;
+              try {
+                // Use timeout to prevent hanging - if it times out, default to false
+                hasCompletedOnboarding = await withTimeout(
+                  onboardingStore.checkOnboardingStatus(cachedUser?.id),
+                  3000, // 3 second timeout
+                  new Error('checkOnboardingStatus timeout')
+                );
+              } catch (onboardingError) {
+                debug.warn('checkOnboardingStatus timed out or failed, defaulting to false:', onboardingError);
+                // Default to false if check fails - user can complete onboarding when online
+                hasCompletedOnboarding = false;
+              }
+              
+              if (cachedUser?.id) {
+                await SecureStore.setItemAsync(CURRENT_USER_ID_KEY, cachedUser.id);
+              }
+              
+              set({
+                session: cachedSession,
+                user: cachedUser,
+                emailVerified: !!cachedUser?.email_confirmed_at,
+                hasCompletedOnboarding,
+                isLoading: false,
+                error: null,
+              });
+              return;
+            }
+          } catch (directError) {
+            debug.warn('Direct cached session retrieval also failed:', directError);
+          }
         }
       }
       
       // If we get here, either it's not a network error, or we couldn't get a cached session
       // Clear session on non-network errors or when no cached session is available
-      await (supabase as any).auth.signOut();
+      // Wrap signOut in timeout to prevent hanging when offline
+      try {
+        await withTimeout(
+          (supabase as any).auth.signOut(),
+          2000, // 2 second timeout
+          new Error('signOut timeout - likely offline')
+        );
+      } catch (signOutError) {
+        // Ignore signOut errors when offline - we're just clearing local state anyway
+        debug.debug('signOut failed (likely offline), continuing with local state clear:', signOutError);
+      }
       set({
         session: null,
         user: null,

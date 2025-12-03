@@ -611,6 +611,12 @@ class Database {
       isActiveShift: row.is_active_shift === 1,
       concurrentEmployment: row.concurrent_employment === 1,
       smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
+      shiftSwapId: row.shift_swap_id as string | undefined,
+      linkedLogId: row.linked_log_id as string | undefined,
+      isShiftSwap: row.is_shift_swap === 1,
+      swapPartnerName: row.swap_partner_name as string | undefined,
+      swapPartnerPayrollNumber: row.swap_partner_payroll_number as string | undefined,
+      swapPartnerPayLevel: row.swap_partner_pay_level as string | undefined,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
       deletedAt: row.deleted_at as string | undefined
@@ -1294,6 +1300,38 @@ class Database {
       ? `DELETE FROM export_batches WHERE user_id = ? AND deleted_at IS NOT NULL AND deleted_at < ?`
       : `DELETE FROM export_batches WHERE user_id IS NULL AND deleted_at IS NOT NULL AND deleted_at < ?`;
     const batchesParams = userId ? [userId, cutoffDate] : [cutoffDate];
+    const batchesResult = await this.db.runAsync(batchesQuery, batchesParams);
+
+    return {
+      logsDeleted: logsResult.changes || 0,
+      shiftsDeleted: shiftsResult.changes || 0,
+      batchesDeleted: batchesResult.changes || 0
+    };
+  }
+
+  // Delete all deleted items (regardless of age)
+  async deleteAllDeletedItems(userId?: string | null): Promise<{ logsDeleted: number; shiftsDeleted: number; batchesDeleted: number }> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Delete all logs with deleted_at
+    const logsQuery = userId
+      ? `DELETE FROM overtime_logs WHERE user_id = ? AND deleted_at IS NOT NULL`
+      : `DELETE FROM overtime_logs WHERE user_id IS NULL AND deleted_at IS NOT NULL`;
+    const logsParams = userId ? [userId] : [];
+    const logsResult = await this.db.runAsync(logsQuery, logsParams);
+
+    // Delete all shifts with deleted_at
+    const shiftsQuery = userId
+      ? `DELETE FROM usual_shifts WHERE user_id = ? AND deleted_at IS NOT NULL`
+      : `DELETE FROM usual_shifts WHERE user_id IS NULL AND deleted_at IS NOT NULL`;
+    const shiftsParams = userId ? [userId] : [];
+    const shiftsResult = await this.db.runAsync(shiftsQuery, shiftsParams);
+
+    // Delete all export batches with deleted_at
+    const batchesQuery = userId
+      ? `DELETE FROM export_batches WHERE user_id = ? AND deleted_at IS NOT NULL`
+      : `DELETE FROM export_batches WHERE user_id IS NULL AND deleted_at IS NOT NULL`;
+    const batchesParams = userId ? [userId] : [];
     const batchesResult = await this.db.runAsync(batchesQuery, batchesParams);
 
     return {

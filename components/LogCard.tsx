@@ -6,7 +6,8 @@ import { formatMinutes } from '../lib/time';
 
 interface LogCardProps {
   log: OvertimeLog;
-  linkedLog?: OvertimeLog; // For shift swaps
+  linkedLog?: OvertimeLog; // For shift swaps (2-log swaps)
+  relatedLogs?: OvertimeLog[]; // For shift swaps (4-log swaps - all related logs)
   onPress?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -21,6 +22,7 @@ interface LogCardProps {
 export function LogCard({ 
   log, 
   linkedLog,
+  relatedLogs,
   onPress, 
   onEdit, 
   onDelete, 
@@ -180,72 +182,76 @@ export function LogCard({
       {isExpanded && (
         <>
           <View style={styles.expandedContent}>
-            {log.isShiftSwap && linkedLog ? (
+            {log.isShiftSwap && (relatedLogs && relatedLogs.length > 0 || linkedLog) ? (
               <>
-                {/* Person A Entry */}
-                <View style={[styles.shiftSwapSection, isDark && styles.darkShiftSwapSection]}>
-                  <Text style={[styles.shiftSwapPersonTitle, isDark && styles.darkText]}>
-                    {log.initials}
-                  </Text>
-                  {log.rosteredStart && log.rosteredFinish && log.rosteredStart !== 'N/A' && log.rosteredFinish !== 'N/A' && (
-                    <View style={styles.metaRow}>
-                      <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
-                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
-                        Rostered: {log.rosteredStart} - {log.rosteredFinish}
-                      </Text>
+                {/* Show all related logs for 4-log swaps, or just linked log for 2-log swaps */}
+                {(() => {
+                  const allLogs = relatedLogs && relatedLogs.length > 0 
+                    ? [log, ...relatedLogs] 
+                    : linkedLog 
+                      ? [log, linkedLog] 
+                      : [log];
+                  
+                  return allLogs.map((swapLog, index) => (
+                    <View key={swapLog.id} style={[styles.shiftSwapSection, isDark && styles.darkShiftSwapSection]}>
+                      <View style={styles.shiftSwapHeader}>
+                        <Text style={[styles.shiftSwapPersonTitle, isDark && styles.darkText]}>
+                          {swapLog.initials}
+                        </Text>
+                        <Text style={[styles.shiftSwapDate, isDark && styles.darkSecondaryText]}>
+                          {formatCompactDate(swapLog.date)}
+                        </Text>
+                      </View>
+                      {swapLog.rosteredStart && swapLog.rosteredFinish && swapLog.rosteredStart !== 'N/A' && swapLog.rosteredFinish !== 'N/A' && (
+                        <View style={styles.metaRow}>
+                          <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                          <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                            Rostered: {swapLog.rosteredStart} - {swapLog.rosteredFinish}
+                          </Text>
+                        </View>
+                      )}
+                      {swapLog.actualStart !== 'N/A' && swapLog.actualFinish !== 'N/A' && (
+                        <View style={styles.metaRow}>
+                          <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                          <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                            Actual: {swapLog.actualStart} - {swapLog.actualFinish}
+                          </Text>
+                        </View>
+                      )}
+                      {swapLog.comments && (
+                        <View style={styles.metaRow}>
+                          <Ionicons name="chatbubble-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                          <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                            {swapLog.comments}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.metaRow}>
+                        <Ionicons name="hourglass" size={14} color={isDark ? "#999" : "#6b7280"} />
+                        <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                          Overtime: {formatMinutes(swapLog.minutesOvertime)}
+                        </Text>
+                      </View>
                     </View>
-                  )}
-                  {log.actualStart !== 'N/A' && log.actualFinish !== 'N/A' && (
-                    <View style={styles.metaRow}>
-                      <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
-                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
-                        Actual: {log.actualStart} - {log.actualFinish}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.metaRow}>
-                    <Ionicons name="hourglass" size={14} color={isDark ? "#999" : "#6b7280"} />
-                    <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
-                      Overtime: {formatMinutes(log.minutesOvertime)}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Person B Entry */}
-                <View style={[styles.shiftSwapSection, isDark && styles.darkShiftSwapSection]}>
-                  <Text style={[styles.shiftSwapPersonTitle, isDark && styles.darkText]}>
-                    {linkedLog.initials}
-                  </Text>
-                  {linkedLog.rosteredStart && linkedLog.rosteredFinish && linkedLog.rosteredStart !== 'N/A' && linkedLog.rosteredFinish !== 'N/A' && (
-                    <View style={styles.metaRow}>
-                      <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
-                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
-                        Rostered: {linkedLog.rosteredStart} - {linkedLog.rosteredFinish}
-                      </Text>
-                    </View>
-                  )}
-                  {linkedLog.actualStart !== 'N/A' && linkedLog.actualFinish !== 'N/A' && (
-                    <View style={styles.metaRow}>
-                      <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
-                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
-                        Actual: {linkedLog.actualStart} - {linkedLog.actualFinish}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.metaRow}>
-                    <Ionicons name="hourglass" size={14} color={isDark ? "#999" : "#6b7280"} />
-                    <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
-                      Overtime: {formatMinutes(linkedLog.minutesOvertime)}
-                    </Text>
-                  </View>
-                </View>
+                  ));
+                })()}
 
                 {/* Total */}
-                <View style={[styles.shiftSwapTotal, isDark && styles.darkShiftSwapTotal]}>
-                  <Text style={[styles.shiftSwapTotalText, isDark && styles.darkText]}>
-                    Total Overtime: {formatMinutes(log.minutesOvertime + linkedLog.minutesOvertime)}
-                  </Text>
-                </View>
+                {(() => {
+                  const allLogs = relatedLogs && relatedLogs.length > 0 
+                    ? [log, ...relatedLogs] 
+                    : linkedLog 
+                      ? [log, linkedLog] 
+                      : [log];
+                  const totalOvertime = allLogs.reduce((sum, l) => sum + l.minutesOvertime, 0);
+                  return (
+                    <View style={[styles.shiftSwapTotal, isDark && styles.darkShiftSwapTotal]}>
+                      <Text style={[styles.shiftSwapTotalText, isDark && styles.darkText]}>
+                        Total Overtime: {formatMinutes(totalOvertime)}
+                      </Text>
+                    </View>
+                  );
+                })()}
               </>
             ) : (
               <>
@@ -555,11 +561,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#2c2c2e',
     borderColor: '#3a3a3c',
   },
+  shiftSwapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   shiftSwapPersonTitle: {
     fontSize: 15,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 8,
+  },
+  shiftSwapDate: {
+    fontSize: 12,
+    color: '#666',
   },
   shiftSwapTotal: {
     backgroundColor: '#e8f5e8',

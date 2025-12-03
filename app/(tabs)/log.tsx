@@ -519,26 +519,122 @@ export default function LogScreen() {
   };
 
   const getFilteredLogs = () => {
-    let filtered = logs;
-
-    // Filter out linked logs in shift swaps (only show the primary log)
-    // The primary log is the one that appears first (lower timestamp in ID)
-    filtered = filtered.filter(log => {
-      if (log.isShiftSwap && log.linkedLogId) {
-        // Only show this log if it's the "primary" one (lower ID)
-        const linkedLog = logs.find(l => l.id === log.linkedLogId);
-        if (linkedLog) {
-          // Show the one with the lower ID (comes first alphabetically)
-          return log.id < linkedLog.id;
+    // Group shift swap logs together - show all logs with the same shiftSwapId as a group
+    // For 2-log swaps (same date), use linkedLogId
+    // For 4-log swaps (different dates), use shiftSwapId
+    const shiftSwapGroups = new Map<string, OvertimeLog[]>();
+    
+    // Collect all shift swap logs into groups (from ALL logs, so we can find all related logs)
+    // All shift swap logs should have shiftSwapId, but we also handle legacy 2-log swaps with linkedLogId
+    logs.forEach(log => {
+      // Primary case: 4-log swaps (different dates) - all have shiftSwapId
+      if (log.shiftSwapId && log.isShiftSwap) {
+        // Use the actual shiftSwapId for grouping
+        if (!shiftSwapGroups.has(log.shiftSwapId)) {
+          shiftSwapGroups.set(log.shiftSwapId, []);
         }
+        shiftSwapGroups.get(log.shiftSwapId)!.push(log);
+      } 
+      // Fallback case: 2-log swaps (same date) without shiftSwapId - use linkedLogId
+      else if (log.isShiftSwap && log.linkedLogId && !log.shiftSwapId) {
+        // For 2-log swaps without shiftSwapId, use a normalized ID based on both linked IDs
+        // This ensures both logs in a pair get the same group ID
+        const linkedIds = [log.id, log.linkedLogId].sort().join('_');
+        const groupId = `linked_${linkedIds}`;
+        if (!shiftSwapGroups.has(groupId)) {
+          shiftSwapGroups.set(groupId, []);
+        }
+        shiftSwapGroups.get(groupId)!.push(log);
       }
+      // Edge case: log has shiftSwapId but isShiftSwap is false/undefined - still group it
+      else if (log.shiftSwapId) {
+        if (!shiftSwapGroups.has(log.shiftSwapId)) {
+          shiftSwapGroups.set(log.shiftSwapId, []);
+        }
+        shiftSwapGroups.get(log.shiftSwapId)!.push(log);
+      }
+    });
+    
+    // Pre-compute which logs should be shown as representatives for each shift swap group
+    const representativesToShow = new Set<string>();
+    
+    shiftSwapGroups.forEach((swapGroup, shiftSwapId) => {
+      // Skip if group is empty
+      if (swapGroup.length === 0) {
+        return;
+      }
+      
+      // Get logs in this group that match the current status filter
+      const matchingStatusLogs = !isSelectionMode && filterStatus !== 'all'
+        ? swapGroup.filter(l => l.status === filterStatus)
+        : swapGroup;
+      
+      // If no logs in the group match the status filter, skip this group
+      if (matchingStatusLogs.length === 0) {
+        return;
+      }
+      
+      // Find Person A log (matches profile initials) from the status-filtered logs to use as representative
+      // Only try to match initials if profile has employeeInitial set
+      let personALog: OvertimeLog | undefined;
+      
+      if (profile?.employeeInitial) {
+        personALog = matchingStatusLogs.find(l => 
+          l.initials && 
+          l.initials.toUpperCase() === profile.employeeInitial!.toUpperCase()
+        );
+      }
+      
+      // Fallback to first log if no Person A log found or no profile initials
+      if (!personALog && matchingStatusLogs.length > 0) {
+        personALog = matchingStatusLogs[0];
+      }
+      
+      // Mark this representative log to be shown
+      if (personALog) {
+        representativesToShow.add(personALog.id);
+      }
+    });
+    
+    // First, apply status filter (but not in selection mode)
+    let filtered = logs;
+    if (!isSelectionMode && filterStatus !== 'all') {
+      filtered = logs.filter(log => log.status === filterStatus);
+    }
+    
+    // Filter to show only representative logs for shift swaps, and all non-shift-swap logs
+    filtered = filtered.filter(log => {
+      // Check if this is a shift swap log
+      // A log is a shift swap if it has shiftSwapId (primary indicator) OR isShiftSwap flag
+      const hasShiftSwapId = !!log.shiftSwapId;
+      const hasIsShiftSwapFlag = !!log.isShiftSwap;
+      const hasLinkedLogId = !!log.linkedLogId;
+      
+      // Primary case: log has shiftSwapId (4-log swaps) - treat as shift swap regardless of isShiftSwap flag
+      if (hasShiftSwapId) {
+        // Only show this log if it's the representative for its group
+        const isRepresentative = representativesToShow.has(log.id);
+        return isRepresentative;
+      }
+      
+      // Fallback case: log has isShiftSwap flag and linkedLogId (2-log swaps without shiftSwapId)
+      if (hasIsShiftSwapFlag && hasLinkedLogId) {
+        // For 2-log swaps without shiftSwapId, use the same normalized ID
+        const linkedIds = [log.id, log.linkedLogId].sort().join('_');
+        const groupId = `linked_${linkedIds}`;
+        // Check if this group has a representative
+        const swapGroup = shiftSwapGroups.get(groupId);
+        if (swapGroup && swapGroup.length > 0) {
+          // Only show if this is the representative
+          return representativesToShow.has(log.id);
+        }
+        // If group not found, don't show (shouldn't happen)
+        return false;
+      }
+      
+      // Show all non-shift-swap logs
       return true;
     });
-
-    // Apply status filter (but not in selection mode)
-    if (!isSelectionMode && filterStatus !== 'all') {
-      filtered = filtered.filter(log => log.status === filterStatus);
-    }
 
     // Apply category or time filter
     if (filterType === 'category' && selectedCategory !== 'all') {
@@ -936,15 +1032,76 @@ export default function LogScreen() {
   const renderLogItem = ({ item }: { item: OvertimeLog }) => {
     const isSelected = selectedLogs.has(item.id);
     
-    // Find linked log if this is a shift swap
-    const linkedLog = item.isShiftSwap && item.linkedLogId 
-      ? logs.find(l => l.id === item.linkedLogId)
-      : undefined;
+    // For shift swaps, find all related logs (by shiftSwapId)
+    let relatedLogs: OvertimeLog[] = [];
+    let linkedLog: OvertimeLog | undefined = undefined;
+    
+    if (item.isShiftSwap && item.shiftSwapId) {
+      // Find all logs with the same shiftSwapId that match the current status filter
+      let candidateLogs = logs.filter(l => l.shiftSwapId === item.shiftSwapId && l.id !== item.id);
+      
+      // If we're filtering by status, only show related logs that match the filter
+      if (!isSelectionMode && filterStatus !== 'all') {
+        candidateLogs = candidateLogs.filter(l => l.status === filterStatus);
+      }
+      
+      relatedLogs = candidateLogs;
+      
+      // Sort related logs: Person A first, then Person B
+      // Within each person: Date 1 (rostered) first, then Date 2 (actual)
+      const personALogs = relatedLogs.filter(l => 
+        l.initials && profile?.employeeInitial && 
+        l.initials.toUpperCase() === profile.employeeInitial.toUpperCase()
+      );
+      const personBLogs = relatedLogs.filter(l => 
+        !(l.initials && profile?.employeeInitial && 
+          l.initials.toUpperCase() === profile.employeeInitial.toUpperCase())
+      );
+      
+      // Sort Person A logs: Date 1 (rostered) first, then Date 2 (actual)
+      personALogs.sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateCompare;
+        // Rostered (actual='N/A') comes before actual
+        const aIsRostered = a.actualStart === 'N/A' && a.actualFinish === 'N/A';
+        const bIsRostered = b.actualStart === 'N/A' && b.actualFinish === 'N/A';
+        if (aIsRostered && !bIsRostered) return -1;
+        if (!aIsRostered && bIsRostered) return 1;
+        return 0;
+      });
+      
+      // Sort Person B logs: Date 2 (rostered) first, then Date 1 (actual)
+      personBLogs.sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date); // Descending (Date 2 first)
+        if (dateCompare !== 0) return dateCompare;
+        // Rostered (actual='N/A') comes before actual
+        const aIsRostered = a.actualStart === 'N/A' && a.actualFinish === 'N/A';
+        const bIsRostered = b.actualStart === 'N/A' && b.actualFinish === 'N/A';
+        if (aIsRostered && !bIsRostered) return -1;
+        if (!aIsRostered && bIsRostered) return 1;
+        return 0;
+      });
+      
+      relatedLogs = [...personALogs, ...personBLogs];
+      
+      // For 2-log swaps, also set linkedLog for backward compatibility
+      if (relatedLogs.length === 1) {
+        linkedLog = relatedLogs[0];
+      }
+    } else if (item.isShiftSwap && item.linkedLogId) {
+      // Fallback for 2-log swaps (same date) without shiftSwapId
+      const foundLog = logs.find(l => l.id === item.linkedLogId);
+      // Only include linked log if it matches the current status filter
+      if (foundLog && (!isSelectionMode && filterStatus !== 'all' ? foundLog.status === filterStatus : true)) {
+        linkedLog = foundLog;
+      }
+    }
     
     return (
       <LogCard
         log={item}
         linkedLog={linkedLog}
+        relatedLogs={relatedLogs.length > 1 ? relatedLogs : undefined}
         onPress={() => {
           if (isSelectionMode) {
             handleToggleSelection(item.id);

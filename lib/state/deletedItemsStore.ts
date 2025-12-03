@@ -23,6 +23,7 @@ interface DeletedItemsState {
   permanentlyDeleteShift: (id: string, userId?: string | null) => Promise<void>;
   permanentlyDeleteBatch: (id: string, userId?: string | null) => Promise<void>;
   cleanupOldItems: (userId?: string | null) => Promise<{ logsDeleted: number; shiftsDeleted: number; batchesDeleted: number }>;
+  deleteAllItems: (userId?: string | null) => Promise<{ logsDeleted: number; shiftsDeleted: number; batchesDeleted: number }>;
   clearError: () => void;
 }
 
@@ -256,6 +257,33 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
       set({ 
         isLoading: false, 
         error: error instanceof Error ? error.message : 'Failed to cleanup old items' 
+      });
+      throw error;
+    }
+  },
+
+  deleteAllItems: async (userId?: string | null) => {
+    set({ isLoading: true, error: null });
+    try {
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Delete all deleted items regardless of age
+      const result = await database.deleteAllDeletedItems(finalUserId);
+      
+      // Clear the deleted items from state
+      set({ 
+        deletedLogs: [],
+        deletedShifts: [],
+        deletedBatches: [],
+        isLoading: false,
+        error: null 
+      });
+      
+      return result;
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to delete all items' 
       });
       throw error;
     }

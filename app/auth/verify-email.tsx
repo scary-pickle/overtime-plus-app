@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Keyboard, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Keyboard, ScrollView, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { useHideSplashOnFocus } from '../../lib/utils/hideSplashOnFocus';
@@ -299,33 +299,23 @@ export default function VerifyEmail() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0B2239' }}>
+    <SafeAreaView style={styles.container}>
       <ScrollView 
-        contentContainerStyle={{ flexGrow: 1, padding: 24, justifyContent: 'center' }}
+        contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={{ marginBottom: 24 }}>
-          <Text style={{ fontSize: 28, fontWeight: '700', color: '#fff' }}>Verify your email</Text>
-          <Text style={{ color: '#cfe0f7', marginTop: 4 }}>
-            Enter the 6-digit code we emailed to {pendingEmail || userEmail || 'your email'}.
-          </Text>
-        </View>
-        <View
-          style={{
-            backgroundColor: '#fff',
-            borderRadius: 16,
-            padding: 16,
-            gap: 12,
-            shadowColor: '#000',
-            shadowOpacity: 0.06,
-            shadowRadius: 12,
-          }}
-        >
-          {error ? <Text style={{ color: '#b91c1c' }}>{error}</Text> : null}
+        <Text style={styles.title}>Verify your email</Text>
+        
+        <Text style={styles.description}>
+          Enter the 6-digit code we emailed to {pendingEmail || userEmail || 'your email'}.
+        </Text>
+
+        <View style={styles.formContainer}>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {statusMsg ? (
-            <Text style={{ color: '#111827' }}>{statusMsg}</Text>
+            <Text style={styles.statusText}>{statusMsg}</Text>
           ) : (
-            <Text style={{ color: '#4b5563', marginTop: 8 }}>
+            <Text style={styles.instructionText}>
               Check your email for the 6-digit code.
             </Text>
           )}
@@ -340,6 +330,7 @@ export default function VerifyEmail() {
               setOtpCode(text);
             }}
             placeholder="Enter 6-digit code"
+            placeholderTextColor="#9CA3AF"
             keyboardType="number-pad"
             maxLength={6}
             returnKeyType="done"
@@ -367,7 +358,7 @@ export default function VerifyEmail() {
             onFocus={() => {
               debug('[verify-email] OTP input onFocus', { otpCodeLength: otpCode.length });
             }}
-            style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, padding: 12 }}
+            style={styles.input}
           />
           <TouchableOpacity
             onPress={() => {
@@ -381,28 +372,16 @@ export default function VerifyEmail() {
               onVerifyOtp();
             }}
             disabled={busy}
-            style={{
-              backgroundColor: '#007AFF',
-              borderRadius: 12,
-              padding: 14,
-              alignItems: 'center',
-              opacity: busy ? 0.7 : 1,
-            }}
+            style={[styles.button, busy && styles.buttonDisabled]}
           >
-            <Text style={{ color: '#fff', fontWeight: '600' }}>{verifyLabel}</Text>
+            <Text style={styles.buttonText}>{verifyLabel}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onSendOtp}
             disabled={busy || cooldown > 0}
-            style={{ marginTop: 8, alignItems: 'center' }}
+            style={styles.resendButton}
           >
-            <Text
-              style={{
-                color: busy || cooldown > 0 ? '#9CA3AF' : '#111827',
-                fontSize: 14,
-                fontWeight: '500',
-              }}
-            >
+            <Text style={[styles.resendText, (busy || cooldown > 0) && styles.resendTextDisabled]}>
               {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend 6-digit code'}
             </Text>
           </TouchableOpacity>
@@ -411,3 +390,87 @@ export default function VerifyEmail() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  content: {
+    flexGrow: 1,
+    padding: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#111',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  description: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 40,
+    lineHeight: 24,
+  },
+  formContainer: {
+    width: '100%',
+    gap: 16,
+  },
+  errorText: {
+    color: '#b91c1c',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  statusText: {
+    color: '#111827',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  instructionText: {
+    color: '#4b5563',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#111',
+    backgroundColor: '#fff',
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  resendButton: {
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  resendText: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  resendTextDisabled: {
+    color: '#9CA3AF',
+  },
+});

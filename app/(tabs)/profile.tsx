@@ -26,7 +26,6 @@ import { getDepartmentsForHospital, getHospitalById, QUEENSLAND_HOSPITALS, getDe
 import { Profile } from '../../types';
 import { profileStorage } from '../../lib/storage/profile';
 import { useAuthStore } from '../../lib/state/authStore';
-import { useOnboardingStore } from '../../lib/state/onboardingStore';
 import { useSyncStore } from '../../lib/state/syncStore';
 import { useSubscriptionStore } from '../../lib/state/subscriptionStore';
 import { getManageSubscriptionUrl } from '../../lib/utils/subscription';
@@ -536,7 +535,6 @@ export default function ProfileScreen() {
   const saveProfile = useProfileStore((state) => state.saveProfile);
   const loadProfile = useProfileStore((state) => state.loadProfile);
   const { user } = useAuthStore(); // Get user for userId
-  const { resetOnboarding } = useOnboardingStore();
   // Compute isComplete locally instead of from store to avoid re-renders
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const [formData, setFormData] = useState<Partial<Profile>>({});
@@ -1490,41 +1488,6 @@ export default function ProfileScreen() {
               Australia/Brisbane
             </Text>
           </View>
-          
-          <TouchableOpacity
-            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
-            onPress={async () => {
-              Alert.alert(
-                'Reset Onboarding',
-                'This will reset your onboarding status. You will need to complete onboarding again. This is useful for testing or if you want to see the onboarding flow again.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Reset',
-                    style: 'destructive',
-                    onPress: async () => {
-                      try {
-                        await resetOnboarding(user?.id);
-                        Alert.alert('Success', 'Onboarding has been reset. Please restart the app to see the onboarding flow again.');
-                      } catch (e) {
-                        Alert.alert('Error', 'Failed to reset onboarding. Please try again.');
-                      }
-                    },
-                  },
-                ]
-              );
-            }}
-          >
-            <View style={styles.settingLeft}>
-              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-                Reset Onboarding
-              </Text>
-              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
-                Restart the welcome flow
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
