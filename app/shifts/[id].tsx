@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   useColorScheme,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
@@ -23,7 +24,7 @@ const debug = createScopedLogger('EditShift');
 const SHIFT_TYPES = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'biweekly', label: 'Biweekly' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'custom', label: 'Once Only' },
 ] as const;
 
 const DAYS_OF_WEEK = [
@@ -76,7 +77,10 @@ export default function EditShiftScreen() {
         setRosteredFinish(foundShift.rosteredFinish);
         setMealBreakMinutes(foundShift.mealBreakMinutes || 0);
         setActiveFrom(foundShift.activeFrom);
-        setActiveTo(foundShift.activeTo || '');
+        // For custom shifts, if activeTo is not set or different from activeFrom, set it to activeFrom
+        setActiveTo(foundShift.type === 'custom' 
+          ? (foundShift.activeTo || foundShift.activeFrom) 
+          : (foundShift.activeTo || ''));
       } else {
         Alert.alert('Error', 'Shift not found', [
           { text: 'OK', onPress: () => router.back() }
@@ -86,10 +90,16 @@ export default function EditShiftScreen() {
   }, [id, shifts]);
 
   const validateForm = () => {
-    if (selectedDays.length === 0) {
+    // For custom shifts, we don't need day selection (one-time only)
+    if (type !== 'custom' && selectedDays.length === 0) {
       setValidationErrors(['Please select at least one day of the week']);
       return false;
     }
+
+    // For custom shifts, use the day of week from activeFrom date
+    const dayOfWeek = type === 'custom' 
+      ? new Date(activeFrom).getDay() 
+      : selectedDays[0];
 
     // For editing, we only validate the first selected day since we're editing a single shift
     const shiftData: UsualShift = {
@@ -97,12 +107,12 @@ export default function EditShiftScreen() {
       label,
       type,
       weekIndex: type === 'biweekly' ? weekIndex : undefined,
-      dayOfWeek: selectedDays[0] as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      dayOfWeek: dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6,
       rosteredStart,
       rosteredFinish,
       mealBreakMinutes: mealBreakMinutes || undefined,
       activeFrom,
-      activeTo: activeTo || undefined,
+      activeTo: type === 'custom' ? activeFrom : (activeTo || undefined), // For custom, set activeTo same as activeFrom
     };
 
     const errors = validateShift(shiftData);
@@ -132,17 +142,22 @@ export default function EditShiftScreen() {
       return;
     }
 
+    // For custom shifts, use the day of week from activeFrom date
+    const dayOfWeek = type === 'custom' 
+      ? new Date(activeFrom).getDay() 
+      : selectedDays[0];
+
     const updatedShift: UsualShift = {
       ...shift,
       label,
       type,
       weekIndex: type === 'biweekly' ? weekIndex : undefined,
-      dayOfWeek: selectedDays[0] as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      dayOfWeek: dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6,
       rosteredStart,
       rosteredFinish,
       mealBreakMinutes: mealBreakMinutes || undefined,
       activeFrom,
-      activeTo: activeTo || undefined,
+      activeTo: type === 'custom' ? activeFrom : (activeTo || undefined), // For custom, set activeTo same as activeFrom
     };
 
     try {
@@ -363,42 +378,47 @@ export default function EditShiftScreen() {
     );
   };
 
-  const renderDaySelector = () => (
-    <View style={[styles.section, isDark && styles.darkCard]}>
-      <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-        Day of Week
-      </Text>
-      <Text style={[styles.sectionSubtitle, isDark && styles.darkText]}>
-        This shift is for {DAYS_OF_WEEK[selectedDays[0]]?.label || 'Unknown'}
-      </Text>
-      <View style={styles.dayContainer}>
-        {DAYS_OF_WEEK.map((day) => (
-          <TouchableOpacity
-            key={day.value}
-            style={[
-              styles.dayButton,
-              isDark && !selectedDays.includes(day.value) && styles.darkDayButton,
-              selectedDays.includes(day.value) && styles.selectedDayButton,
-            ]}
-            onPress={() => {
-              // For editing, we only allow changing to a single day
-              setSelectedDays([day.value]);
-            }}
-          >
-            <Text
+  const renderDaySelector = () => {
+    // Hide day selector for custom shifts (one-time only, date is set via activeFrom)
+    if (type === 'custom') return null;
+    
+    return (
+      <View style={[styles.section, isDark && styles.darkCard]}>
+        <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+          Day of Week
+        </Text>
+        <Text style={[styles.sectionSubtitle, isDark && styles.darkText]}>
+          This shift is for {DAYS_OF_WEEK[selectedDays[0]]?.label || 'Unknown'}
+        </Text>
+        <View style={styles.dayContainer}>
+          {DAYS_OF_WEEK.map((day) => (
+            <TouchableOpacity
+              key={day.value}
               style={[
-                styles.dayButtonText,
-                isDark && !selectedDays.includes(day.value) && styles.darkDayButtonText,
-                selectedDays.includes(day.value) && styles.selectedDayButtonText,
+                styles.dayButton,
+                isDark && !selectedDays.includes(day.value) && styles.darkDayButton,
+                selectedDays.includes(day.value) && styles.selectedDayButton,
               ]}
+              onPress={() => {
+                // For editing, we only allow changing to a single day
+                setSelectedDays([day.value]);
+              }}
             >
-              {day.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.dayButtonText,
+                  isDark && !selectedDays.includes(day.value) && styles.darkDayButtonText,
+                  selectedDays.includes(day.value) && styles.selectedDayButtonText,
+                ]}
+              >
+                {day.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderTimeInputs = () => (
     <View style={[styles.section, isDark && styles.darkCard]}>
@@ -474,27 +494,36 @@ export default function EditShiftScreen() {
   const renderDateRange = () => (
     <View style={[styles.section, isDark && styles.darkCard]}>
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-        Active Date Range
+        {type === 'custom' ? 'Shift Date' : 'Active Date Range'}
       </Text>
+      {type === 'custom' && (
+        <Text style={[styles.sectionSubtitle, isDark && styles.darkText]}>
+          This shift will occur only once on the selected date
+        </Text>
+      )}
       
       <View style={styles.dateRow}>
         <View style={styles.dateInput}>
-          <Text style={[styles.dateLabel, isDark && styles.darkText]}>From</Text>
+          <Text style={[styles.dateLabel, isDark && styles.darkText]}>
+            {type === 'custom' ? 'Date' : 'From'}
+          </Text>
           <CalendarPicker
             value={activeFrom}
             onChange={setActiveFrom}
-            placeholder="Select start date"
+            placeholder={type === 'custom' ? 'Select date' : 'Select start date'}
           />
         </View>
         
-        <View style={styles.dateInput}>
-          <Text style={[styles.dateLabel, isDark && styles.darkText]}>To (Optional)</Text>
-          <CalendarPicker
-            value={activeTo}
-            onChange={setActiveTo}
-            placeholder="Select end date"
-          />
-        </View>
+        {type !== 'custom' && (
+          <View style={styles.dateInput}>
+            <Text style={[styles.dateLabel, isDark && styles.darkText]}>To (Optional)</Text>
+            <CalendarPicker
+              value={activeTo}
+              onChange={setActiveTo}
+              placeholder="Select end date"
+            />
+          </View>
+        )}
       </View>
     </View>
   );
@@ -528,81 +557,83 @@ export default function EditShiftScreen() {
 
   return (
     <SharedTimePickerProvider>
-      <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
-        <View style={styles.content}>
-        {/* Label */}
-        {renderLabelInput()}
+      <>
+        <ScrollView style={[styles.container, isDark && styles.darkContainer]} showsVerticalScrollIndicator={false}>
+          <View style={styles.content}>
+          {/* Label */}
+          {renderLabelInput()}
 
-        {/* Shift Type */}
-        {renderTypeSelector()}
+          {/* Shift Type */}
+          {renderTypeSelector()}
 
-        {/* Week Index (for biweekly) */}
-        {renderWeekIndexSelector()}
+          {/* Week Index (for biweekly) */}
+          {renderWeekIndexSelector()}
 
-        {/* Day of Week */}
-        {renderDaySelector()}
+          {/* Day of Week */}
+          {renderDaySelector()}
 
-        {/* Rostered Times */}
-        {renderTimeInputs()}
+          {/* Rostered Times */}
+          {renderTimeInputs()}
 
-        {/* Meal Break */}
-        {renderMealBreak()}
+          {/* Meal Break */}
+          {renderMealBreak()}
 
-        {/* Date Range */}
-        {renderDateRange()}
+          {/* Date Range */}
+          {renderDateRange()}
 
-        {/* Action Buttons */}
-        <View style={styles.actions}>
-          {/* Primary action buttons row */}
-          <View style={styles.primaryActions}>
-            <TouchableOpacity
-              style={[styles.button, styles.deleteButton, isDark && styles.darkDeleteButton]}
-              onPress={handleDelete}
-            >
-              <Text style={[styles.deleteButtonText, isDark && styles.darkDeleteButtonText]}>Delete</Text>
-            </TouchableOpacity>
+          {/* Action Buttons */}
+          <View style={styles.actions}>
+            {/* Primary action buttons row */}
+            <View style={styles.primaryActions}>
+              <TouchableOpacity
+                style={[styles.button, styles.deleteButton, isDark && styles.darkDeleteButton]}
+                onPress={handleDelete}
+              >
+                <Text style={[styles.deleteButtonText, isDark && styles.darkDeleteButtonText]}>Delete</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton, isDark && styles.darkCancelButton]}
+                onPress={() => router.back()}
+              >
+                <Text style={[styles.cancelButtonText, isDark && styles.darkCancelButtonText]}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.button, styles.updateButton]}
+                onPress={handleUpdate}
+              >
+                <Text style={styles.updateButtonText}>Update</Text>
+              </TouchableOpacity>
+            </View>
             
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton, isDark && styles.darkCancelButton]}
-              onPress={() => router.back()}
-            >
-              <Text style={[styles.cancelButtonText, isDark && styles.darkCancelButtonText]}>Cancel</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.button, styles.updateButton]}
-              onPress={handleUpdate}
-            >
-              <Text style={styles.updateButtonText}>Update</Text>
-            </TouchableOpacity>
+            {/* Only show future update button for weekly and biweekly shifts */}
+            {(type === 'weekly' || type === 'biweekly') && (
+              <TouchableOpacity
+                style={[styles.button, styles.updateFutureButton]}
+                onPress={handleUpdateFuture}
+              >
+                <Text style={styles.updateFutureButtonText}>Update This & Future Shifts</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          
-          {/* Only show future update button for weekly and biweekly shifts */}
-          {(type === 'weekly' || type === 'biweekly') && (
-            <TouchableOpacity
-              style={[styles.button, styles.updateFutureButton]}
-              onPress={handleUpdateFuture}
-            >
-              <Text style={styles.updateFutureButtonText}>Update This & Future Shifts</Text>
-            </TouchableOpacity>
-          )}
         </View>
-      </View>
-    </ScrollView>
-    <TextInputModal
-      visible={showLabelModal}
-      title="Shift Label"
-      message="Enter a name for this shift pattern:"
-      placeholder="Enter shift label..."
-      initialValue={label}
-      onConfirm={(text) => {
-        setLabel(text);
-        setShowLabelModal(false);
-      }}
-      onCancel={() => setShowLabelModal(false)}
-      confirmText="OK"
-      cancelText="Cancel"
-    />
+      </ScrollView>
+      <TextInputModal
+        visible={showLabelModal}
+        title="Shift Label"
+        message="Enter a name for this shift pattern:"
+        placeholder="Enter shift label..."
+        initialValue={label}
+        onConfirm={(text) => {
+          setLabel(text);
+          setShowLabelModal(false);
+        }}
+        onCancel={() => setShowLabelModal(false)}
+        confirmText="OK"
+        cancelText="Cancel"
+      />
+      </>
     </SharedTimePickerProvider>
   );
 }

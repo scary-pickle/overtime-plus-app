@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useHideSplashOnFocus } from '../../lib/utils/hideSplashOnFocus';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
@@ -34,9 +33,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  
-  // Hide splash screen when this screen is focused and ready
-  useHideSplashOnFocus();
   
   // Get user from auth store for userId
   const { user } = useAuthStore();

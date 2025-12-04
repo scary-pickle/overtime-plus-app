@@ -4,7 +4,7 @@
  * When Supabase credentials are provided, real sync functionality will be enabled
  */
 
-import { Profile, OvertimeLog, ExportBatch, UsualShift, ShiftTemplate, SubscriptionSnapshot, RemoteFeatureFlag } from '../types';
+import { Profile, OvertimeLog, ExportBatch, UsualShift, ShiftTemplate, LogTemplate, SubscriptionSnapshot, RemoteFeatureFlag } from '../types';
 import { createClient } from '@supabase/supabase-js';
 import { SecureStoreAdapter } from './auth/storageAdapter';
 import { database } from './db/sqlite';

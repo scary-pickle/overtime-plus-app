@@ -232,6 +232,7 @@ export class ProfileStorage {
       concurrentEmploymentDefault: 'Concurrent Employment Default',
       emailTemplate: 'Email Template',
       emailSubmissionMethod: 'Email Submission Method',
+      recipientEmail: 'Recipient Email',
       isSMO: 'Is SMO',
     };
 
@@ -255,6 +256,7 @@ export class ProfileStorage {
       concurrentEmploymentDefault: 'Settings',
       emailTemplate: 'Settings',
       emailSubmissionMethod: 'Settings',
+      recipientEmail: 'Settings',
       isSMO: 'Employee Details',
     };
 

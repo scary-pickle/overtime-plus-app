@@ -41,7 +41,7 @@ export function ShiftCard({
     switch (type) {
       case 'weekly': return 'Weekly';
       case 'biweekly': return 'Biweekly';
-      case 'custom': return 'Custom';
+      case 'custom': return 'Once Only';
       default: return String(type);
     }
   };
@@ -54,8 +54,13 @@ export function ShiftCard({
   const getSubtitleText = () => {
     const parts: string[] = [];
     
-    // Add day name
-    if (shift.dayOfWeek !== undefined) {
+    // Add day name (for custom shifts, show the date instead)
+    if (shift.type === 'custom') {
+      // Format the date nicely
+      const date = new Date(shift.activeFrom + 'T00:00:00');
+      const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      parts.push(dateStr);
+    } else if (shift.dayOfWeek !== undefined) {
       parts.push(getDayName(shift.dayOfWeek));
     }
     
@@ -64,9 +69,11 @@ export function ShiftCard({
     const finishTime = shift.rosteredFinish || '--:--';
     parts.push(`${startTime} – ${finishTime}`);
     
-    // Add frequency if biweekly
+    // Add frequency if biweekly or custom
     if (shift.type === 'biweekly') {
       parts.push('(biweekly)');
+    } else if (shift.type === 'custom') {
+      parts.push('(one-time)');
     }
     
     return parts.join(' · ');

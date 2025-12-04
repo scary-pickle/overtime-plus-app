@@ -13,9 +13,10 @@ interface CalendarPickerProps {
   placeholder?: string;
   disabled?: boolean;
   onOpen?: () => void;
+  minDate?: string; // ISO date string - minimum selectable date
 }
 
-export function CalendarPicker({ value, onChange, placeholder = "Select date", disabled = false, onOpen }: CalendarPickerProps) {
+export function CalendarPicker({ value, onChange, placeholder = "Select date", disabled = false, onOpen, minDate }: CalendarPickerProps) {
   const [isVisible, setIsVisible] = useState(false);
   
   // Parse the initial date properly to avoid timezone issues
@@ -60,6 +61,15 @@ export function CalendarPicker({ value, onChange, placeholder = "Select date", d
 
   const isSelected = (date: Date) => {
     return date.toDateString() === selectedDate.toDateString();
+  };
+
+  const isDateDisabled = (date: Date): boolean => {
+    if (!minDate) return false;
+    // Parse minDate as YYYY-MM-DD and compare dates only (ignore time)
+    const [minYear, minMonth, minDay] = minDate.split('-').map(Number);
+    const min = new Date(minYear, minMonth - 1, minDay);
+    const check = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    return check < min;
   };
 
   const handleDateSelect = (day: number) => {
@@ -137,6 +147,7 @@ export function CalendarPicker({ value, onChange, placeholder = "Select date", d
       const date = new Date(displayYear, displayMonth, day);
       const isCurrentDay = isToday(date);
       const isSelectedDay = isSelected(date);
+      const isDisabled = isDateDisabled(date);
       
       days.push(
         <TouchableOpacity
@@ -145,13 +156,16 @@ export function CalendarPicker({ value, onChange, placeholder = "Select date", d
             styles.dayCell,
             isCurrentDay && styles.todayCell,
             isSelectedDay && styles.selectedCell,
+            isDisabled && styles.disabledCell,
           ]}
-          onPress={() => handleDateSelect(day)}
+          onPress={() => !isDisabled && handleDateSelect(day)}
+          disabled={isDisabled}
         >
           <Text style={[
             styles.dayText,
             isCurrentDay && styles.todayText,
             isSelectedDay && styles.selectedText,
+            isDisabled && styles.disabledText,
             isDark && styles.darkDayText,
           ]}>
             {day}
@@ -364,5 +378,11 @@ const styles = StyleSheet.create({
   selectedText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  disabledCell: {
+    opacity: 0.3,
+  },
+  disabledText: {
+    color: '#999',
   },
 });

@@ -78,7 +78,7 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
               sessionPromise,
               2000, // 2 second timeout
               new Error('getSession timeout - likely offline')
-            );
+            ) as { data?: { session?: any } | null; error?: any } | null;
             
           if (sessionResult?.error || !sessionResult?.data?.session) {
             debug.debug('No session available, skipping Supabase check');
@@ -88,11 +88,13 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
               try {
             // @ts-ignore
                 const getUserPromise = (supabase as any).auth.getUser();
-                const { data, error } = await withTimeout(
+                const userResult = await withTimeout(
                   getUserPromise,
                   5000, // 5 second timeout
                   new Error('getUser timeout - likely offline')
-                );
+                ) as { data?: any; error?: any } | null;
+                const data = userResult?.data;
+                const error = userResult?.error;
                 
             if (!error && data?.user) {
               const metadata = data.user.user_metadata || {};
@@ -125,11 +127,13 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
                   .eq('user_id', userId)
                   .single();
                 
-                    const { data: profileData, error: profileError } = await withTimeout(
+                    const profileResult = await withTimeout(
                       profileQueryPromise,
                       5000, // 5 second timeout
                       new Error('Profile query timeout - likely offline')
-                    );
+                    ) as { data?: any; error?: any } | null;
+                    const profileData = profileResult?.data;
+                    const profileError = profileResult?.error;
                     
                 debug.debug('Profile query result:', {
                   hasData: !!profileData,

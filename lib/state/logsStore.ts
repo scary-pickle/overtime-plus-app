@@ -1244,7 +1244,7 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       
       // Check and update unsubmitted AVAC notification after marking as submitted
       const { notificationManager } = require('../notifications');
-      notificationManager.checkAndScheduleUnsubmittedAVACNotification(updatedBatches).catch(err => {
+      notificationManager.checkAndScheduleUnsubmittedAVACNotification(updatedBatches).catch((err: unknown) => {
         debug.error('Failed to check unsubmitted AVAC notification (non-fatal):', err);
       });
     } catch (error) {

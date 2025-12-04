@@ -134,6 +134,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   checkSession: async () => {
     set({ isLoading: true, error: null });
+    // Watchdog to prevent getting stuck on splash when offline/requests hang
+    let finished = false;
+    const watchdog = setTimeout(() => {
+      const state = get();
+      if (!finished && state.isLoading) {
+        debug.warn('checkSession watchdog fired - forcing loading false for offline fallback');
+        set({ isLoading: false, error: null });
+      }
+    }, 4500);
+    const markFinished = () => {
+      if (!finished) {
+        finished = true;
+        clearTimeout(watchdog);
+      }
+    };
     try {
       debug.debug('Getting session from Supabase...');
       
@@ -216,7 +231,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             (supabase as any).auth.getSession(),
             2000, // 2 second timeout - if offline, this will timeout quickly
             new Error('getSession timeout - likely offline')
-          );
+          ) as { data?: { session?: any } | null; error?: any } | null;
           error = result?.error;
           const resultSession = result?.data?.session ?? null;
           const resultUser = resultSession?.user ?? null;
@@ -306,11 +321,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                   const refreshPromise = (supabase as any).auth.refreshSession({
                   refresh_token: session.refresh_token,
                 });
-                  const { data: refreshData, error: refreshError } = await withTimeout(
+                  const refreshResult = await withTimeout(
                     refreshPromise,
                     5000, // 5 second timeout
                     new Error('Token refresh timeout - likely offline')
-                  );
+                  ) as { data?: any; error?: any } | null;
+                  const refreshData = refreshResult?.data;
+                  const refreshError = refreshResult?.error;
                 
                 if (refreshError) {
                   // Check if this is a network error
@@ -412,11 +429,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
               const refreshPromise = (supabase as any).auth.refreshSession({
               refresh_token: session.refresh_token,
             });
-              const { data: refreshData, error: refreshError } = await withTimeout(
+              const refreshResult = await withTimeout(
                 refreshPromise,
                 5000, // 5 second timeout
                 new Error('Token refresh timeout - likely offline')
-              );
+              ) as { data?: any; error?: any } | null;
+              const refreshData = refreshResult?.data;
+              const refreshError = refreshResult?.error;
             
             if (!refreshError && refreshData?.session?.access_token) {
               debug.debug('Session refreshed successfully (token parse error case)');
@@ -474,11 +493,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           // Use timeout to prevent hanging when offline
           // @ts-ignore
           const getUserPromise = (supabase as any).auth.getUser();
-          const { data: userData, error: userError } = await withTimeout(
+          const userResult = await withTimeout(
             getUserPromise,
             5000, // 5 second timeout - if offline, this will timeout quickly
             new Error('User verification timeout - likely offline')
-          );
+          ) as { data?: any; error?: any } | null;
+          const userData = userResult?.data;
+          const userError = userResult?.error;
           if (userError) {
             // Check if this is a network error - if so, allow offline use with cached session
             if (isNetworkError(userError)) {
@@ -625,7 +646,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             cachedSessionPromise,
             2000, // 2 second timeout
             new Error('getSession timeout in catch block')
-          );
+          ) as { data?: { session?: any } | null } | null;
           const cachedSessionData = cachedSessionResult?.data;
           if (cachedSessionData?.session && cachedSessionData?.session?.user) {
             const cachedSession = cachedSessionData.session;
@@ -739,6 +760,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
         error: toFriendlyAuthMessage(e instanceof Error ? e.message : 'Failed to get session'),
       });
+    }
+    finally {
+      markFinished();
     }
   },
 

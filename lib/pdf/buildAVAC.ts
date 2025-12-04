@@ -727,10 +727,8 @@ async function loadAVACTemplate(): Promise<ArrayBuffer> {
       }
     }
     
-    // Try the manually copied template as fallback - try multiple cache locations
+    // Try the manually copied template as fallback - try runtime cache locations
     const cachePaths = [
-      'cache/AVAC_Template_Horizontal.pdf',
-      'cache/AVAC template horizontal.pdf',
       `${Paths.cache.uri}/AVAC_Template_Horizontal.pdf`,
       `${Paths.cache.uri}/AVAC template horizontal.pdf`,
     ];
@@ -1757,7 +1755,7 @@ async function drawLogRow(
     
     if (isPersonBLog) {
       // This is Person B's log - use Person B's details from swapPartner fields
-      employeeName = log.swapPartnerName;
+      employeeName = log.swapPartnerName || profile.fullName;
       console.log(`📝 Drawing employee name (Person B): ${employeeName} (initials: ${log.initials} vs profile: ${profile.employeeInitial})`);
     } else {
       // This is Person A's log or a regular log - use profile

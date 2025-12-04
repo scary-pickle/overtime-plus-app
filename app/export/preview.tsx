@@ -24,6 +24,7 @@ import { formatMinutes } from '../../lib/time';
 import { isCloudURL } from '../../lib/storage/pdfStorage';
 import InAppPDFViewer from '../../components/InAppPDFViewer';
 import { createScopedLogger } from '../../lib/utils/logger';
+import { OvertimeLog } from '../../types';
 
 const debug = createScopedLogger('ExportPreview');
 

@@ -9,6 +9,9 @@ import {
   useColorScheme,
   ScrollView,
   RefreshControl,
+  Modal,
+  Animated,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -34,6 +37,8 @@ export default function ShiftsScreen() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [calendarViewMode, setCalendarViewMode] = useState<'month' | 'week'>('week');
   const [isViewModeMenuOpen, setIsViewModeMenuOpen] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [menuAnimation] = useState(new Animated.Value(0));
 
   useEffect(() => {
     debug.debug('Loading shifts...');
@@ -56,7 +61,28 @@ export default function ShiftsScreen() {
 
   const handleAddShift = () => {
     debug.debug('Add shift button pressed');
+    setShowAddMenu(true);
+    Animated.spring(menuAnimation, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 65,
+      friction: 11,
+    }).start();
+  };
+
+  const handleCloseAddMenu = () => {
+    setShowAddMenu(false);
+    menuAnimation.setValue(0);
+  };
+
+  const handleCreateShiftPattern = () => {
+    handleCloseAddMenu();
     router.push('/shifts/new');
+  };
+
+  const handleQuickShift = () => {
+    handleCloseAddMenu();
+    router.push('/shifts/quick-add');
   };
 
   const handleEditShift = (shift: UsualShift) => {
@@ -106,6 +132,16 @@ export default function ShiftsScreen() {
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize to midnight for accurate date comparison
     const todayStr = formatDateToISO(today);
+    
+    // Custom shifts are one-time only, so check if activeFrom is today or in the future
+    if (shift.type === 'custom') {
+      if (shift.activeFrom >= todayStr) {
+        return shift.activeFrom;
+      }
+      // Already passed, return far future date for sorting
+      return '9999-12-31';
+    }
+    
     const dayOfWeek = shift.dayOfWeek;
     
     // Start from today and look ahead up to 14 days (to handle biweekly shifts)
@@ -126,8 +162,7 @@ export default function ShiftsScreen() {
             if (weekIndex === shift.weekIndex) {
               return dateStr;
             }
-          } else if (shift.type === 'weekly' || shift.type === 'custom') {
-            // Handle both weekly and custom shifts
+          } else if (shift.type === 'weekly') {
             return dateStr;
           }
         }
@@ -555,6 +590,63 @@ export default function ShiftsScreen() {
       >
         <Ionicons name="add" size={24} color="#fff" />
       </TouchableOpacity>
+
+      {/* Add Menu Modal */}
+      <Modal
+        visible={showAddMenu}
+        transparent={true}
+        animationType="none"
+        onRequestClose={handleCloseAddMenu}
+      >
+        <TouchableWithoutFeedback onPress={handleCloseAddMenu}>
+          <View style={styles.addMenuOverlay}>
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <Animated.View
+                style={[
+                  styles.addMenuContainer,
+                  isDark && styles.darkAddMenuContainer,
+                  {
+                    transform: [
+                      {
+                        scale: menuAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.8, 1],
+                        }),
+                      },
+                      {
+                        translateY: menuAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [20, 0],
+                        }),
+                      },
+                    ],
+                    opacity: menuAnimation,
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleQuickShift}
+                >
+                  <Ionicons name="flash-outline" size={20} color={isDark ? '#fff' : '#333'} />
+                  <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
+                    Quick Shift
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleCreateShiftPattern}
+                >
+                  <Ionicons name="calendar-outline" size={20} color={isDark ? '#fff' : '#333'} />
+                  <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
+                    Create Shift Pattern
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 }
@@ -960,5 +1052,42 @@ const styles = StyleSheet.create({
   viewModeChipDisabled: {
     borderColor: '#dfe2e6',
     opacity: 0.7,
+  },
+  addMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
+    alignItems: 'flex-end',
+    paddingBottom: 90,
+    paddingRight: 20,
+  },
+  addMenuContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingVertical: 8,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  darkAddMenuContainer: {
+    backgroundColor: '#1c1c1e',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  menuItemText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  darkMenuItemText: {
+    color: '#fff',
   },
 });

@@ -2,13 +2,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useHideSplashOnFocus } from '../../lib/utils/hideSplashOnFocus';
-
 export default function OnboardingWelcome() {
   const router = useRouter();
-  
-  // Hide splash screen when this screen is focused and ready
-  useHideSplashOnFocus();
 
   return (
     <SafeAreaView style={styles.container}>

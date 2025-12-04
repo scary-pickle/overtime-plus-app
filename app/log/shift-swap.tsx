@@ -951,6 +951,9 @@ const styles = StyleSheet.create({
   darkText: {
     color: '#fff',
   },
+  darkSecondaryText: {
+    color: '#999',
+  },
   darkInput: {
     backgroundColor: '#2c2c2e',
     borderColor: '#333',

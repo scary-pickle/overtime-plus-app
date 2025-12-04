@@ -13,6 +13,11 @@ export function getRosterForDate(date: string, usualShifts: UsualShift[]): Roste
   
   // Find matching shifts for this date
   const matchingShifts = usualShifts.filter(shift => {
+    // For custom shifts, only match on the exact activeFrom date (one-time only)
+    if (shift.type === 'custom') {
+      return shift.activeFrom === date;
+    }
+    
     // Check if shift is active on this date
     if (!isShiftActiveOnDate(shift, date)) return false;
     
@@ -110,6 +115,14 @@ export function getNextShiftOccurrence(
   shift: UsualShift, 
   fromDate: string
 ): string | null {
+  // Custom shifts are one-time only, so check if activeFrom is in the future
+  if (shift.type === 'custom') {
+    if (shift.activeFrom > fromDate) {
+      return shift.activeFrom;
+    }
+    return null; // Already passed or today
+  }
+  
   const from = new Date(fromDate);
   const dayOfWeek = shift.dayOfWeek;
   
@@ -149,6 +162,14 @@ export function getShiftOccurrencesInRange(
   startDate: string,
   endDate: string
 ): string[] {
+  // Custom shifts are one-time only, so only include if activeFrom is in range
+  if (shift.type === 'custom') {
+    if (shift.activeFrom >= startDate && shift.activeFrom <= endDate) {
+      return [shift.activeFrom];
+    }
+    return [];
+  }
+  
   const occurrences: string[] = [];
   const start = new Date(startDate);
   const end = new Date(endDate);

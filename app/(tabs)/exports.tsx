@@ -80,7 +80,7 @@ export default function ExportsScreen() {
         createdAt: b.createdAt,
         submittedAt: b.submittedAt
       }));
-      notificationManager.checkAndScheduleUnsubmittedAVACNotification(batchesForNotification).catch(err => {
+      notificationManager.checkAndScheduleUnsubmittedAVACNotification(batchesForNotification).catch((err: unknown) => {
         debug.error('Failed to check unsubmitted AVAC notification:', err);
       });
     }
@@ -872,22 +872,22 @@ export default function ExportsScreen() {
               </Text>
               <View style={styles.submitActionButtonsRow}>
                 <TouchableOpacity
-                  style={[styles.submitActionButton, styles.emailActionButton]}
+                  style={[styles.submitActionButtonLarge, styles.emailActionButton]}
                   onPress={async () => {
                     await handleBatchEmailSubmit();
                   }}
                 >
                   <Ionicons name="mail-outline" size={18} color="#fff" />
-                  <Text style={styles.submitActionButtonText}>Submit via Email</Text>
+                  <Text style={styles.submitActionButtonTextLarge}>Submit via Email</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.submitActionButton, styles.shareActionButton]}
+                  style={[styles.submitActionButtonLarge, styles.shareActionButtonLarge]}
                   onPress={async () => {
                     await handleBatchShare();
                   }}
                 >
                   <Ionicons name="share-outline" size={18} color="#fff" />
-                  <Text style={styles.submitActionButtonText}>Share</Text>
+                  <Text style={styles.submitActionButtonTextLarge}>Share</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1379,6 +1379,12 @@ export default function ExportsScreen() {
         customName: `Merged AVAC (${selectedBatches.length} exports)`,
       };
 
+      if (!profile) {
+        Alert.alert('Error', 'Profile not found. Please complete your profile setup.');
+        setSubmittingId(null);
+        return;
+      }
+
       // Try Apple Mail first (preferred method for selection mode)
       const appleMailResult = await sendAVACEmailWithAttachment(profile, mergedPdfUri, mergedBatch);
       
@@ -1687,7 +1693,7 @@ export default function ExportsScreen() {
 
             <View style={[styles.actions, isDark && styles.darkActions]}>
               <TouchableOpacity
-                style={[styles.actionButton, styles.submitActionButton]}
+                style={[styles.actionButton, styles.headerSubmitActionButtonSmall]}
                 onPress={() => handleSubmitEmail(item)}
               >
                 <Ionicons name="send" size={14} color="#fff" />
@@ -1973,23 +1979,6 @@ const styles = StyleSheet.create({
   darkDeleteButtonText: {
     color: '#ff6b6b',
   },
-  darkSecondaryText: {
-    color: '#999',
-  },
-  darkActionButton: {
-    backgroundColor: '#2c2c2e',
-    borderColor: '#48484a',
-  },
-  darkActionButtonText: {
-    color: '#fff',
-  },
-  darkDeleteButton: {
-    backgroundColor: '#2d1b1b',
-    borderColor: '#4a2c2c',
-  },
-  darkDeleteButtonText: {
-    color: '#ff6b6b',
-  },
   selectionModeButtons: {
     flexDirection: 'row',
     gap: 8,
@@ -2237,7 +2226,7 @@ const styles = StyleSheet.create({
   darkActions: {
     borderTopColor: '#3a3a3c',
   },
-  actionButton: {
+  headerActionButtonSmall: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -2249,19 +2238,19 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
     minWidth: 50,
   },
-  submitActionButton: {
+  headerSubmitActionButtonSmall: {
     backgroundColor: '#007AFF',
     borderColor: '#007AFF',
   },
-  shareActionButton: {
+  headerShareActionButtonSmall: {
     backgroundColor: '#34C759',
     borderColor: '#34C759',
   },
-  deleteActionButton: {
+  headerDeleteActionButtonSmall: {
     backgroundColor: '#ffebee',
     borderColor: '#ffcdd2',
   },
-  headerActionButton: {
+  headerActionButtonIcon: {
     width: 32,
     height: 32,
     borderRadius: 16,
@@ -2688,7 +2677,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  headerActionButton: {
+  headerActionButtonPadding: {
     padding: 4,
   },
   headerCancelText: {
@@ -2802,7 +2791,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
-  submitActionButton: {
+  submitActionButtonLarge: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2816,10 +2805,10 @@ const styles = StyleSheet.create({
   emailActionButton: {
     backgroundColor: '#4CAF50',
   },
-  shareActionButton: {
+  shareActionButtonLarge: {
     backgroundColor: '#4CAF50',
   },
-  submitActionButtonText: {
+  submitActionButtonTextLarge: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',

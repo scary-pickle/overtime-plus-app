@@ -31,10 +31,11 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
     pdfTemplateVersion: 'PDF Template Version',
     timezone: 'Timezone',
     concurrentEmploymentDefault: 'Concurrent Employment Default',
-    emailTemplate: 'Email Template',
-    emailSubmissionMethod: 'Email Submission Method',
-    isSMO: 'Are you an SMO?',
-  };
+      emailTemplate: 'Email Template',
+      emailSubmissionMethod: 'Email Submission Method',
+      recipientEmail: 'Recipient Email',
+      isSMO: 'Are you an SMO?',
+    };
 
   // Section mapping
   const fieldSections: Record<keyof Profile, string> = {
@@ -54,10 +55,11 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
     pdfTemplateVersion: 'Settings',
     timezone: 'Settings',
     concurrentEmploymentDefault: 'Settings',
-    emailTemplate: 'Settings',
-    emailSubmissionMethod: 'Settings',
-    isSMO: 'Employee Details',
-  };
+      emailTemplate: 'Settings',
+      emailSubmissionMethod: 'Settings',
+      recipientEmail: 'Settings',
+      isSMO: 'Employee Details',
+    };
 
   // Required fields (excluding delegate info and organisation unit number)
   const requiredFields: (keyof Profile)[] = [

@@ -9,10 +9,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
   splash: {
-    backgroundColor: '#007AFF'
+    image: './assets/icon.png',
+    resizeMode: 'contain',
+    backgroundColor: '#ffffff'
   },
   assetBundlePatterns: [
-    '**/*'
+    '**/*',
+    '!cache/**'
   ],
   ios: {
     supportsTablet: true,
@@ -29,6 +32,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       backgroundColor: '#ffffff'
     },
     package: 'com.overtimeplus.app',
+    // @ts-ignore - networkSecurityConfig is valid but not in Expo types
     networkSecurityConfig: 'res/xml/network_security_config.xml'
   },
   web: {

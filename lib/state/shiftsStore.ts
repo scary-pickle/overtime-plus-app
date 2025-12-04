@@ -77,7 +77,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
                 if (localTime > remoteTime) {
                   // Local is newer - use local and upload it
                   mergedShifts.push(localShift);
-                  shiftsSync.uploadShift(localShift, userId).catch(err => {
+                  shiftsSync.uploadShift(localShift, userId).catch((err: unknown) => {
                     devLog.error('Failed to upload newer local shift:', err);
                     // Add to sync queue for retry
                     const { syncQueue } = require('../sync/queue');
@@ -91,14 +91,14 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
                 } else {
                   // Remote is newer - use remote and save it locally
                   mergedShifts.push(remoteShift);
-                  database.updateUsualShift(remoteShift, userId).catch(err => {
+                  database.updateUsualShift(remoteShift, userId).catch((err: unknown) => {
                     devLog.error('Failed to save merged shift:', err);
                   });
                 }
               } else if (localShift) {
                 // Only local - add it and upload if not already synced
                 mergedShifts.push(localShift);
-                shiftsSync.uploadShift(localShift, userId).catch(err => {
+                shiftsSync.uploadShift(localShift, userId).catch((err: unknown) => {
                   devLog.error('Failed to upload local-only shift:', err);
                   // Add to sync queue for retry
                   const { syncQueue } = require('../sync/queue');
@@ -112,7 +112,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
               } else if (remoteShift) {
                 // Only remote - add it and save locally
                 mergedShifts.push(remoteShift);
-                database.createUsualShift(remoteShift, userId).catch(err => {
+                database.createUsualShift(remoteShift, userId).catch((err: unknown) => {
                   devLog.error('Failed to save remote-only shift:', err);
                 });
               }
@@ -121,7 +121,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
             // Update store with merged shifts
             set({ shifts: mergedShifts });
           }
-        }).catch(err => {
+        }).catch((err: unknown) => {
           devLog.error('Background sync failed (non-fatal):', err);
         });
       }
@@ -159,7 +159,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
-        shiftsSync.uploadShift(shift, finalUserId).catch(err => {
+        shiftsSync.uploadShift(shift, finalUserId).catch((err: unknown) => {
           devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
@@ -175,7 +175,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       // Schedule notifications for updated shift schedule
       const { notificationManager } = require('../notifications');
       const { shifts: updatedShifts } = get();
-      notificationManager.scheduleRolling7Days(updatedShifts).catch(err => {
+      notificationManager.scheduleRolling7Days(updatedShifts).catch((err: unknown) => {
         devLog.error('Failed to schedule notifications (non-fatal):', err);
       });
     } catch (error) {
@@ -212,7 +212,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       
       // Sync to Supabase in background (non-blocking)
       if (finalUserId) {
-        shiftsSync.uploadShift(shift, finalUserId).catch(err => {
+        shiftsSync.uploadShift(shift, finalUserId).catch((err: unknown) => {
           devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
@@ -227,7 +227,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       
       // Schedule notifications for updated shift schedule
       const { notificationManager } = require('../notifications');
-      notificationManager.scheduleRolling7Days(updatedShifts).catch(err => {
+      notificationManager.scheduleRolling7Days(updatedShifts).catch((err: unknown) => {
         devLog.error('Failed to schedule notifications (non-fatal):', err);
       });
     } catch (error) {
@@ -258,7 +258,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       
       // Sync delete to Supabase in background (non-blocking)
       if (finalUserId) {
-        shiftsSync.deleteShift(id, finalUserId).catch(err => {
+        shiftsSync.deleteShift(id, finalUserId).catch((err: unknown) => {
           devLog.error('Background sync failed (non-fatal):', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
@@ -273,7 +273,7 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       
       // Schedule notifications for updated shift schedule
       const { notificationManager } = require('../notifications');
-      notificationManager.scheduleRolling7Days(filteredShifts).catch(err => {
+      notificationManager.scheduleRolling7Days(filteredShifts).catch((err: unknown) => {
         devLog.error('Failed to schedule notifications (non-fatal):', err);
       });
     } catch (error) {

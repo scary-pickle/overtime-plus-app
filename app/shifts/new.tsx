@@ -26,7 +26,7 @@ const debug = createScopedLogger('NewShift');
 const SHIFT_TYPES = [
   { value: 'weekly', label: 'Weekly' },
   { value: 'biweekly', label: 'Biweekly' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'custom', label: 'Once Only' },
 ] as const;
 
 const DAYS_OF_WEEK = [
@@ -109,13 +109,19 @@ export default function NewShiftScreen() {
   };
 
   const validateForm = () => {
-    if (selectedDays.length === 0) {
+    // For custom shifts, we don't need day selection (one-time only)
+    if (type !== 'custom' && selectedDays.length === 0) {
       setValidationErrors(['Please select at least one day of the week']);
       return false;
     }
 
+    // For custom shifts, use the day of week from activeFrom date
+    const daysToValidate = type === 'custom' 
+      ? [new Date(activeFrom).getDay()] 
+      : selectedDays;
+
     // Validate each selected day
-    for (const dayOfWeek of selectedDays) {
+    for (const dayOfWeek of daysToValidate) {
       const shift: UsualShift = {
         id: '', // Will be generated
         label,
@@ -126,7 +132,7 @@ export default function NewShiftScreen() {
         rosteredFinish,
         mealBreakMinutes: mealBreakMinutes || undefined,
         activeFrom,
-        activeTo: activeTo || undefined,
+        activeTo: type === 'custom' ? activeFrom : (activeTo || undefined), // For custom, set activeTo same as activeFrom
       };
 
       const errors = validateShift(shift);
@@ -189,12 +195,17 @@ export default function NewShiftScreen() {
         debug.debug('Template saved successfully');
       }
 
-      debug.debug('Creating shifts for days:', selectedDays);
+      // For custom shifts, create a single shift for the activeFrom date
+      const daysToCreate = type === 'custom' 
+        ? [new Date(activeFrom).getDay()] 
+        : selectedDays;
+      
+      debug.debug('Creating shifts for days:', daysToCreate);
       // Create a separate shift for each selected day
-      const shiftPromises = selectedDays.map((dayOfWeek, index) => {
+      const shiftPromises = daysToCreate.map((dayOfWeek, index) => {
         const shift: UsualShift = {
           id: `shift_${Date.now()}_${index}`,
-          label: selectedDays.length > 1 ? `${label} (${DAYS_OF_WEEK[dayOfWeek].label})` : label,
+          label: daysToCreate.length > 1 ? `${label} (${DAYS_OF_WEEK[dayOfWeek].label})` : label,
           type,
           weekIndex: type === 'biweekly' ? weekIndex : undefined,
           dayOfWeek: dayOfWeek as 0 | 1 | 2 | 3 | 4 | 5 | 6,
@@ -202,9 +213,9 @@ export default function NewShiftScreen() {
           rosteredFinish,
           mealBreakMinutes: mealBreakMinutes || undefined,
           activeFrom,
-          activeTo: activeTo || undefined,
+          activeTo: type === 'custom' ? activeFrom : (activeTo || undefined), // For custom, set activeTo same as activeFrom (one-time only)
         };
-        debug.debug(`Creating shift ${index + 1}/${selectedDays.length}:`, {
+        debug.debug(`Creating shift ${index + 1}/${daysToCreate.length}:`, {
           id: shift.id,
           label: shift.label,
           day: shift.dayOfWeek,
@@ -216,9 +227,12 @@ export default function NewShiftScreen() {
       await Promise.all(shiftPromises);
       debug.debug('All shifts created successfully');
       
+      const shiftCount = daysToCreate.length;
       Alert.alert(
         'Success',
-        `Created ${selectedDays.length} shift pattern${selectedDays.length > 1 ? 's' : ''} successfully!`,
+        type === 'custom' 
+          ? 'Created one-time shift successfully!'
+          : `Created ${shiftCount} shift pattern${shiftCount > 1 ? 's' : ''} successfully!`,
         [{ text: 'OK', onPress: () => router.back() }]
       );
     } catch (error) {
@@ -293,50 +307,55 @@ export default function NewShiftScreen() {
     );
   };
 
-  const renderDaySelector = () => (
-    <View style={[styles.section, isDark && styles.darkCard]}>
-      <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-        Days of Week
-      </Text>
-      <Text style={[styles.sectionSubtitle, isDark && styles.darkText]}>
-        Select all days this shift applies to
-      </Text>
-      <View style={styles.dayContainer}>
-        {DAYS_OF_WEEK.map((day) => (
-          <TouchableOpacity
-            key={day.value}
-            style={[
-              styles.dayButton,
-              isDark && !selectedDays.includes(day.value) && styles.darkDayButton,
-              selectedDays.includes(day.value) && styles.selectedDayButton,
-            ]}
-            onPress={() => {
-              if (selectedDays.includes(day.value)) {
-                setSelectedDays(selectedDays.filter(d => d !== day.value));
-              } else {
-                setSelectedDays([...selectedDays, day.value]);
-              }
-            }}
-          >
-            <Text
-              style={[
-                styles.dayButtonText,
-                isDark && !selectedDays.includes(day.value) && styles.darkDayButtonText,
-                selectedDays.includes(day.value) && styles.selectedDayButtonText,
-              ]}
-            >
-              {day.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      {selectedDays.length === 0 && (
-        <Text style={[styles.errorText, isDark && styles.darkErrorText]}>
-          Please select at least one day
+  const renderDaySelector = () => {
+    // Hide day selector for custom shifts (one-time only, date is set via activeFrom)
+    if (type === 'custom') return null;
+    
+    return (
+      <View style={[styles.section, isDark && styles.darkCard]}>
+        <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
+          Days of Week
         </Text>
-      )}
-    </View>
-  );
+        <Text style={[styles.sectionSubtitle, isDark && styles.darkText]}>
+          Select all days this shift applies to
+        </Text>
+        <View style={styles.dayContainer}>
+          {DAYS_OF_WEEK.map((day) => (
+            <TouchableOpacity
+              key={day.value}
+              style={[
+                styles.dayButton,
+                isDark && !selectedDays.includes(day.value) && styles.darkDayButton,
+                selectedDays.includes(day.value) && styles.selectedDayButton,
+              ]}
+              onPress={() => {
+                if (selectedDays.includes(day.value)) {
+                  setSelectedDays(selectedDays.filter(d => d !== day.value));
+                } else {
+                  setSelectedDays([...selectedDays, day.value]);
+                }
+              }}
+            >
+              <Text
+                style={[
+                  styles.dayButtonText,
+                  isDark && !selectedDays.includes(day.value) && styles.darkDayButtonText,
+                  selectedDays.includes(day.value) && styles.selectedDayButtonText,
+                ]}
+              >
+                {day.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {selectedDays.length === 0 && (
+          <Text style={[styles.errorText, isDark && styles.darkErrorText]}>
+            Please select at least one day
+          </Text>
+        )}
+      </View>
+    );
+  };
 
   const renderTimeInputs = () => (
     <View style={[styles.section, isDark && styles.darkCard]}>
@@ -447,28 +466,37 @@ export default function NewShiftScreen() {
       style={[styles.section, isDark && styles.darkCard]}
     >
       <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-        Active Date Range
+        {type === 'custom' ? 'Shift Date' : 'Active Date Range'}
       </Text>
+      {type === 'custom' && (
+        <Text style={[styles.sectionSubtitle, isDark && styles.darkText]}>
+          This shift will occur only once on the selected date
+        </Text>
+      )}
       
       <View style={styles.dateRow}>
         <View style={styles.dateInput}>
-          <Text style={[styles.dateLabel, isDark && styles.darkText]}>From</Text>
+          <Text style={[styles.dateLabel, isDark && styles.darkText]}>
+            {type === 'custom' ? 'Date' : 'From'}
+          </Text>
           <CalendarPicker
             value={activeFrom}
             onChange={setActiveFrom}
-            placeholder="Select start date"
+            placeholder={type === 'custom' ? 'Select date' : 'Select start date'}
           />
         </View>
         
-        <View style={styles.dateInput}>
-          <Text style={[styles.dateLabel, isDark && styles.darkText]}>To (Optional)</Text>
-          <CalendarPicker
-            value={activeTo}
-            onChange={setActiveTo}
-            placeholder="Select end date"
-            onOpen={handleToDateOpen}
-          />
-        </View>
+        {type !== 'custom' && (
+          <View style={styles.dateInput}>
+            <Text style={[styles.dateLabel, isDark && styles.darkText]}>To (Optional)</Text>
+            <CalendarPicker
+              value={activeTo}
+              onChange={setActiveTo}
+              placeholder="Select end date"
+              onOpen={handleToDateOpen}
+            />
+          </View>
+        )}
       </View>
     </View>
   );

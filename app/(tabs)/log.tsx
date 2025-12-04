@@ -32,7 +32,7 @@ export default function LogScreen() {
   
   // Get user from auth store for userId
   const { user } = useAuthStore();
-  const { logs, deleteLog, markReady, loadLogs, getReadyLogs, getExportedLogs, resetLogsToReady, getYesterdayLog, isLoading, getActiveShiftDraft } = useLogsStore();
+  const { logs, deleteLog, markReady, loadLogs, getReadyLogs, getExportedLogs, resetLogsToReady, isLoading, getActiveShiftDraft } = useLogsStore();
   const { profile } = useProfileStore();
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [filterType, setFilterType] = useState<FilterType>('category');
@@ -109,26 +109,6 @@ export default function LogScreen() {
     router.push('/log/new');
   };
 
-  const handleNewFromYesterday = () => {
-    handleCloseAddMenu();
-    const yesterdayLog = getYesterdayLog();
-    if (!yesterdayLog) {
-      Alert.alert('No Log Found', 'There is no log from yesterday to copy from.');
-      return;
-    }
-    router.push({
-      pathname: '/log/new',
-      params: { from: 'yesterday' }
-    });
-  };
-
-  const handleNewFromTemplate = () => {
-    handleCloseAddMenu();
-    router.push({
-      pathname: '/log/new',
-      params: { from: 'template' }
-    });
-  };
 
   const handleShiftSwap = () => {
     handleCloseAddMenu();
@@ -1417,29 +1397,6 @@ export default function LogScreen() {
                   <Ionicons name="document-text-outline" size={20} color={isDark ? '#fff' : '#333'} />
                   <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
                     New Log
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={handleNewFromYesterday}
-                  disabled={!getYesterdayLog()}
-                >
-                  <Ionicons name="calendar-outline" size={20} color={getYesterdayLog() ? (isDark ? '#fff' : '#333') : '#999'} />
-                  <Text style={[
-                    styles.menuItemText,
-                    isDark && styles.darkMenuItemText,
-                    !getYesterdayLog() && styles.disabledMenuItemText
-                  ]}>
-                    New from Yesterday
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={handleNewFromTemplate}
-                >
-                  <Ionicons name="copy-outline" size={20} color={isDark ? '#fff' : '#333'} />
-                  <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
-                    New from Template
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity

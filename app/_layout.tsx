@@ -22,7 +22,7 @@ import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useSubscriptionStore } from '../lib/state/subscriptionStore';
 import { createScopedLogger } from '../lib/utils/logger';
-import { AnimatedSplashText } from '../components/AnimatedSplashText';
+import { AnimatedSplashIcon } from '../components/AnimatedSplashIcon';
 
 const debug = createScopedLogger('App');
 
@@ -42,7 +42,7 @@ export default function RootLayout() {
   const initializeSubscription = useSubscriptionStore((state) => state.init);
   const resetSubscription = useSubscriptionStore((state) => state.reset);
   const [appIsReady, setAppIsReady] = React.useState(false);
-  const [showSplashText, setShowSplashText] = React.useState(true);
+  const [showSplashIcon, setShowSplashIcon] = React.useState(true);
 
   useEffect(() => {
     (async () => {
@@ -81,6 +81,17 @@ export default function RootLayout() {
       
       // Mark app as ready
       setAppIsReady(true);
+      
+      // Hide native splash screen immediately - the AnimatedSplashIcon overlay
+      // is already visible and will provide seamless visual continuity
+      // Small delay ensures React Native has rendered the overlay first
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          SplashScreen.hideAsync().catch((error) => {
+            // Splash may already be hidden, ignore error
+          });
+        }, 50);
+      });
     })();
     const unsubscribeLinking = subscribeToAuthDeepLinks();
     return () => {
@@ -254,10 +265,10 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <View style={styles.rootContainer}>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <Stack
           screenOptions={{
-            contentStyle: { backgroundColor: '#007AFF' },
+            contentStyle: { backgroundColor: '#ffffff' },
             animation: 'none', // Disable animation to prevent white flash
           }}
         >
@@ -365,6 +376,14 @@ export default function RootLayout() {
           }} 
         />
         <Stack.Screen 
+          name="shifts/quick-add" 
+          options={{ 
+            title: 'Quick Shift',
+            presentation: 'modal',
+            headerShown: false,
+          }} 
+        />
+        <Stack.Screen 
           name="email-settings" 
           options={{ 
             headerShown: false 
@@ -434,8 +453,8 @@ export default function RootLayout() {
           }}
         />
         </Stack>
-        {/* Global animated splash text overlay - stays visible until splash hides */}
-        {showSplashText && <AnimatedSplashText onHide={() => setShowSplashText(false)} />}
+        {/* Global animated splash icon overlay - stays visible until navigation completes */}
+        {showSplashIcon && <AnimatedSplashIcon onHide={() => setShowSplashIcon(false)} />}
       </View>
     </ErrorBoundary>
   );
@@ -444,6 +463,6 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   rootContainer: {
     flex: 1,
-    backgroundColor: '#007AFF', // Match splash screen color
+    backgroundColor: '#ffffff', // Match splash screen color
   },
 });

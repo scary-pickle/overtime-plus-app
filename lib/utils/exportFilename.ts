@@ -2,8 +2,7 @@
  * Utility functions for generating export filenames
  */
 
-import { ExportBatch } from '../../types';
-import { Profile } from '../../lib/state/profileStore';
+import { ExportBatch, Profile } from '../../types';
 
 /**
  * Parse first and last name from full name string

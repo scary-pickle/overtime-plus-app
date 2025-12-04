@@ -26,10 +26,7 @@ export async function purgeLegacyAuthStorage(): Promise<void> {
 
     // Best-effort cleanup for known SecureStore keys (limited by SecureStore API)
     const keysToDelete = [...LEGACY_SECURE_STORE_KEYS];
-    const projectRefMatch = process.env.EXPO_PUBLIC_SUPABASE_URL?.match(/https?:\/\/([^.]+)\.supabase\.co/i);
-    if (projectRefMatch?.[1]) {
-      keysToDelete.push(`sb-${projectRefMatch[1]}-auth-token`);
-    }
+    // DO NOT delete the current project's Supabase session key; we need it for offline restore
 
     for (const key of keysToDelete) {
       try {
@@ -49,5 +46,4 @@ export async function purgeLegacyAuthStorage(): Promise<void> {
 export async function shouldMigrateAuthStorage(): Promise<boolean> {
   return false;
 }
-
 

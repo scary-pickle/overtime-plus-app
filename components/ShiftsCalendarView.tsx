@@ -100,6 +100,11 @@ export function ShiftsCalendarView({
     const dayOfWeek = date.getDay();
     
     return shifts.filter(shift => {
+      // For custom shifts, only match on the exact activeFrom date (one-time only)
+      if (shift.type === 'custom') {
+        return shift.activeFrom === dateStr;
+      }
+      
       // Check if shift is for this day of week
       if (shift.dayOfWeek !== dayOfWeek) return false;
       
