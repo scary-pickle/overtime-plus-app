@@ -45,3 +45,6 @@ yarn-error.*
 
 # local cache folder (development/testing PDFs)
 cache/
+
+# test coverage reports
+coverage/
