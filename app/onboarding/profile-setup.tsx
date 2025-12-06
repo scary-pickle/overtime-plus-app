@@ -346,19 +346,6 @@ export default function OnboardingProfileSetup() {
               />
             </View>
           )}
-
-          <View style={styles.field}>
-            <Text style={styles.label}>
-              Service Enquiry Number (Optional)
-            </Text>
-            <TextInput
-              style={styles.input}
-              value={formData.serviceEnquiryNumber}
-              onChangeText={(value) => setFormData(prev => ({ ...prev, serviceEnquiryNumber: value }))}
-              placeholder="Optional"
-              placeholderTextColor="#999"
-            />
-          </View>
         </View>
 
         {/* Delegate Information - Optional */}

@@ -8,7 +8,10 @@ import {
   Alert,
   useColorScheme,
   RefreshControl,
-  Modal
+  Modal,
+  ActivityIndicator,
+  Image,
+  Dimensions
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
@@ -582,12 +585,27 @@ export default function HomeScreen() {
   // No need to schedule it here to avoid duplicate scheduling
 
   if (!hasProfile) {
-    // Show welcome screen while profile loads
+    // Show splash screen replica while profile loads - identical to native splash
+    // This ensures seamless transition with no visible change
+    const screenWidth = Dimensions.get('window').width;
+    const iconSize = screenWidth * 0.6; // Match native splash 60% scale
+    
     return (
-      <View style={[styles.welcomeContainer, isDark && styles.darkWelcomeContainer]}>
-        <Text style={[styles.welcomeText, isDark && styles.darkWelcomeText]}>
-          Welcome to Overtime+
-        </Text>
+      <View style={styles.splashContainer}>
+        {/* Icon positioned exactly like native splash - centered */}
+        <View style={[styles.splashIconContainer, { width: iconSize, height: iconSize }]}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={styles.splashIcon}
+            resizeMode="contain"
+          />
+        </View>
+        {/* Spinner positioned independently below, doesn't affect icon centering */}
+        <ActivityIndicator 
+          size="small" 
+          color="#007AFF" 
+          style={styles.splashSpinner}
+        />
       </View>
     );
   }
@@ -1141,22 +1159,41 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     marginLeft: 8,
   },
+  splashContainer: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashIconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    // Width and height set dynamically to match native splash (60% of screen width)
+    // Positioned absolutely centered - matches native splash exactly
+  },
+  splashIcon: {
+    width: '100%',
+    height: '100%',
+  },
+  splashSpinner: {
+    position: 'absolute',
+    bottom: 150, // Position spinner well below icon, doesn't affect icon centering
+    alignSelf: 'center',
+  },
   welcomeContainer: {
     flex: 1,
-    backgroundColor: '#007AFF',
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
   },
   darkWelcomeContainer: {
-    backgroundColor: '#007AFF',
-  },
-  welcomeText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  darkWelcomeText: {
-    color: '#fff',
+    backgroundColor: '#000000',
   },
   modalOverlay: {
     flex: 1,

@@ -339,9 +339,19 @@ export function QuickEndShiftModal({
               </View>
               {noRosterMode ? (
                 rosteredTimesNA ? (
-                  <Text style={[styles.timeDisplay, isDark && styles.darkText]}>
-                    N/A - N/A
-                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setRosteredTimesNA(false);
+                      setRosteredStart('');
+                      setRosteredFinish('');
+                    }}
+                    activeOpacity={0.7}
+                    style={[styles.tappableTimeDisplay, isDark && styles.darkTappableTimeDisplay]}
+                  >
+                    <Text style={[styles.timeDisplay, isDark && styles.darkText]}>
+                      N/A - N/A
+                    </Text>
+                  </TouchableOpacity>
                 ) : (
                   <View style={styles.timeRow}>
                     <View style={styles.timeInput}>
@@ -656,6 +666,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     paddingVertical: 8,
+  },
+  tappableTimeDisplay: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+  },
+  darkTappableTimeDisplay: {
+    backgroundColor: '#3a3a3c',
   },
   timeRow: {
     gap: 8,

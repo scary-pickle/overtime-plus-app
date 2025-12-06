@@ -7,7 +7,7 @@ import { formatMinutes } from '../lib/time';
 interface LogCardProps {
   log: OvertimeLog;
   linkedLog?: OvertimeLog; // For shift swaps (2-log swaps)
-  relatedLogs?: OvertimeLog[]; // For shift swaps (4-log swaps - all related logs)
+  relatedLogs?: OvertimeLog[]; // For shift swaps (4-log swaps - all related logs) or leave groups
   onPress?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
@@ -46,6 +46,9 @@ export function LogCard({
     if (log.isShiftSwap) {
       return 'Shift Swap';
     }
+    if (log.isLeave) {
+      return 'Leave';
+    }
     if (log.smoCategories) {
       const activeCategories = Object.entries(log.smoCategories)
         .filter(([_, value]) => value)
@@ -67,6 +70,13 @@ export function LogCard({
       parts.push(`${log.initials} ↔ ${linkedLog.initials}`);
       parts.push(formatMinutes(totalOvertime));
       parts.push('Shift swap');
+    } else if (log.isLeave && relatedLogs && relatedLogs.length > 0) {
+      // For leave, show count of leave days and comments
+      const totalDays = relatedLogs.length + 1; // +1 for the current log
+      parts.push(`${totalDays} day${totalDays > 1 ? 's' : ''}`);
+      if (log.comments) {
+        parts.push(log.comments);
+      }
     } else {
       // Add hours
       parts.push(formatMinutes(log.minutesOvertime));
@@ -182,7 +192,53 @@ export function LogCard({
       {isExpanded && (
         <>
           <View style={styles.expandedContent}>
-            {log.isShiftSwap && (relatedLogs && relatedLogs.length > 0 || linkedLog) ? (
+            {log.isLeave && relatedLogs && relatedLogs.length > 0 ? (
+              <>
+                {/* Show all leave logs */}
+                {[log, ...relatedLogs].sort((a, b) => a.date.localeCompare(b.date)).map((leaveLog, index) => (
+                  <View key={leaveLog.id} style={[styles.shiftSwapSection, isDark && styles.darkShiftSwapSection]}>
+                    <View style={styles.shiftSwapHeader}>
+                      <Text style={[styles.shiftSwapPersonTitle, isDark && styles.darkText]}>
+                        Day {index + 1}
+                      </Text>
+                      <Text style={[styles.shiftSwapDate, isDark && styles.darkSecondaryText]}>
+                        {formatCompactDate(leaveLog.date)}
+                      </Text>
+                    </View>
+                    {leaveLog.rosteredStart && leaveLog.rosteredFinish && leaveLog.rosteredStart !== 'N/A' && leaveLog.rosteredFinish !== 'N/A' && (
+                      <View style={styles.metaRow}>
+                        <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                        <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                          Rostered: {leaveLog.rosteredStart} - {leaveLog.rosteredFinish}
+                        </Text>
+                      </View>
+                    )}
+                    {leaveLog.rosteredStart === 'N/A' || leaveLog.rosteredFinish === 'N/A' ? (
+                      <View style={styles.metaRow}>
+                        <Ionicons name="time" size={14} color={isDark ? "#999" : "#6b7280"} />
+                        <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                          Rostered: N/A
+                        </Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.metaRow}>
+                      <Ionicons name="time-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                      <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                        Actual: - (N/A)
+                      </Text>
+                    </View>
+                    {leaveLog.comments && (
+                      <View style={styles.metaRow}>
+                        <Ionicons name="chatbubble-outline" size={14} color={isDark ? "#999" : "#6b7280"} />
+                        <Text style={[styles.metaText, isDark && styles.darkSecondaryText]}>
+                          {leaveLog.comments}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </>
+            ) : log.isShiftSwap && (relatedLogs && relatedLogs.length > 0 || linkedLog) ? (
               <>
                 {/* Show all related logs for 4-log swaps, or just linked log for 2-log swaps */}
                 {(() => {

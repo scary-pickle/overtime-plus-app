@@ -22,7 +22,6 @@ import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useSubscriptionStore } from '../lib/state/subscriptionStore';
 import { createScopedLogger } from '../lib/utils/logger';
-import { AnimatedSplashIcon } from '../components/AnimatedSplashIcon';
 
 const debug = createScopedLogger('App');
 
@@ -42,7 +41,6 @@ export default function RootLayout() {
   const initializeSubscription = useSubscriptionStore((state) => state.init);
   const resetSubscription = useSubscriptionStore((state) => state.reset);
   const [appIsReady, setAppIsReady] = React.useState(false);
-  const [showSplashIcon, setShowSplashIcon] = React.useState(true);
 
   useEffect(() => {
     (async () => {
@@ -82,15 +80,15 @@ export default function RootLayout() {
       // Mark app as ready
       setAppIsReady(true);
       
-      // Hide native splash screen immediately - the AnimatedSplashIcon overlay
-      // is already visible and will provide seamless visual continuity
-      // Small delay ensures React Native has rendered the overlay first
+      // Delay hiding splash screen to ensure React Native screen is rendered first
+      // This creates seamless transition - native splash stays visible until RN screen is ready
+      // The home screen will show identical splash replica, so user won't notice the transition
       requestAnimationFrame(() => {
         setTimeout(() => {
           SplashScreen.hideAsync().catch((error) => {
             // Splash may already be hidden, ignore error
           });
-        }, 50);
+        }, 100); // Small delay to ensure React Native screen has rendered
       });
     })();
     const unsubscribeLinking = subscribeToAuthDeepLinks();
@@ -316,6 +314,51 @@ export default function RootLayout() {
           }} 
         />
         <Stack.Screen 
+          name="log/leave" 
+          options={{ 
+            title: 'Leave',
+            presentation: 'modal',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colorScheme === 'dark' ? '#000' : '#fff',
+            },
+            headerTintColor: colorScheme === 'dark' ? '#fff' : '#000',
+            headerTitleStyle: {
+              color: colorScheme === 'dark' ? '#fff' : '#000',
+            },
+          }} 
+        />
+        <Stack.Screen 
+          name="log/edit-leave" 
+          options={{ 
+            title: 'Edit Leave',
+            presentation: 'modal',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colorScheme === 'dark' ? '#000' : '#fff',
+            },
+            headerTintColor: colorScheme === 'dark' ? '#fff' : '#000',
+            headerTitleStyle: {
+              color: colorScheme === 'dark' ? '#fff' : '#000',
+            },
+          }} 
+        />
+        <Stack.Screen 
+          name="log/edit-shift-swap" 
+          options={{ 
+            title: 'Edit Shift Swap',
+            presentation: 'modal',
+            headerShown: true,
+            headerStyle: {
+              backgroundColor: colorScheme === 'dark' ? '#000' : '#fff',
+            },
+            headerTintColor: colorScheme === 'dark' ? '#fff' : '#000',
+            headerTitleStyle: {
+              color: colorScheme === 'dark' ? '#fff' : '#000',
+            },
+          }} 
+        />
+        <Stack.Screen 
           name="export/preview" 
           options={{ 
             title: 'Export Preview',
@@ -453,8 +496,6 @@ export default function RootLayout() {
           }}
         />
         </Stack>
-        {/* Global animated splash icon overlay - stays visible until navigation completes */}
-        {showSplashIcon && <AnimatedSplashIcon onHide={() => setShowSplashIcon(false)} />}
       </View>
     </ErrorBoundary>
   );

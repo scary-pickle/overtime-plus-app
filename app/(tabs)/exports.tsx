@@ -581,9 +581,19 @@ export default function ExportsScreen() {
 
     if (selectedBatches.length === 1) {
       // Single file - just share it normally
-      handleSharePDF(selectedBatches[0]);
-      setSelectionMode(false);
-      setSelectedBatchIds(new Set());
+      setIsBatchSharing(true);
+      try {
+        await handleSharePDF(selectedBatches[0]);
+        // Mark as submitted after sharing
+        await markBatchAsSubmitted(selectedBatches[0].id, 'manual');
+        setSelectionMode(false);
+        setSelectedBatchIds(new Set());
+      } catch (error) {
+        debug.error('Failed to share single batch:', error);
+        Alert.alert('Sharing Failed', 'Failed to share PDF. Please try again.');
+      } finally {
+        setIsBatchSharing(false);
+      }
       return;
     }
 
@@ -682,6 +692,11 @@ export default function ExportsScreen() {
         dialogTitle: `Share Merged AVAC Export${selectedBatches.length > 1 ? 's' : ''} (${selectedBatches.length} file${selectedBatches.length > 1 ? 's' : ''} merged)`,
         UTI: 'com.adobe.pdf',
       });
+
+      // Mark all batches as submitted after sharing
+      for (const batch of selectedBatches) {
+        await markBatchAsSubmitted(batch.id, 'manual');
+      }
 
       // Clean up merged PDF file after a delay
       setTimeout(async () => {
@@ -2053,7 +2068,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   deleteActionButton: {
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#ffebee',
+    borderColor: '#ffcdd2',
   },
   shareActionButton: {
     backgroundColor: '#007AFF',
@@ -2241,6 +2257,7 @@ const styles = StyleSheet.create({
   headerSubmitActionButtonSmall: {
     backgroundColor: '#007AFF',
     borderColor: '#007AFF',
+    gap: 8,
   },
   headerShareActionButtonSmall: {
     backgroundColor: '#34C759',

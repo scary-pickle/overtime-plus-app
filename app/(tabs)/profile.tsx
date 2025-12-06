@@ -1228,16 +1228,6 @@ export default function ProfileScreen() {
             isEditing={isEditing}
             maxLength={8}
           />
-          <FieldInput
-            fieldKey="serviceEnquiryNumber"
-            label="Service Enquiry Number"
-            placeholder="Optional"
-            required={false}
-            initialValue={formData.serviceEnquiryNumber || ''}
-            onChangeText={fieldHandlers.serviceEnquiryNumber}
-            isDark={isDark}
-            isEditing={isEditing}
-          />
         </CollapsibleSection>
 
         {/* Delegate Details */}
@@ -1375,6 +1365,35 @@ export default function ProfileScreen() {
             </Text>
             <Ionicons name="log-out-outline" size={20} color="#dc2626" />
           </TouchableOpacity>
+
+          {/* Delete Account action */}
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => {
+              Alert.alert(
+                'Delete account',
+                'This will delete your account, synced data, and local data on this device. This cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Continue',
+                    style: 'destructive',
+                    onPress: () => router.push('/delete-account')
+                  }
+                ]
+              );
+            }}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel, { color: '#dc2626' }]}>
+                Delete Account
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Permanently remove account and data
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#f87171' : '#dc2626'} />
+          </TouchableOpacity>
         </CollapsibleSection>
 
         {/* Settings */}
@@ -1419,6 +1438,21 @@ export default function ProfileScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => router.push('/recently-deleted')}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Recently Deleted
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Restore or permanently delete
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
@@ -1449,21 +1483,6 @@ export default function ProfileScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
-            onPress={() => router.push('/recently-deleted')}
-          >
-            <View style={styles.settingLeft}>
-              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-                Recently Deleted
-              </Text>
-              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
-                Restore or permanently delete
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
-          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
@@ -1478,43 +1497,6 @@ export default function ProfileScreen() {
               </Text>
             </View>
             <Ionicons name="chatbubbles-outline" size={20} color={isDark ? '#999' : '#666'} />
-          </TouchableOpacity>
-          
-          <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
-            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-              Timezone
-            </Text>
-            <Text style={[styles.settingValue, isDark && styles.darkSettingValue]}>
-              Australia/Brisbane
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
-            onPress={() => {
-              Alert.alert(
-                'Delete account',
-                'This will delete your account, synced data, and local data on this device. This cannot be undone.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Continue',
-                    style: 'destructive',
-                    onPress: () => router.push('/delete-account')
-                  }
-                ]
-              );
-            }}
-          >
-            <View style={styles.settingLeft}>
-              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel, { color: '#dc2626' }]}>
-                Delete Account
-              </Text>
-              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
-                Permanently remove account and data
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={isDark ? '#f87171' : '#dc2626'} />
           </TouchableOpacity>
         </CollapsibleSection>
 

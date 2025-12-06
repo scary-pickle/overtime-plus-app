@@ -1,72 +1,49 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Image, StyleSheet, Animated, Platform, Easing } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Image, StyleSheet, Platform } from 'react-native';
 
 interface AnimatedSplashIconProps {
   onHide?: () => void;
 }
 
 /**
- * Animated splash icon component that shows the app icon with a smooth transition
- * Starts at 60% to match native splash screen (which should also be at 60% scale)
- * Provides a seamless transition from splash screen to app content
+ * Static splash icon component that shows the app icon
+ * No animations - provides predictable, consistent loading experience
+ * Matches native splash screen appearance
  */
 export function AnimatedSplashIcon({ onHide }: AnimatedSplashIconProps) {
-  const scaleAnim = useRef(new Animated.Value(0.6)).current; // Start at 60% to match native splash
-  const fadeAnim = useRef(new Animated.Value(1)).current;
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    // Keep icon at 60% scale to match native splash - no scale animation needed
-    // Just keep it visible until fade out
-    
-    // Keep icon visible until app is ready and navigation completes
-    // This ensures smooth transition from native splash to app content
-    const displayDuration = Platform.OS === 'ios' ? 1500 : 1500;
+    // Hide immediately - no delays, no animations
+    // The native splash screen handles the initial display
+    // This component just ensures smooth transition when native splash hides
     const hideTimer = setTimeout(() => {
-      // Fade out smoothly with easing
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 500,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(() => {
-        setIsVisible(false);
-        onHide?.(); // Notify parent to unmount component
-      });
-    }, displayDuration);
+      setIsVisible(false);
+      onHide?.(); // Notify parent to unmount component
+    }, 100); // Minimal delay just to ensure native splash has hidden
     
     return () => {
       clearTimeout(hideTimer);
     };
-  }, [fadeAnim, onHide]);
+  }, [onHide]);
 
   if (!isVisible) {
     return null;
   }
 
   return (
-    <Animated.View 
-      style={[
-        styles.container, 
-        { opacity: fadeAnim }
-      ]} 
+    <View 
+      style={styles.container} 
       pointerEvents="none"
     >
-      <Animated.View
-        style={[
-          styles.iconContainer,
-          {
-            transform: [{ scale: scaleAnim }],
-          },
-        ]}
-      >
+      <View style={styles.iconContainer}>
         <Image
           source={require('../assets/icon.png')}
           style={styles.icon}
           resizeMode="contain"
         />
-      </Animated.View>
-    </Animated.View>
+      </View>
+    </View>
   );
 }
 

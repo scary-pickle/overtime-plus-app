@@ -469,6 +469,25 @@ class Database {
     } catch (error) {
       // Column already exists, which is fine
     }
+
+    // Migration: Add leave columns to overtime_logs
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE overtime_logs ADD COLUMN leave_group_id TEXT;
+      `);
+      debug.debug('Added leave_group_id column to overtime_logs');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
+
+    try {
+      await this.db.execAsync(`
+        ALTER TABLE overtime_logs ADD COLUMN is_leave INTEGER DEFAULT 0;
+      `);
+      debug.debug('Added is_leave column to overtime_logs');
+    } catch (error) {
+      // Column already exists, which is fine
+    }
   }
 
   // UsualShifts CRUD
@@ -567,8 +586,9 @@ class Database {
         initials, status, export_batch_id, source, is_active_shift, concurrent_employment,
         smo_categories, user_id, shift_swap_id, linked_log_id, is_shift_swap,
         swap_partner_name, swap_partner_payroll_number, swap_partner_pay_level,
+        leave_group_id, is_leave,
         created_at, updated_at, deleted_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       log.id, log.date, log.rosteredStart || null, log.rosteredFinish || null,
       log.actualStart, log.actualFinish, log.mealBreakMinutes || 0, log.minutesOvertime,
@@ -579,6 +599,7 @@ class Database {
       userId || null,
       log.shiftSwapId || null, log.linkedLogId || null, log.isShiftSwap ? 1 : 0,
       log.swapPartnerName || null, log.swapPartnerPayrollNumber || null, log.swapPartnerPayLevel || null,
+      log.leaveGroupId || null, log.isLeave ? 1 : 0,
       log.createdAt, log.updatedAt, log.deletedAt || null
     ]);
   }
@@ -617,6 +638,8 @@ class Database {
       swapPartnerName: row.swap_partner_name as string | undefined,
       swapPartnerPayrollNumber: row.swap_partner_payroll_number as string | undefined,
       swapPartnerPayLevel: row.swap_partner_pay_level as string | undefined,
+      leaveGroupId: row.leave_group_id as string | undefined,
+      isLeave: row.is_leave === 1,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
       deletedAt: row.deleted_at as string | undefined
@@ -657,6 +680,8 @@ class Database {
       swapPartnerName: row.swap_partner_name as string | undefined,
       swapPartnerPayrollNumber: row.swap_partner_payroll_number as string | undefined,
       swapPartnerPayLevel: row.swap_partner_pay_level as string | undefined,
+      leaveGroupId: row.leave_group_id as string | undefined,
+      isLeave: row.is_leave === 1,
       createdAt: row.created_at as string,
       updatedAt: row.updated_at as string,
       deletedAt: row.deleted_at as string | undefined
@@ -674,6 +699,7 @@ class Database {
           export_batch_id = ?, source = ?, is_active_shift = ?, concurrent_employment = ?,
           smo_categories = ?, shift_swap_id = ?, linked_log_id = ?, is_shift_swap = ?,
           swap_partner_name = ?, swap_partner_payroll_number = ?, swap_partner_pay_level = ?,
+          leave_group_id = ?, is_leave = ?,
           updated_at = ?
         WHERE id = ? AND user_id = ?`
       : `UPDATE overtime_logs SET
@@ -683,6 +709,7 @@ class Database {
           export_batch_id = ?, source = ?, is_active_shift = ?, concurrent_employment = ?,
           smo_categories = ?, shift_swap_id = ?, linked_log_id = ?, is_shift_swap = ?,
           swap_partner_name = ?, swap_partner_payroll_number = ?, swap_partner_pay_level = ?,
+          leave_group_id = ?, is_leave = ?,
           updated_at = ?
         WHERE id = ? AND user_id IS NULL`;
     const params = userId
@@ -695,6 +722,7 @@ class Database {
           log.smoCategories ? JSON.stringify(log.smoCategories) : null,
           log.shiftSwapId || null, log.linkedLogId || null, log.isShiftSwap ? 1 : 0,
           log.swapPartnerName || null, log.swapPartnerPayrollNumber || null, log.swapPartnerPayLevel || null,
+          log.leaveGroupId || null, log.isLeave ? 1 : 0,
           new Date().toISOString(), log.id, userId
         ]
       : [
@@ -706,6 +734,7 @@ class Database {
           log.smoCategories ? JSON.stringify(log.smoCategories) : null,
           log.shiftSwapId || null, log.linkedLogId || null, log.isShiftSwap ? 1 : 0,
           log.swapPartnerName || null, log.swapPartnerPayrollNumber || null, log.swapPartnerPayLevel || null,
+          log.leaveGroupId || null, log.isLeave ? 1 : 0,
           new Date().toISOString(), log.id
         ];
 

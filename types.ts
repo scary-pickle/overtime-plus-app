@@ -69,6 +69,9 @@ export type OvertimeLog = {
   swapPartnerName?: string; // Full name of the swap partner
   swapPartnerPayrollNumber?: string; // Payroll number of the swap partner
   swapPartnerPayLevel?: string; // Pay level of the swap partner
+  // Leave fields
+  leaveGroupId?: string; // Shared ID for all logs in a leave group
+  isLeave?: boolean; // True if this log is part of a leave group
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;     // ISO timestamp for soft delete

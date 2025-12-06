@@ -164,6 +164,33 @@ export default function ExportPreviewScreen() {
         continue;
       }
       
+      // If this is a leave group, handle all related logs together
+      if (log.isLeave && log.leaveGroupId) {
+        // Find all logs with the same leaveGroupId (excluding the current log to prevent duplicates)
+        const relatedLeaveLogs = logs.filter(l => 
+          l.leaveGroupId === log.leaveGroupId && 
+          l.id !== log.id && // Exclude current log to prevent duplicate
+          (l.status === 'ready' || l.status === 'exported') &&
+          !processedLogIds.has(l.id)
+        );
+        
+        // Combine current log with related logs and sort by date (earliest first)
+        // Use a Set to ensure no duplicates by ID
+        const allLeaveLogsMap = new Map<string, OvertimeLog>();
+        allLeaveLogsMap.set(log.id, log);
+        relatedLeaveLogs.forEach(l => allLeaveLogsMap.set(l.id, l));
+        
+        const allLeaveLogs = Array.from(allLeaveLogsMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+        
+        // Add all leave logs to expanded logs
+        expandedLogs.push(...allLeaveLogs);
+        
+        // Mark all as processed
+        allLeaveLogs.forEach(l => processedLogIds.add(l.id));
+        
+        continue;
+      }
+      
       // If this is a shift swap, handle all related logs together
       if (log.isShiftSwap && log.shiftSwapId) {
         // Find all logs with the same shiftSwapId
@@ -269,9 +296,18 @@ export default function ExportPreviewScreen() {
       }
     }
 
+    // Final deduplication by ID to ensure no duplicates
+    const uniqueLogsMap = new Map<string, OvertimeLog>();
+    for (const log of expandedLogs) {
+      if (!uniqueLogsMap.has(log.id)) {
+        uniqueLogsMap.set(log.id, log);
+      }
+    }
+    const finalExpandedLogs = Array.from(uniqueLogsMap.values());
+
     // Validate logs (skip validation when regenerating to avoid errors while typing)
     if (!regenerate) {
-      const validation = validateLogsForPDF(expandedLogs);
+      const validation = validateLogsForPDF(finalExpandedLogs);
       if (!validation.valid) {
         setError(validation.errors.join(', '));
         return;
@@ -286,15 +322,15 @@ export default function ExportPreviewScreen() {
       const customFileName = customName.trim() ? `${customName.trim()}.pdf` : undefined;
       
       // Check if any logs are shift swaps - shift swaps must always use normal template
-      const hasShiftSwaps = expandedLogs.some(log => log.isShiftSwap);
+      const hasShiftSwaps = finalExpandedLogs.some(log => log.isShiftSwap);
       
       // Use SMO template if user is SMO and no shift swaps, otherwise use regular template
       // Shift swaps always require the normal template (SMO template doesn't support shift swaps)
       const pdfUri = hasShiftSwaps
-        ? await buildAVAC(profile, expandedLogs, customFileName)  // Force normal template for shift swaps
+        ? await buildAVAC(profile, finalExpandedLogs, customFileName)  // Force normal template for shift swaps
         : (profile.isSMO 
-            ? await buildSMOAVAC(profile, expandedLogs, customFileName)
-            : await buildAVAC(profile, expandedLogs, customFileName));
+            ? await buildSMOAVAC(profile, finalExpandedLogs, customFileName)
+            : await buildAVAC(profile, finalExpandedLogs, customFileName));
       setPdfUri(pdfUri);
       
       // Get userId for cloud upload
@@ -302,7 +338,7 @@ export default function ExportPreviewScreen() {
       
       if (!regenerate) {
         // Store the log IDs used for this batch (include both logs in shift swaps)
-        const logIdsForBatch = expandedLogs.map(log => log.id);
+        const logIdsForBatch = finalExpandedLogs.map(log => log.id);
         setBatchLogIds(logIdsForBatch);
         
         // Create export batch with custom name

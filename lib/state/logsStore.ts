@@ -93,6 +93,46 @@ interface LogsState {
     mealBreakMinutes: number;
     status: 'draft' | 'ready';
   }, userId?: string | null) => Promise<void>;
+  updateShiftSwapLogs: (data: {
+    shiftSwapId: string;
+    personADate: string;
+    personBDate: string;
+    personAInitials: string;
+    personARosteredStart: string | 'N/A';
+    personARosteredFinish: string | 'N/A';
+    personAActualStart: string;
+    personAActualFinish: string;
+    personBInitials: string;
+    personBName: string;
+    personBPayrollNumber: string;
+    personBPayLevel?: string;
+    personBRosteredStart: string | 'N/A';
+    personBRosteredFinish: string | 'N/A';
+    personBActualStart: string;
+    personBActualFinish: string;
+    mealBreakMinutes: number;
+    status: 'draft' | 'ready';
+  }, userId?: string | null) => Promise<void>;
+  addLeaveLogs: (data: {
+    leaveEntries: Array<{
+      date: string;
+      rosteredStart: string | 'N/A';
+      rosteredFinish: string | 'N/A';
+    }>;
+    comments: string;
+    status: 'draft' | 'ready';
+  }, userId?: string | null) => Promise<void>;
+  updateLeaveLogs: (data: {
+    leaveGroupId: string;
+    leaveEntries: Array<{
+      logId: string;
+      date: string;
+      rosteredStart: string | 'N/A';
+      rosteredFinish: string | 'N/A';
+    }>;
+    comments: string;
+    status: 'draft' | 'ready';
+  }, userId?: string | null) => Promise<void>;
   updateLog: (log: OvertimeLog, userId?: string | null) => Promise<void>;
   deleteLog: (id: string, userId?: string | null) => Promise<void>;
   markReady: (id: string, userId?: string | null) => Promise<void>;
@@ -918,6 +958,529 @@ export const useLogsStore = create<LogsState>((set, get) => ({
         error: error instanceof Error ? error.message : 'Failed to create shift swap logs' 
       });
       throw error; // Re-throw so the UI can show error
+    }
+  },
+
+  updateShiftSwapLogs: async (data, userId?: string | null) => {
+    set({ isLoading: true, error: null });
+    try {
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      
+      // Delete all existing logs in the shift swap group
+      const { logs } = get();
+      const existingLogs = logs.filter(l => l.shiftSwapId === data.shiftSwapId && l.isShiftSwap);
+      
+      for (const log of existingLogs) {
+        await database.deleteOvertimeLog(log.id, finalUserId);
+      }
+      
+      // Create new logs using the same logic as addShiftSwapLogs
+      const isSameDate = data.personADate === data.personBDate;
+      const shiftSwapId = data.shiftSwapId;
+      const baseTimestamp = Date.now();
+      const timestamp = baseTimestamp;
+      
+      const newLogs: OvertimeLog[] = [];
+      
+      if (isSameDate) {
+        // SAME DATE: Create 2 logs
+        const personAShiftDuration = data.personARosteredStart !== 'N/A' && data.personARosteredFinish !== 'N/A'
+          ? calculateDuration(data.personARosteredStart, data.personARosteredFinish) - data.mealBreakMinutes
+          : 0;
+        
+        const personBShiftDuration = data.personBRosteredStart !== 'N/A' && data.personBRosteredFinish !== 'N/A'
+          ? calculateDuration(data.personBRosteredStart, data.personBRosteredFinish) - data.mealBreakMinutes
+          : 0;
+        
+        const personAOvertime = Math.max(0, personBShiftDuration - personAShiftDuration);
+        const personAOvertimeRounded = roundToNearest5(personAOvertime);
+        const personBOvertime = Math.max(0, personAShiftDuration - personBShiftDuration);
+        const personBOvertimeRounded = roundToNearest5(personBOvertime);
+        
+        const personACalc = computeMinutes(
+          data.personAActualStart,
+          data.personAActualFinish,
+          data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+          data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+          data.mealBreakMinutes
+        );
+        
+        const personBCalc = computeMinutes(
+          data.personBActualStart,
+          data.personBActualFinish,
+          data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
+          data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
+          data.mealBreakMinutes
+        );
+        
+        const logA: OvertimeLog = {
+          id: `log_${timestamp}_A`,
+          date: data.personADate,
+          rosteredStart: data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+          rosteredFinish: data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+          actualStart: data.personAActualStart,
+          actualFinish: data.personAActualFinish,
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: personAOvertimeRounded,
+          category: 'Change shift',
+          comments: personACalc?.roundedOvertime !== personAOvertimeRounded 
+            ? `Shift swap (calculated: ${personACalc?.roundedOvertime || 0}min, adjusted: ${personAOvertimeRounded}min)`
+            : 'Shift swap',
+          initials: data.personAInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_B`,
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        const logB: OvertimeLog = {
+          id: `log_${timestamp}_B`,
+          date: data.personBDate,
+          rosteredStart: data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
+          rosteredFinish: data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
+          actualStart: data.personBActualStart,
+          actualFinish: data.personBActualFinish,
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: personBOvertimeRounded,
+          category: 'Change shift',
+          comments: personBCalc?.roundedOvertime !== personBOvertimeRounded 
+            ? `Shift swap (calculated: ${personBCalc?.roundedOvertime || 0}min, adjusted: ${personBOvertimeRounded}min)`
+            : 'Shift swap',
+          initials: data.personBInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_A`,
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        newLogs.push(logA, logB);
+      } else {
+        // DIFFERENT DATES: Create 4 logs
+        const now = Date.now();
+        const logA1CreatedAt = new Date(now + 3).toISOString();
+        const logA2CreatedAt = new Date(now + 2).toISOString();
+        const logB2CreatedAt = new Date(now + 1).toISOString();
+        const logB1CreatedAt = new Date(now).toISOString();
+        
+        const logA1: OvertimeLog = {
+          id: `log_${timestamp}_A1`,
+          date: data.personADate,
+          rosteredStart: data.personARosteredStart !== 'N/A' ? data.personARosteredStart : undefined,
+          rosteredFinish: data.personARosteredFinish !== 'N/A' ? data.personARosteredFinish : undefined,
+          actualStart: 'N/A',
+          actualFinish: 'N/A',
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: 0,
+          category: 'Change shift',
+          comments: 'Shift swap - original shift',
+          initials: data.personAInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_B2`,
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: logA1CreatedAt,
+          updatedAt: logA1CreatedAt,
+        };
+        
+        const logA2: OvertimeLog = {
+          id: `log_${timestamp}_A2`,
+          date: data.personBDate,
+          rosteredStart: undefined,
+          rosteredFinish: undefined,
+          actualStart: data.personAActualStart,
+          actualFinish: data.personAActualFinish,
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: computeMinutes(
+            data.personAActualStart,
+            data.personAActualFinish,
+            undefined,
+            undefined,
+            data.mealBreakMinutes
+          )?.roundedOvertime || 0,
+          category: 'Change shift',
+          comments: 'Shift swap - worked Person B\'s shift',
+          initials: data.personAInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_B1`,
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: logA2CreatedAt,
+          updatedAt: logA2CreatedAt,
+        };
+        
+        const logB1: OvertimeLog = {
+          id: `log_${timestamp}_B1`,
+          date: data.personADate,
+          rosteredStart: undefined,
+          rosteredFinish: undefined,
+          actualStart: data.personBActualStart,
+          actualFinish: data.personBActualFinish,
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: computeMinutes(
+            data.personBActualStart,
+            data.personBActualFinish,
+            undefined,
+            undefined,
+            data.mealBreakMinutes
+          )?.roundedOvertime || 0,
+          category: 'Change shift',
+          comments: 'Shift swap - worked Person A\'s shift',
+          initials: data.personBInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_A1`,
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: logB1CreatedAt,
+          updatedAt: logB1CreatedAt,
+        };
+        
+        const logB2: OvertimeLog = {
+          id: `log_${timestamp}_B2`,
+          date: data.personBDate,
+          rosteredStart: data.personBRosteredStart !== 'N/A' ? data.personBRosteredStart : undefined,
+          rosteredFinish: data.personBRosteredFinish !== 'N/A' ? data.personBRosteredFinish : undefined,
+          actualStart: 'N/A',
+          actualFinish: 'N/A',
+          mealBreakMinutes: data.mealBreakMinutes || undefined,
+          minutesOvertime: 0,
+          category: 'Change shift',
+          comments: 'Shift swap - original shift',
+          initials: data.personBInitials,
+          status: data.status,
+          source: 'manual',
+          shiftSwapId,
+          linkedLogId: `log_${timestamp}_A2`,
+          isShiftSwap: true,
+          swapPartnerName: data.personBName,
+          swapPartnerPayrollNumber: data.personBPayrollNumber,
+          swapPartnerPayLevel: data.personBPayLevel,
+          createdAt: logB2CreatedAt,
+          updatedAt: logB2CreatedAt,
+        };
+        
+        newLogs.push(logA1, logA2, logB1, logB2);
+      }
+      
+      // Save all new logs to database
+      for (const log of newLogs) {
+        await database.createOvertimeLog(log, finalUserId);
+      }
+      
+      // Update state
+      const logsWithoutGroup = logs.filter(l => l.shiftSwapId !== data.shiftSwapId);
+      const updatedLogs = [...newLogs, ...logsWithoutGroup];
+      
+      set({ 
+        logs: updatedLogs, 
+        isLoading: false,
+        error: null 
+      });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        // Delete old logs from cloud
+        for (const log of existingLogs) {
+          logsSync.deleteLog(log.id, finalUserId).catch(err => {
+            debug.error(`Background sync failed for shift swap log deletion ${log.id} (non-fatal):`, err);
+            syncQueue.add({
+              type: 'log',
+              operation: 'delete',
+              data: { id: log.id },
+              userId: finalUserId,
+            }).catch(() => {});
+          });
+        }
+        
+        // Upload new logs
+        for (const log of newLogs) {
+          logsSync.uploadLog(log, finalUserId).catch(err => {
+            debug.error(`Background sync failed for shift swap log ${log.id} (non-fatal):`, err);
+            syncQueue.add({
+              type: 'log',
+              operation: 'create',
+              data: log,
+              userId: finalUserId,
+            }).catch(() => {});
+          });
+        }
+      }
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to update shift swap logs' 
+      });
+      throw error;
+    }
+  },
+
+  addLeaveLogs: async (data, userId?: string | null) => {
+    set({ isLoading: true, error: null });
+    try {
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      const { profile, initials } = useProfileStore.getState();
+      
+      // Validate that we have at least one leave entry
+      if (!data.leaveEntries || data.leaveEntries.length === 0) {
+        throw new Error('At least one leave entry is required');
+      }
+      
+      // Generate shared leave group ID with more uniqueness
+      const now = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 9);
+      const leaveGroupId = `leave_${now}_${randomSuffix}`;
+      
+      // Deduplicate leave entries by date and rostered times
+      const uniqueEntries = new Map<string, typeof data.leaveEntries[0]>();
+      for (const entry of data.leaveEntries) {
+        const key = `${entry.date}_${entry.rosteredStart}_${entry.rosteredFinish}`;
+        if (!uniqueEntries.has(key)) {
+          uniqueEntries.set(key, entry);
+        }
+      }
+      
+      const deduplicatedEntries = Array.from(uniqueEntries.values());
+      
+      if (deduplicatedEntries.length !== data.leaveEntries.length) {
+        debug.debug('Deduplicated leave entries', {
+          original: data.leaveEntries.length,
+          deduplicated: deduplicatedEntries.length,
+        });
+      }
+      
+      // Create logs for each unique leave entry
+      const leaveLogs: OvertimeLog[] = [];
+      const logInitials = initials || profile?.employeeInitial || '';
+      
+      for (let i = 0; i < deduplicatedEntries.length; i++) {
+        const entry = deduplicatedEntries[i];
+        // Use more unique timestamp with random component to prevent collisions
+        const timestamp = now + i;
+        const uniqueId = `${timestamp}_${randomSuffix}_${i}`;
+        
+        // Validate entry
+        if (!entry.date) {
+          throw new Error(`Leave entry ${i + 1} is missing a date`);
+        }
+        
+        // For leave logs:
+        // - actualStart and actualFinish are always 'N/A'
+        // - rosteredStart and rosteredFinish come from entry
+        // - minutesOvertime is always 0 (no overtime for leave)
+        // - category is 'Change shift - cancel leave'
+        // - comments come from data.comments
+        const log: OvertimeLog = {
+          id: `log_${uniqueId}_leave`,
+          date: entry.date,
+          rosteredStart: entry.rosteredStart !== 'N/A' ? entry.rosteredStart : undefined,
+          rosteredFinish: entry.rosteredFinish !== 'N/A' ? entry.rosteredFinish : undefined,
+          actualStart: 'N/A',
+          actualFinish: 'N/A',
+          mealBreakMinutes: undefined,
+          minutesOvertime: 0, // No overtime for leave
+          category: 'Change shift - cancel leave',
+          comments: data.comments || undefined,
+          initials: logInitials,
+          status: data.status,
+          source: 'manual',
+          leaveGroupId,
+          isLeave: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        
+        leaveLogs.push(log);
+      }
+      
+      // Save all logs to local SQLite
+      for (const log of leaveLogs) {
+        await database.createOvertimeLog(log, finalUserId);
+      }
+      
+      const { logs } = get();
+      set({ 
+        logs: [...leaveLogs, ...logs], 
+        isLoading: false,
+        error: null 
+      });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        for (const log of leaveLogs) {
+          logsSync.uploadLog(log, finalUserId).catch(err => {
+            debug.error(`Background sync failed for leave log ${log.id} (non-fatal):`, err);
+            syncQueue.add({
+              type: 'log',
+              operation: 'create',
+              data: log,
+              userId: finalUserId,
+            }).catch(() => {});
+          });
+        }
+      }
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to create leave logs' 
+      });
+      throw error; // Re-throw so the UI can show error
+    }
+  },
+
+  updateLeaveLogs: async (data, userId?: string | null) => {
+    set({ isLoading: true, error: null });
+    try {
+      // Get userId from authStore if not provided
+      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
+      const { profile, initials } = useProfileStore.getState();
+      
+      // Validate that we have at least one leave entry
+      if (!data.leaveEntries || data.leaveEntries.length === 0) {
+        throw new Error('At least one leave entry is required');
+      }
+      
+      // Get all existing logs in this leave group
+      const { logs } = get();
+      const existingLogs = logs.filter(l => l.leaveGroupId === data.leaveGroupId && l.isLeave);
+      
+      if (existingLogs.length === 0) {
+        throw new Error('Leave group not found');
+      }
+      
+      const logInitials = initials || profile?.employeeInitial || '';
+      const updatedLogs: OvertimeLog[] = [];
+      const logsToDelete: string[] = [];
+      
+      // Update existing logs or create new ones
+      for (const entry of data.leaveEntries) {
+        const existingLog = existingLogs.find(l => l.id === entry.logId);
+        
+        if (existingLog) {
+          // Update existing log
+          const updatedLog: OvertimeLog = {
+            ...existingLog,
+            date: entry.date,
+            rosteredStart: entry.rosteredStart !== 'N/A' ? entry.rosteredStart : undefined,
+            rosteredFinish: entry.rosteredFinish !== 'N/A' ? entry.rosteredFinish : undefined,
+            comments: data.comments || undefined,
+            status: data.status,
+            initials: logInitials,
+            updatedAt: new Date().toISOString(),
+          };
+          updatedLogs.push(updatedLog);
+        } else {
+          // Create new log (if entry was added)
+          const newLog: OvertimeLog = {
+            id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_leave`,
+            date: entry.date,
+            rosteredStart: entry.rosteredStart !== 'N/A' ? entry.rosteredStart : undefined,
+            rosteredFinish: entry.rosteredFinish !== 'N/A' ? entry.rosteredFinish : undefined,
+            actualStart: 'N/A',
+            actualFinish: 'N/A',
+            mealBreakMinutes: undefined,
+            minutesOvertime: 0,
+            category: 'Change shift - cancel leave',
+            comments: data.comments || undefined,
+            initials: logInitials,
+            status: data.status,
+            source: 'manual',
+            leaveGroupId: data.leaveGroupId,
+            isLeave: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          updatedLogs.push(newLog);
+        }
+      }
+      
+      // Find logs to delete (existing logs not in the updated entries)
+      const updatedLogIds = new Set(data.leaveEntries.map(e => e.logId).filter(Boolean));
+      for (const existingLog of existingLogs) {
+        if (!updatedLogIds.has(existingLog.id)) {
+          logsToDelete.push(existingLog.id);
+        }
+      }
+      
+      // Update or create logs in database
+      for (const log of updatedLogs) {
+        await database.createOvertimeLog(log, finalUserId);
+      }
+      
+      // Delete removed logs
+      for (const logId of logsToDelete) {
+        await database.deleteOvertimeLog(logId, finalUserId);
+      }
+      
+      // Update state
+      const currentLogs = get().logs;
+      const logsWithoutGroup = currentLogs.filter(l => l.leaveGroupId !== data.leaveGroupId);
+      const newLogs = [...updatedLogs, ...logsWithoutGroup];
+      
+      set({ 
+        logs: newLogs, 
+        isLoading: false,
+        error: null 
+      });
+      
+      // Sync to Supabase in background (non-blocking)
+      if (finalUserId) {
+        const existingLogIds = new Set(existingLogs.map(l => l.id));
+        for (const log of updatedLogs) {
+          const isUpdate = existingLogIds.has(log.id);
+          logsSync.uploadLog(log, finalUserId).catch(err => {
+            debug.error(`Background sync failed for leave log ${log.id} (non-fatal):`, err);
+            syncQueue.add({
+              type: 'log',
+              operation: isUpdate ? 'update' : 'create',
+              data: log,
+              userId: finalUserId,
+            }).catch(() => {});
+          });
+        }
+        
+        for (const logId of logsToDelete) {
+          logsSync.deleteLog(logId, finalUserId).catch(err => {
+            debug.error(`Background sync failed for leave log deletion ${logId} (non-fatal):`, err);
+            syncQueue.add({
+              type: 'log',
+              operation: 'delete',
+              data: { id: logId },
+              userId: finalUserId,
+            }).catch(() => {});
+          });
+        }
+      }
+    } catch (error) {
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to update leave logs' 
+      });
+      throw error;
     }
   },
 

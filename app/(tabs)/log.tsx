@@ -115,24 +115,51 @@ export default function LogScreen() {
     router.push('/log/shift-swap');
   };
 
+  const handleLeave = () => {
+    handleCloseAddMenu();
+    router.push('/log/leave');
+  };
+
   const handleEditLog = (log: OvertimeLog) => {
-    // Shift swaps should be edited via the shift swap screen
-    if (log.isShiftSwap && log.linkedLogId) {
-      Alert.alert(
-        'Edit Shift Swap',
-        'Shift swaps must be edited using the shift swap screen. This will allow you to edit both entries together.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Edit Shift Swap', 
-            style: 'default',
-            onPress: () => {
-              // Navigate to shift swap screen - could pass log IDs as params if needed
-              router.push('/log/shift-swap');
+    // Leave logs should be edited via the edit leave screen
+    if (log.isLeave && log.leaveGroupId) {
+      if (log.status === 'exported') {
+        Alert.alert(
+          'Edit Exported Leave',
+          'This leave has already been exported. Editing will convert it back to ready status and you\'ll need to re-export it. Do you want to continue?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Continue Editing', 
+              style: 'default',
+              onPress: () => router.push(`/log/edit-leave?id=${log.id}`)
             }
-          }
-        ]
-      );
+          ]
+        );
+      } else {
+        router.push(`/log/edit-leave?id=${log.id}`);
+      }
+      return;
+    }
+    
+    // Shift swaps should be edited via the edit shift swap screen
+    if (log.isShiftSwap && log.shiftSwapId) {
+      if (log.status === 'exported') {
+        Alert.alert(
+          'Edit Exported Shift Swap',
+          'This shift swap has already been exported. Editing will convert it back to ready status and you\'ll need to re-export it. Do you want to continue?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Continue Editing', 
+              style: 'default',
+              onPress: () => router.push(`/log/edit-shift-swap?id=${log.id}`)
+            }
+          ]
+        );
+      } else {
+        router.push(`/log/edit-shift-swap?id=${log.id}`);
+      }
       return;
     }
     
@@ -504,6 +531,9 @@ export default function LogScreen() {
     // For 4-log swaps (different dates), use shiftSwapId
     const shiftSwapGroups = new Map<string, OvertimeLog[]>();
     
+    // Group leave logs together - show all logs with the same leaveGroupId as a group
+    const leaveGroups = new Map<string, OvertimeLog[]>();
+    
     // Collect all shift swap logs into groups (from ALL logs, so we can find all related logs)
     // All shift swap logs should have shiftSwapId, but we also handle legacy 2-log swaps with linkedLogId
     logs.forEach(log => {
@@ -533,10 +563,48 @@ export default function LogScreen() {
         }
         shiftSwapGroups.get(log.shiftSwapId)!.push(log);
       }
+      
+      // Group leave logs by leaveGroupId
+      if (log.leaveGroupId && log.isLeave) {
+        if (!leaveGroups.has(log.leaveGroupId)) {
+          leaveGroups.set(log.leaveGroupId, []);
+        }
+        leaveGroups.get(log.leaveGroupId)!.push(log);
+      }
     });
     
     // Pre-compute which logs should be shown as representatives for each shift swap group
     const representativesToShow = new Set<string>();
+    
+    // Pre-compute which logs should be shown as representatives for each leave group
+    const leaveRepresentativesToShow = new Set<string>();
+    
+    leaveGroups.forEach((leaveGroup, leaveGroupId) => {
+      // Skip if group is empty
+      if (leaveGroup.length === 0) {
+        return;
+      }
+      
+      // Get logs in this group that match the current status filter
+      const matchingStatusLogs = !isSelectionMode && filterStatus !== 'all'
+        ? leaveGroup.filter(l => l.status === filterStatus)
+        : leaveGroup;
+      
+      // If no logs in the group match the status filter, skip this group
+      if (matchingStatusLogs.length === 0) {
+        return;
+      }
+      
+      // Sort by date (earliest first) to use as representative
+      const sortedLogs = [...matchingStatusLogs].sort((a, b) => 
+        a.date.localeCompare(b.date)
+      );
+      
+      // Use the earliest log as representative
+      if (sortedLogs.length > 0) {
+        leaveRepresentativesToShow.add(sortedLogs[0].id);
+      }
+    });
     
     shiftSwapGroups.forEach((swapGroup, shiftSwapId) => {
       // Skip if group is empty
@@ -612,7 +680,13 @@ export default function LogScreen() {
         return false;
       }
       
-      // Show all non-shift-swap logs
+      // Check if this is a leave log
+      if (log.leaveGroupId && log.isLeave) {
+        // Only show if this is the representative for its leave group
+        return leaveRepresentativesToShow.has(log.id);
+      }
+      
+      // Show all non-shift-swap and non-leave logs
       return true;
     });
 
@@ -1013,10 +1087,22 @@ export default function LogScreen() {
     const isSelected = selectedLogs.has(item.id);
     
     // For shift swaps, find all related logs (by shiftSwapId)
+    // For leave, find all related logs (by leaveGroupId)
     let relatedLogs: OvertimeLog[] = [];
     let linkedLog: OvertimeLog | undefined = undefined;
     
-    if (item.isShiftSwap && item.shiftSwapId) {
+    if (item.isLeave && item.leaveGroupId) {
+      // Find all logs with the same leaveGroupId that match the current status filter
+      let candidateLogs = logs.filter(l => l.leaveGroupId === item.leaveGroupId && l.id !== item.id);
+      
+      // If we're filtering by status, only show related logs that match the filter
+      if (!isSelectionMode && filterStatus !== 'all') {
+        candidateLogs = candidateLogs.filter(l => l.status === filterStatus);
+      }
+      
+      // Sort by date (earliest first)
+      relatedLogs = candidateLogs.sort((a, b) => a.date.localeCompare(b.date));
+    } else if (item.isShiftSwap && item.shiftSwapId) {
       // Find all logs with the same shiftSwapId that match the current status filter
       let candidateLogs = logs.filter(l => l.shiftSwapId === item.shiftSwapId && l.id !== item.id);
       
@@ -1406,6 +1492,15 @@ export default function LogScreen() {
                   <Ionicons name="swap-horizontal-outline" size={20} color={isDark ? '#fff' : '#333'} />
                   <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
                     Shift Swap
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleLeave}
+                >
+                  <Ionicons name="calendar-outline" size={20} color={isDark ? '#fff' : '#333'} />
+                  <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
+                    Leave
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity

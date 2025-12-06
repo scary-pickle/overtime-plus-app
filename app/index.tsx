@@ -49,12 +49,10 @@ export default function Index() {
 
     hasNavigated.current = true;
     
-    // Navigate immediately - the animated text overlay will stay visible
-    // until the splash screen hides, creating a smooth transition
+    // Navigate immediately - no splash overlays, just native splash then app content
     router.replace(targetRoute);
   }, [isLoading, user, emailVerified, hasCompletedOnboarding, router]);
 
-  // Return null - animated text is now shown as a global overlay in _layout.tsx
-  // This ensures it stays visible across navigation until splash hides
+  // Return null - this is just a routing component
   return null;
 }
