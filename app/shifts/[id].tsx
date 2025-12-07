@@ -169,11 +169,8 @@ export default function EditShiftScreen() {
       });
       await updateShift(updatedShift);
       debug.debug('Shift updated successfully');
-      Alert.alert(
-        'Success',
-        'Shift pattern updated successfully!',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
+      // Navigate back immediately after successful update
+      router.back();
     } catch (error) {
       debug.error('Failed to update shift:', error);
       Alert.alert('Error', 'Failed to update shift pattern. Please try again.');
@@ -260,11 +257,8 @@ export default function EditShiftScreen() {
               await addShift(newShift);
 
               debug.debug('Shift series updated successfully');
-              Alert.alert(
-                'Success',
-                'Updated this shift and all future occurrences successfully!',
-                [{ text: 'OK', onPress: () => router.back() }]
-              );
+              // Navigate back immediately after successful update
+              router.back();
             } catch (error) {
               debug.error('Failed to update shift series:', error);
               Alert.alert('Error', 'Failed to update shift series. Please try again.');
