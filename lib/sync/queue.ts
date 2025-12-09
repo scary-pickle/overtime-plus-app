@@ -14,7 +14,7 @@ const RETRY_DELAY_MS = 1000; // Start with 1 second, exponential backoff
 
 interface SyncOperation {
   id: string;
-  type: 'log' | 'shift' | 'profile' | 'exportBatch' | 'pdfUpload';
+  type: 'log' | 'shift' | 'shift_template' | 'log_template' | 'profile' | 'exportBatch' | 'pdfUpload';
   operation: 'create' | 'update' | 'delete';
   data: any;
   userId: string;
@@ -77,6 +77,14 @@ class SyncQueue {
   async clearForUser(userId: string) {
     this.queue = this.queue.filter(op => op.userId !== userId);
     await this.persist();
+  }
+
+  hasPendingDeletion(type: SyncOperation['type'], itemId: string): boolean {
+    return this.queue.some(
+      op => op.type === type && 
+           op.operation === 'delete' && 
+           op.data?.id === itemId
+    );
   }
 
   private async persist() {

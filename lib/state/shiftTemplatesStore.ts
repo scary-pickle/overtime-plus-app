@@ -103,11 +103,19 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
                   }).catch(() => {});
                 });
               } else if (remoteTemplate) {
-                // Only remote - add it and save locally
-                mergedTemplates.push(remoteTemplate);
-                database.createShiftTemplate(remoteTemplate, userId).catch(err => {
-                  devLog.error('Failed to save remote-only template:', err);
-                });
+                // Only remote - check if there's a pending deletion before re-creating
+                const { syncQueue } = require('../sync/queue');
+                const hasPendingDeletion = syncQueue.hasPendingDeletion('shift_template', remoteTemplate.id);
+                
+                if (!hasPendingDeletion) {
+                  // No pending deletion - add it and save locally
+                  mergedTemplates.push(remoteTemplate);
+                  database.createShiftTemplate(remoteTemplate, userId).catch(err => {
+                    devLog.error('Failed to save remote-only template:', err);
+                  });
+                } else {
+                  devLog.debug('Skipping remote template with pending deletion:', remoteTemplate.id);
+                }
               }
             }
             
