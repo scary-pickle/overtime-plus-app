@@ -595,14 +595,6 @@ export default function NewShiftScreen() {
         {selectedTemplate && (
           <View style={styles.templateActionsRow}>
             <TouchableOpacity
-              style={[styles.templateActionButton, styles.clearAction, isDark && styles.darkTemplateActionButton]}
-              onPress={handleClearTemplate}
-            >
-              <Text style={[styles.templateActionText, isDark && styles.darkText]}>
-                Clear Template
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               style={[styles.templateActionButton, styles.editAction, isDark && styles.darkTemplateActionButton]}
               onPress={() => handleEditTemplate(selectedTemplate)}
             >
@@ -1080,9 +1072,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#007AFF',
-  },
-  clearAction: {
-    borderColor: '#ddd',
   },
   editAction: {},
   deleteAction: {
