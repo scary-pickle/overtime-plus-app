@@ -1516,7 +1516,7 @@ export default function ExportsScreen() {
       Alert.alert('Email Failed', 'Failed to merge or send PDF files. Please try again.');
       setSubmittingId(null);
     }
-  }, [selectedBatchIds, submissionStatusFilter, dateFilter, exportBatches, handleSubmitEmail]);
+  }, [selectedBatchIds, submissionStatusFilter, dateFilter, exportBatches, handleSubmitEmail, profile]);
 
   const handleBatchSubmit = useCallback(() => {
     if (selectedBatchIds.size === 0) return;

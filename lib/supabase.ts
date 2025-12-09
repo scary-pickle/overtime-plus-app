@@ -1570,28 +1570,15 @@ export const shiftTemplatesSync = {
 
       const supabaseId = findData[0].id;
 
-      // Soft delete by setting deleted_at
-      const deleteUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${supabaseId}`;
-      const deleteResponse = await authenticatedFetch(deleteUrl, {
-        method: 'PATCH',
-        headers: {
-          'Prefer': 'return=representation',
-        },
-        body: JSON.stringify({
-          deleted_at: new Date().toISOString(),
-        }),
+      // Soft delete using RPC function to bypass RLS policy issues
+      // @ts-ignore
+      const { error } = await supabase.rpc('soft_delete_shift', {
+        shift_uuid: supabaseId,
       });
 
-      if (!deleteResponse.ok) {
-        const errorText = await deleteResponse.text();
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { message: errorText };
-        }
-        debug.error('[shiftTemplatesSync.deleteTemplate] Error deleting template:', errorData);
-        throw errorData;
+      if (error) {
+        debug.error('[shiftTemplatesSync.deleteTemplate] Error deleting template:', error);
+        throw error;
       }
 
       debug.debug('[shiftTemplatesSync.deleteTemplate] Template deleted successfully from Supabase', {

@@ -16,6 +16,8 @@ import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
 import { TextInputModal } from '../../components/TextInputModal';
+import { TemplatePill } from '../../components/TemplatePill';
+import { EditTemplateModal } from '../../components/EditTemplateModal';
 import { getCurrentDate, getCurrentTime } from '../../lib/time';
 import { validateShift } from '../../lib/roster';
 import { UsualShift, ShiftTemplate } from '../../types';
@@ -50,7 +52,7 @@ export default function NewShiftScreen() {
   const isDark = colorScheme === 'dark';
   
   const { addShift } = useShiftsStore();
-  const { templates, loadTemplates, addTemplate } = useShiftTemplatesStore();
+  const { templates, loadTemplates, addTemplate, updateTemplate, deleteTemplate } = useShiftTemplatesStore();
   const { user } = useAuthStore();
   
   const [label, setLabel] = useState('');
@@ -67,6 +69,8 @@ export default function NewShiftScreen() {
   const [createdFromTemplate, setCreatedFromTemplate] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [showLabelModal, setShowLabelModal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<ShiftTemplate | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const dateRangeSectionY = useRef<number>(0);
 
@@ -106,6 +110,58 @@ export default function NewShiftScreen() {
     setRosteredStart(getCurrentTime());
     setRosteredFinish('');
     setMealBreakMinutes(30);
+  };
+
+  const handleEditTemplate = (template: ShiftTemplate) => {
+    setEditingTemplate(template);
+    setShowEditModal(true);
+  };
+
+  const handleSaveTemplate = async (template: ShiftTemplate) => {
+    try {
+      await updateTemplate(template, user?.id);
+      setShowEditModal(false);
+      setEditingTemplate(null);
+      // Reload templates to get updated list
+      await loadTemplates(user?.id);
+      Alert.alert('Success', 'Template updated successfully');
+    } catch (error) {
+      debug.error('Failed to update template:', error);
+      Alert.alert('Error', 'Failed to update template. Please try again.');
+      throw error;
+    }
+  };
+
+  const handleDeleteTemplate = (template: ShiftTemplate) => {
+    Alert.alert(
+      'Delete Template',
+      `Are you sure you want to delete "${template.label}"? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteTemplate(template.id, user?.id);
+              // If deleted template was selected, clear selection
+              if (selectedTemplateId === template.id) {
+                handleClearTemplate();
+              }
+              // Reload templates to get updated list
+              await loadTemplates(user?.id);
+              Alert.alert('Success', 'Template deleted successfully');
+            } catch (error) {
+              debug.error('Failed to delete template:', error);
+              Alert.alert('Error', 'Failed to delete template. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const validateForm = () => {
@@ -504,6 +560,8 @@ export default function NewShiftScreen() {
   const renderTemplateSelection = () => {
     if (templates.length === 0) return null;
 
+    const selectedTemplate = templates.find(t => t.id === selectedTemplateId) || null;
+
     return (
       <View style={[styles.section, isDark && styles.darkCard]}>
         <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
@@ -519,45 +577,41 @@ export default function NewShiftScreen() {
           contentContainerStyle={styles.templateContainer}
         >
           {templates.map((template) => (
-            <TouchableOpacity
+            <TemplatePill
               key={template.id}
-              style={[
-                styles.templateButton,
-                isDark && selectedTemplateId !== template.id && styles.darkTemplateButton,
-                selectedTemplateId === template.id && styles.selectedTemplateButton,
-              ]}
-              onPress={() => handleTemplateSelect(template)}
-            >
-              <Text
-                style={[
-                  styles.templateButtonText,
-                  isDark && selectedTemplateId !== template.id && styles.darkTemplateButtonText,
-                  selectedTemplateId === template.id && styles.selectedTemplateButtonText,
-                ]}
-              >
-                {template.label}
-              </Text>
-              <Text
-                style={[
-                  styles.templateButtonSubtext,
-                  isDark && selectedTemplateId !== template.id && styles.darkTemplateButtonSubtext,
-                  selectedTemplateId === template.id && styles.selectedTemplateButtonSubtext,
-                ]}
-              >
-                {template.rosteredStart} - {template.rosteredFinish}
-              </Text>
-            </TouchableOpacity>
+              template={template}
+              isSelected={selectedTemplateId === template.id}
+              onSelect={handleTemplateSelect}
+            />
           ))}
         </ScrollView>
-        {selectedTemplateId && (
-          <TouchableOpacity
-            style={[styles.clearTemplateButton, isDark && styles.darkClearTemplateButton]}
-            onPress={handleClearTemplate}
-          >
-            <Text style={[styles.clearTemplateButtonText, isDark && styles.darkClearTemplateButtonText]}>
-              Clear Template
-            </Text>
-          </TouchableOpacity>
+        {selectedTemplate && (
+          <View style={styles.templateActionsRow}>
+            <TouchableOpacity
+              style={[styles.templateActionButton, styles.clearAction, isDark && styles.darkTemplateActionButton]}
+              onPress={handleClearTemplate}
+            >
+              <Text style={[styles.templateActionText, isDark && styles.darkText]}>
+                Clear Template
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.templateActionButton, styles.editAction, isDark && styles.darkTemplateActionButton]}
+              onPress={() => handleEditTemplate(selectedTemplate)}
+            >
+              <Text style={[styles.templateActionText, isDark && styles.darkText]}>
+                Edit
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.templateActionButton, styles.deleteAction, isDark && styles.darkTemplateActionButton]}
+              onPress={() => handleDeleteTemplate(selectedTemplate)}
+            >
+              <Text style={[styles.templateActionText, styles.deleteText, isDark && styles.darkDeleteText]}>
+                Delete
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     );
@@ -650,6 +704,15 @@ export default function NewShiftScreen() {
       onCancel={() => setShowLabelModal(false)}
       confirmText="OK"
       cancelText="Cancel"
+    />
+    <EditTemplateModal
+      visible={showEditModal}
+      template={editingTemplate}
+      onSave={handleSaveTemplate}
+      onCancel={() => {
+        setShowEditModal(false);
+        setEditingTemplate(null);
+      }}
     />
     </SharedTimePickerProvider>
   );
@@ -988,26 +1051,40 @@ const styles = StyleSheet.create({
   darkTemplateButtonSubtext: {
     color: '#999',
   },
-  clearTemplateButton: {
+  templateActionsRow: {
     marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f5',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  templateActionButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#ddd',
-    alignSelf: 'flex-start',
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
   },
-  darkClearTemplateButton: {
+  darkTemplateActionButton: {
     backgroundColor: '#2c2c2e',
     borderColor: '#333',
   },
-  clearTemplateButtonText: {
+  templateActionText: {
     fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#007AFF',
   },
-  darkClearTemplateButtonText: {
-    color: '#999',
+  clearAction: {
+    borderColor: '#ddd',
+  },
+  editAction: {},
+  deleteAction: {
+    borderColor: '#f0c7c7',
+  },
+  deleteText: {
+    color: '#FF3B30',
+  },
+  darkDeleteText: {
+    color: '#FF453A',
   },
 });

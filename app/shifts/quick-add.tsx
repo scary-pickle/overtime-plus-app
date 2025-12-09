@@ -17,6 +17,8 @@ import { useAuthStore } from '../../lib/state/authStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
+import { TemplatePill } from '../../components/TemplatePill';
+import { EditTemplateModal } from '../../components/EditTemplateModal';
 import { getCurrentDate, getCurrentTime } from '../../lib/time';
 import { UsualShift, ShiftTemplate } from '../../types';
 import { getWeekIndex } from '../../lib/roster';
@@ -49,7 +51,7 @@ export default function QuickAddShiftScreen() {
   const isDark = colorScheme === 'dark';
   
   const { addShift } = useShiftsStore();
-  const { templates, loadTemplates } = useShiftTemplatesStore();
+  const { templates, loadTemplates, updateTemplate, deleteTemplate } = useShiftTemplatesStore();
   const { user } = useAuthStore();
   
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
@@ -59,6 +61,8 @@ export default function QuickAddShiftScreen() {
   const [showRepeatPicker, setShowRepeatPicker] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<ShiftTemplate | null>(null);
   const [addedShifts, setAddedShifts] = useState<QuickShiftEntry[]>([]);
+  const [editingTemplate, setEditingTemplate] = useState<ShiftTemplate | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
     loadTemplates(user?.id);
@@ -100,6 +104,66 @@ export default function QuickAddShiftScreen() {
     setSelectedTemplate(template);
     setStartTime(template.rosteredStart);
     setFinishTime(template.rosteredFinish);
+  };
+
+  const handleEditTemplate = (template: ShiftTemplate) => {
+    setEditingTemplate(template);
+    setShowEditModal(true);
+  };
+
+  const handleSaveTemplate = async (template: ShiftTemplate) => {
+    try {
+      await updateTemplate(template, user?.id);
+      setShowEditModal(false);
+      setEditingTemplate(null);
+      // Reload templates to get updated list
+      await loadTemplates(user?.id);
+      Alert.alert('Success', 'Template updated successfully');
+      // If the edited template was selected, update the form
+      if (selectedTemplate?.id === template.id) {
+        setSelectedTemplate(template);
+        setStartTime(template.rosteredStart);
+        setFinishTime(template.rosteredFinish);
+      }
+    } catch (error) {
+      debug.error('Failed to update template:', error);
+      Alert.alert('Error', 'Failed to update template. Please try again.');
+      throw error;
+    }
+  };
+
+  const handleDeleteTemplate = (template: ShiftTemplate) => {
+    Alert.alert(
+      'Delete Template',
+      `Are you sure you want to delete "${template.label}"? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteTemplate(template.id, user?.id);
+              // If deleted template was selected, clear selection
+              if (selectedTemplate?.id === template.id) {
+                setSelectedTemplate(null);
+                setStartTime(getCurrentTime());
+                setFinishTime('');
+              }
+              // Reload templates to get updated list
+              await loadTemplates(user?.id);
+              Alert.alert('Success', 'Template deleted successfully');
+            } catch (error) {
+              debug.error('Failed to delete template:', error);
+              Alert.alert('Error', 'Failed to delete template. Please try again.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Generate label for shift
@@ -260,37 +324,68 @@ export default function QuickAddShiftScreen() {
                 contentContainerStyle={styles.templateContainer}
               >
                 {templates.map(template => (
-                  <TouchableOpacity
+                  <TemplatePill
                     key={template.id}
-                    style={[
-                      styles.templatePill,
-                      isDark && styles.darkTemplatePill,
-                      selectedTemplate?.id === template.id && styles.selectedTemplatePill,
-                    ]}
-                    onPress={() => handleTemplateSelect(template)}
-                  >
-                    <Text
-                      style={[
-                        styles.templateLabel,
-                        isDark && styles.darkText,
-                        selectedTemplate?.id === template.id && styles.selectedTemplateText,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {template.label}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.templateTime,
-                        isDark && styles.darkDescription,
-                        selectedTemplate?.id === template.id && styles.selectedTemplateTime,
-                      ]}
-                    >
-                      {template.rosteredStart} - {template.rosteredFinish}
-                    </Text>
-                  </TouchableOpacity>
+                    template={template}
+                    isSelected={selectedTemplate?.id === template.id}
+                    onSelect={handleTemplateSelect}
+                  />
                 ))}
               </ScrollView>
+              {selectedTemplate && (
+                <View
+                  style={[
+                    styles.templateActions,
+                    isDark && styles.darkTemplateActions,
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.templateActionButton,
+                      styles.editAction,
+                      isDark && styles.darkTemplateActionButton,
+                    ]}
+                    onPress={() => handleEditTemplate(selectedTemplate)}
+                  >
+                    <Ionicons
+                      name="pencil"
+                      size={18}
+                      color={isDark ? '#fff' : '#007AFF'}
+                    />
+                    <Text
+                      style={[
+                        styles.templateActionText,
+                        isDark && styles.darkText,
+                      ]}
+                    >
+                      Edit template
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.templateActionButton,
+                      styles.deleteAction,
+                      isDark && styles.darkTemplateActionButton,
+                    ]}
+                    onPress={() => handleDeleteTemplate(selectedTemplate)}
+                  >
+                    <Ionicons
+                      name="trash"
+                      size={18}
+                      color="#FF3B30"
+                    />
+                    <Text
+                      style={[
+                        styles.templateActionText,
+                        styles.deleteText,
+                        isDark && styles.darkDeleteText,
+                      ]}
+                    >
+                      Delete template
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
 
@@ -504,6 +599,17 @@ export default function QuickAddShiftScreen() {
             </View>
           </TouchableOpacity>
         </Modal>
+
+        {/* Edit Template Modal */}
+        <EditTemplateModal
+          visible={showEditModal}
+          template={editingTemplate}
+          onSave={handleSaveTemplate}
+          onCancel={() => {
+            setShowEditModal(false);
+            setEditingTemplate(null);
+          }}
+        />
       </View>
     </SharedTimePickerProvider>
   );
@@ -600,6 +706,41 @@ const styles = StyleSheet.create({
     color: '#fff',
     opacity: 0.9,
   },
+  templateActions: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  darkTemplateActions: {},
+  templateActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+  darkTemplateActionButton: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#333',
+  },
+  templateActionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+  deleteText: {
+    color: '#FF3B30',
+  },
+  darkDeleteText: {
+    color: '#FF453A',
+  },
+  editAction: {},
+  deleteAction: {},
   repeatInputContainer: {
     backgroundColor: '#fff',
     borderRadius: 8,
