@@ -94,6 +94,13 @@ export default function NewShiftScreen() {
   }, [rosteredStart]);
 
   const handleTemplateSelect = (template: ShiftTemplate) => {
+    // If clicking the already selected template, clear it (toggle off)
+    if (selectedTemplateId === template.id) {
+      handleClearTemplate();
+      return;
+    }
+    
+    // Otherwise, select the new template
     setLabel(template.label);
     setRosteredStart(template.rosteredStart);
     setRosteredFinish(template.rosteredFinish);

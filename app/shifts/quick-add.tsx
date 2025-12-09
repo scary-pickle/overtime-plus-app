@@ -101,6 +101,13 @@ export default function QuickAddShiftScreen() {
 
   // Handle template selection
   const handleTemplateSelect = (template: ShiftTemplate) => {
+    // If clicking the already selected template, clear it (toggle off)
+    if (selectedTemplate?.id === template.id) {
+      setSelectedTemplate(null);
+      return;
+    }
+    
+    // Otherwise, select the new template
     setSelectedTemplate(template);
     setStartTime(template.rosteredStart);
     setFinishTime(template.rosteredFinish);
