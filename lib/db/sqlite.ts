@@ -951,7 +951,7 @@ class Database {
     try {
       debug.debug('Creating shift template:', { id: template.id, label: template.label, userId: userId ? `${userId.substring(0, 8)}...` : 'null' });
       await this.db.runAsync(`
-        INSERT INTO shift_templates (
+        INSERT OR REPLACE INTO shift_templates (
           id, label, rostered_start, rostered_finish,
           meal_break_minutes, user_id, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
