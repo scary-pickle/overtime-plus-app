@@ -178,7 +178,6 @@ export function EditTemplateModal({
                     onChangeText={setLabel}
                     placeholder="Enter template label"
                     placeholderTextColor={isDark ? '#666' : '#999'}
-                    autoFocus={true}
                     returnKeyType="done"
                   />
                 </View>
