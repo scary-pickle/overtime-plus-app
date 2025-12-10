@@ -121,10 +121,18 @@ export function EditTemplateModal({
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardAvoider}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+          keyboardVerticalOffset={0}
         >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, isDark && styles.darkModalContent]}>
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={handleCancel}
+          >
+            <TouchableOpacity 
+              style={[styles.modalContent, isDark && styles.darkModalContent]}
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+            >
               <View style={[styles.modalHeader, isDark && styles.darkModalHeader]}>
                 <Text style={[styles.modalTitle, isDark && styles.darkText]}>
                   Edit Template
@@ -256,8 +264,8 @@ export function EditTemplateModal({
                   )}
                 </View>
               </ScrollView>
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
     </SharedTimePickerProvider>
@@ -278,7 +286,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '90%',
-    height: '90%',
+    flex: 1,
   },
   darkModalContent: {
     backgroundColor: '#1c1c1e',
