@@ -43,7 +43,7 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
       
       // Sync from Supabase in background (non-blocking)
       if (userId) {
-        shiftTemplatesSync.downloadTemplates(userId).then(remoteTemplates => {
+        shiftTemplatesSync.downloadTemplates(userId).then(async (remoteTemplates) => {
           if (remoteTemplates.length > 0 || templates.length > 0) {
             devLog.debug('[shiftTemplatesStore.loadTemplates] Syncing templates from Supabase in background', {
               remoteCount: remoteTemplates.length,
@@ -103,18 +103,17 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
                   }).catch(() => {});
                 });
               } else if (remoteTemplate) {
-                // Only remote - check if there's a pending deletion before re-creating
-                const { syncQueue } = require('../sync/queue');
-                const hasPendingDeletion = syncQueue.hasPendingDeletion('shift_template', remoteTemplate.id);
+                // Only remote - check if it's been deleted locally before re-creating
+                const isDeleted = await database.isShiftTemplateDeleted(remoteTemplate.id, userId);
                 
-                if (!hasPendingDeletion) {
-                  // No pending deletion - add it and save locally
+                if (!isDeleted) {
+                  // Not deleted locally - add it and save locally
                   mergedTemplates.push(remoteTemplate);
                   database.createShiftTemplate(remoteTemplate, userId).catch(err => {
                     devLog.error('Failed to save remote-only template:', err);
                   });
                 } else {
-                  devLog.debug('Skipping remote template with pending deletion:', remoteTemplate.id);
+                  devLog.debug('Skipping remote template that was deleted locally:', remoteTemplate.id);
                 }
               }
             }
@@ -233,26 +232,32 @@ export const useShiftTemplatesStore = create<ShiftTemplatesState>((set, get) => 
       await database.deleteShiftTemplate(id, finalUserId);
       const { templates } = get();
       const filteredTemplates = templates.filter(t => t.id !== id);
-      devLog.debug('✅ ShiftTemplatesStore: Template deleted successfully');
+      
+      // Update UI immediately for better UX
       set({ 
         templates: filteredTemplates, 
         isLoading: false,
         error: null 
       });
       
-      // Sync delete to Supabase in background (non-blocking)
+      devLog.debug('✅ ShiftTemplatesStore: Template deleted from local database');
+      
+      // Sync delete to Supabase (blocking to ensure completion)
       if (finalUserId) {
-        shiftTemplatesSync.deleteTemplate(id, finalUserId).catch(err => {
-          devLog.error('Background sync failed (non-fatal):', err);
+        try {
+          await shiftTemplatesSync.deleteTemplate(id, finalUserId);
+          devLog.debug('✅ ShiftTemplatesStore: Template deleted from Supabase');
+        } catch (err) {
+          devLog.error('Failed to delete from Supabase, adding to sync queue:', err);
           // Add to sync queue for retry
           const { syncQueue } = require('../sync/queue');
-          syncQueue.add({
+          await syncQueue.add({
             type: 'shift_template',
             operation: 'delete',
             data: { id },
             userId: finalUserId,
-          }).catch(() => {});
-        });
+          });
+        }
       }
     } catch (error) {
       devLog.error('Failed to delete template:', error);

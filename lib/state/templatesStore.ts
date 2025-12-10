@@ -44,7 +44,7 @@ export const useTemplatesStore = create<TemplatesState>((set, get) => ({
       
       // Sync from Supabase in background (non-blocking)
       if (effectiveUserId) {
-        logTemplatesSync.downloadTemplates(effectiveUserId).then(remoteTemplates => {
+        logTemplatesSync.downloadTemplates(effectiveUserId).then(async (remoteTemplates) => {
           if (remoteTemplates.length > 0 || templates.length > 0) {
             debug.debug('[templatesStore.loadTemplates] Syncing templates from Supabase in background', {
               remoteCount: remoteTemplates.length,
@@ -59,42 +59,53 @@ export const useTemplatesStore = create<TemplatesState>((set, get) => ({
             const allTemplateIds = new Set([...localTemplateMap.keys(), ...remoteTemplateMap.keys()]);
             
             // Process all templates with timestamp comparison
-            for (const templateId of allTemplateIds) {
-              const localTemplate = localTemplateMap.get(templateId);
-              const remoteTemplate = remoteTemplateMap.get(templateId);
-              
-              if (localTemplate && remoteTemplate) {
-                // Both exist - use timestamp to determine which is newer
-                const localTime = new Date(localTemplate.updatedAt || localTemplate.createdAt).getTime();
-                const remoteTime = new Date(remoteTemplate.updatedAt || remoteTemplate.createdAt).getTime();
+            const processTemplates = async () => {
+              for (const templateId of allTemplateIds) {
+                const localTemplate = localTemplateMap.get(templateId);
+                const remoteTemplate = remoteTemplateMap.get(templateId);
                 
-                if (localTime >= remoteTime) {
-                  // Local is newer or equal - keep local, but upload it
+                if (localTemplate && remoteTemplate) {
+                  // Both exist - use timestamp to determine which is newer
+                  const localTime = new Date(localTemplate.updatedAt || localTemplate.createdAt).getTime();
+                  const remoteTime = new Date(remoteTemplate.updatedAt || remoteTemplate.createdAt).getTime();
+                  
+                  if (localTime >= remoteTime) {
+                    // Local is newer or equal - keep local, but upload it
+                    mergedTemplates.push(localTemplate);
+                    logTemplatesSync.uploadTemplate(localTemplate, effectiveUserId).catch(err => {
+                      debug.error('[templatesStore.loadTemplates] Failed to upload local template:', err);
+                    });
+                  } else {
+                    // Remote is newer - use remote and save locally
+                    mergedTemplates.push(remoteTemplate);
+                    database.createLogTemplate(remoteTemplate, effectiveUserId).catch(err => {
+                      debug.error('[templatesStore.loadTemplates] Failed to save remote template locally:', err);
+                    });
+                  }
+                } else if (remoteTemplate) {
+                  // Only remote exists - check if it's been deleted locally before re-creating
+                  const isDeleted = await database.isLogTemplateDeleted(remoteTemplate.id, effectiveUserId);
+                  
+                  if (!isDeleted) {
+                    // Not deleted locally - add it and save locally
+                    mergedTemplates.push(remoteTemplate);
+                    database.createLogTemplate(remoteTemplate, effectiveUserId).catch(err => {
+                      debug.error('[templatesStore.loadTemplates] Failed to save remote template locally:', err);
+                    });
+                  } else {
+                    debug.debug('[templatesStore.loadTemplates] Skipping remote template that was deleted locally:', remoteTemplate.id);
+                  }
+                } else if (localTemplate) {
+                  // Only local exists - keep it and upload it
                   mergedTemplates.push(localTemplate);
                   logTemplatesSync.uploadTemplate(localTemplate, effectiveUserId).catch(err => {
                     debug.error('[templatesStore.loadTemplates] Failed to upload local template:', err);
                   });
-                } else {
-                  // Remote is newer - use remote and save locally
-                  mergedTemplates.push(remoteTemplate);
-                  database.createLogTemplate(remoteTemplate, effectiveUserId).catch(err => {
-                    debug.error('[templatesStore.loadTemplates] Failed to save remote template locally:', err);
-                  });
                 }
-              } else if (remoteTemplate) {
-                // Only remote exists - add it and save locally
-                mergedTemplates.push(remoteTemplate);
-                database.createLogTemplate(remoteTemplate, effectiveUserId).catch(err => {
-                  debug.error('[templatesStore.loadTemplates] Failed to save remote template locally:', err);
-                });
-              } else if (localTemplate) {
-                // Only local exists - keep it and upload it
-                mergedTemplates.push(localTemplate);
-                logTemplatesSync.uploadTemplate(localTemplate, effectiveUserId).catch(err => {
-                  debug.error('[templatesStore.loadTemplates] Failed to upload local template:', err);
-                });
               }
-            }
+            };
+            
+            await processTemplates();
             
             // Update store with merged templates
             if (mergedTemplates.length !== templates.length || 
@@ -187,18 +198,32 @@ export const useTemplatesStore = create<TemplatesState>((set, get) => ({
       await database.deleteLogTemplate(id, effectiveUserId);
       const { templates } = get();
       const filteredTemplates = templates.filter(t => t.id !== id);
+      
+      // Update UI immediately for better UX
       set({ 
         templates: filteredTemplates, 
         isLoading: false,
         error: null 
       });
       
-      // Sync to Supabase in background (non-blocking)
+      debug.debug('[templatesStore.deleteTemplate] Template deleted from local database');
+      
+      // Sync delete to Supabase (blocking to ensure completion)
       if (effectiveUserId) {
-        logTemplatesSync.deleteTemplate(id, effectiveUserId).catch(err => {
-          debug.error('[templatesStore.deleteTemplate] Failed to sync template deletion to Supabase:', err);
-          // Don't update error state - background sync failures shouldn't block UI
-        });
+        try {
+          await logTemplatesSync.deleteTemplate(id, effectiveUserId);
+          debug.debug('[templatesStore.deleteTemplate] Template deleted from Supabase');
+        } catch (err) {
+          debug.error('[templatesStore.deleteTemplate] Failed to delete from Supabase, adding to sync queue:', err);
+          // Add to sync queue for retry
+          const { syncQueue } = require('../sync/queue');
+          await syncQueue.add({
+            type: 'log_template',
+            operation: 'delete',
+            data: { id },
+            userId: effectiveUserId,
+          });
+        }
       }
     } catch (error) {
       set({ 
