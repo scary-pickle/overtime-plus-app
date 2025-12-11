@@ -142,7 +142,7 @@ class SyncQueue {
 
   private async processOperation(operation: SyncOperation) {
     // Import sync functions dynamically to avoid circular dependencies
-    const { logsSync, shiftsSync, profileSync, exportSync } = await import('../supabase');
+    const { logsSync, shiftsSync, profileSync, exportSync, shiftTemplatesSync, logTemplatesSync } = await import('../supabase');
     const { database } = await import('../db/sqlite');
 
     switch (operation.type) {
@@ -173,6 +173,36 @@ class SyncQueue {
         } else if (operation.operation === 'delete') {
           await shiftsSync.deleteShift(operation.data.id, operation.userId);
           await database.deleteUsualShift(operation.data.id, operation.userId).catch(() => {});
+        }
+        break;
+
+      case 'shift_template':
+        if (operation.operation === 'create' || operation.operation === 'update') {
+          await shiftTemplatesSync.uploadTemplate(operation.data, operation.userId);
+          // Also save to local database
+          if (operation.operation === 'create') {
+            await database.createShiftTemplate(operation.data, operation.userId).catch(() => {});
+          } else {
+            await database.updateShiftTemplate(operation.data, operation.userId).catch(() => {});
+          }
+        } else if (operation.operation === 'delete') {
+          await shiftTemplatesSync.deleteTemplate(operation.data.id, operation.userId);
+          await database.deleteShiftTemplate(operation.data.id, operation.userId).catch(() => {});
+        }
+        break;
+
+      case 'log_template':
+        if (operation.operation === 'create' || operation.operation === 'update') {
+          await logTemplatesSync.uploadTemplate(operation.data, operation.userId);
+          // Also save to local database
+          if (operation.operation === 'create') {
+            await database.createLogTemplate(operation.data, operation.userId).catch(() => {});
+          } else {
+            await database.updateLogTemplate(operation.data, operation.userId).catch(() => {});
+          }
+        } else if (operation.operation === 'delete') {
+          await logTemplatesSync.deleteTemplate(operation.data.id, operation.userId);
+          await database.deleteLogTemplate(operation.data.id, operation.userId).catch(() => {});
         }
         break;
 

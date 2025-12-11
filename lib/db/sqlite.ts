@@ -691,6 +691,9 @@ class Database {
   async updateOvertimeLog(log: OvertimeLog, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    // Preserve the updatedAt timestamp if provided (for syncing), otherwise create new one (for user edits)
+    const updatedAt = log.updatedAt || new Date().toISOString();
+
     const query = userId
       ? `UPDATE overtime_logs SET
           date = ?, rostered_start = ?, rostered_finish = ?, actual_start = ?,
@@ -723,7 +726,7 @@ class Database {
           log.shiftSwapId || null, log.linkedLogId || null, log.isShiftSwap ? 1 : 0,
           log.swapPartnerName || null, log.swapPartnerPayrollNumber || null, log.swapPartnerPayLevel || null,
           log.leaveGroupId || null, log.isLeave ? 1 : 0,
-          new Date().toISOString(), log.id, userId
+          updatedAt, log.id, userId
         ]
       : [
           log.date, log.rosteredStart || null, log.rosteredFinish || null,
@@ -735,7 +738,7 @@ class Database {
           log.shiftSwapId || null, log.linkedLogId || null, log.isShiftSwap ? 1 : 0,
           log.swapPartnerName || null, log.swapPartnerPayrollNumber || null, log.swapPartnerPayLevel || null,
           log.leaveGroupId || null, log.isLeave ? 1 : 0,
-          new Date().toISOString(), log.id
+          updatedAt, log.id
         ];
 
     await this.db.runAsync(query, params);
@@ -944,6 +947,20 @@ class Database {
     await this.db.runAsync(query, params);
   }
 
+  async isLogTemplateDeleted(id: string, userId?: string | null): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `SELECT deleted_at FROM log_templates WHERE id = ? AND user_id = ? LIMIT 1`
+      : `SELECT deleted_at FROM log_templates WHERE id = ? AND user_id IS NULL LIMIT 1`;
+    const params = userId ? [id, userId] : [id];
+
+    const result = await this.db.getFirstAsync(query, params) as { deleted_at: string | null } | null;
+    
+    // If template doesn't exist or deleted_at is not null, consider it deleted
+    return !result || result.deleted_at !== null;
+  }
+
   // ShiftTemplates CRUD
   async createShiftTemplate(template: ShiftTemplate, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
@@ -1036,6 +1053,20 @@ class Database {
     const params = userId ? [new Date().toISOString(), id, userId] : [new Date().toISOString(), id];
 
     await this.db.runAsync(query, params);
+  }
+
+  async isShiftTemplateDeleted(id: string, userId?: string | null): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `SELECT deleted_at FROM shift_templates WHERE id = ? AND user_id = ? LIMIT 1`
+      : `SELECT deleted_at FROM shift_templates WHERE id = ? AND user_id IS NULL LIMIT 1`;
+    const params = userId ? [id, userId] : [id];
+
+    const result = await this.db.getFirstAsync(query, params) as { deleted_at: string | null } | null;
+    
+    // If template doesn't exist or deleted_at is not null, consider it deleted
+    return !result || result.deleted_at !== null;
   }
 
   async close(): Promise<void> {
