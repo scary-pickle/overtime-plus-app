@@ -1,23 +1,23 @@
 #!/bin/bash
 # Complete production setup script
-# Usage: ./scripts/setup_production.sh <SERVICE_ROLE_KEY>
+# Usage: ./scripts/setup_production.sh <PROJECT_REF> <SERVICE_ROLE_KEY>
 
 set -e
 
-SERVICE_ROLE_KEY="${1:-}"
-PROJECT_REF="ethllesuiqlomdtctvdh"
-SUPABASE_URL="https://ethllesuiqlomdtctvdh.supabase.co"
-ANON_KEY="sb_publishable_7D7j2G1eLsZjQV9zWTBJcQ_zc5TtUFu"
+PROJECT_REF="${1:-}"
+SERVICE_ROLE_KEY="${2:-}"
+SUPABASE_URL=""
 
-if [ -z "$SERVICE_ROLE_KEY" ]; then
-  echo "Usage: $0 <SERVICE_ROLE_KEY>"
+if [ -z "$PROJECT_REF" ] || [ -z "$SERVICE_ROLE_KEY" ]; then
+  echo "Usage: $0 <PROJECT_REF> <SERVICE_ROLE_KEY>"
   echo ""
-  echo "Get your service role key from:"
-  echo "https://supabase.com/dashboard/project/$PROJECT_REF/settings/api"
+  echo "Get your keys from: https://supabase.com/dashboard/project/<project-ref>/settings/api"
   echo ""
   echo "⚠️  WARNING: Service role key has full database access. Keep it secret!"
   exit 1
 fi
+
+SUPABASE_URL="https://${PROJECT_REF}.supabase.co"
 
 echo "🚀 Setting up OTA templates in production..."
 echo "Project: $PROJECT_REF"
@@ -109,7 +109,7 @@ fi
 # Step 6: Seed coordinate mappings
 echo ""
 echo "Step 6: Seeding coordinate mappings..."
-python3 scripts/seed_production_templates.py "$SUPABASE_URL" "$ANON_KEY"
+python3 scripts/seed_production_templates.py "$SUPABASE_URL" "$SERVICE_ROLE_KEY"
 
 echo ""
 echo "✅ Setup complete!"
@@ -118,4 +118,3 @@ echo "Next steps:"
 echo "1. Verify table exists: Check Supabase Dashboard → Table Editor → pdf_templates"
 echo "2. Verify storage: Check Storage → pdf-templates bucket"
 echo "3. Test in app: Set EXPO_PUBLIC_TEMPLATE_OTA=true and test template download"
-

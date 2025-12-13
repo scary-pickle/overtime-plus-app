@@ -194,19 +194,23 @@ serve(async (req) => {
       });
     }
 
-    // Optional: Require authorization header for manual triggers
-    const authHeader = req.headers.get('authorization');
+    // Require secret header for all invocations (protects service-role operations)
     const cronSecret = Deno.env.get('CRON_SECRET');
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      // Allow unauthenticated requests from Supabase cron (they don't send auth)
-      // But require auth for manual triggers
-      const url = new URL(req.url);
-      if (url.searchParams.get('manual') === 'true' && !authHeader) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: JSON_HEADERS,
-        });
-      }
+    if (!cronSecret) {
+      console.error('[revenuecat-reconcile] CRON_SECRET not set');
+      return new Response(JSON.stringify({ error: 'Server misconfigured' }), {
+        status: 500,
+        headers: JSON_HEADERS,
+      });
+    }
+
+    const authHeader = req.headers.get('authorization');
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      console.warn('[revenuecat-reconcile] Missing or invalid authorization header');
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: JSON_HEADERS,
+      });
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -310,4 +314,3 @@ serve(async (req) => {
     });
   }
 });
-

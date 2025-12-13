@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script to seed PDF template coordinate mappings in production Supabase
-Usage: python3 scripts/seed_production_templates.py <SUPABASE_URL> <SUPABASE_ANON_KEY>
+Usage: python3 scripts/seed_production_templates.py <SUPABASE_URL> <SUPABASE_SERVICE_ROLE_KEY>
 """
 
 import sys
@@ -14,12 +14,12 @@ def load_coordinate_mapping(file_path):
     with open(file_path, 'r') as f:
         return json.load(f)
 
-def seed_template(supabase_url, anon_key, template_type, version, storage_path, coordinates):
+def seed_template(supabase_url, service_role_key, template_type, version, storage_path, coordinates):
     """Insert or update a template in the database"""
     url = f"{supabase_url}/rest/v1/pdf_templates"
     headers = {
-        "apikey": anon_key,
-        "Authorization": f"Bearer {anon_key}",
+        "apikey": service_role_key,
+        "Authorization": f"Bearer {service_role_key}",
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates"
     }
@@ -43,11 +43,11 @@ def seed_template(supabase_url, anon_key, template_type, version, storage_path, 
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: python3 scripts/seed_production_templates.py <SUPABASE_URL> <SUPABASE_ANON_KEY>")
+        print("Usage: python3 scripts/seed_production_templates.py <SUPABASE_URL> <SUPABASE_SERVICE_ROLE_KEY>")
         sys.exit(1)
     
     supabase_url = sys.argv[1]
-    anon_key = sys.argv[2]
+    service_role_key = sys.argv[2]
     
     # Load coordinate mappings
     base_dir = Path(__file__).parent.parent
@@ -71,7 +71,7 @@ def main():
     # Seed normal AVAC
     success1 = seed_template(
         supabase_url,
-        anon_key,
+        service_role_key,
         "avac_normal",
         "v1",
         "pdf-templates/avac_normal/v1.pdf",
@@ -81,7 +81,7 @@ def main():
     # Seed SMO AVAC
     success2 = seed_template(
         supabase_url,
-        anon_key,
+        service_role_key,
         "avac_smo",
         "v1",
         "pdf-templates/avac_smo/v1.pdf",
@@ -97,4 +97,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

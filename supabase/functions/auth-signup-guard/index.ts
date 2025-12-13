@@ -22,16 +22,12 @@ serve(async (req) => {
     const expectedSecret = Deno.env.get('SIGNUP_GUARD_SECRET');
     const allowDevMode = Deno.env.get('ALLOW_DEV_MODE') === 'true';
     
-    // Log all incoming request details for debugging (including if request reaches function)
-    console.log('[auth-signup-guard] ===== REQUEST RECEIVED =====');
+    // Minimal request metadata logging (avoid logging secrets/PII)
     console.log('[auth-signup-guard] Request received', {
       method: req.method,
       url: req.url,
+      headerKeys: Array.from(req.headers.keys()),
       hasWebhookSignature: !!req.headers.get('webhook-signature'),
-      hasWebhookTimestamp: !!req.headers.get('webhook-timestamp'),
-      hasWebhookId: !!req.headers.get('webhook-id'),
-      hasAuthorization: !!req.headers.get('authorization'),
-      allHeaders: Object.fromEntries(req.headers.entries()),
     });
     
     // Get raw body string first (needed for signature verification)
@@ -58,7 +54,7 @@ serve(async (req) => {
         bodyKeys: Object.keys(body),
         hasUser: !!body?.user,
         hasRecord: !!body?.record,
-        email: body?.user?.email || body?.record?.email || body?.email,
+        hasEmail: !!(body?.user?.email || body?.record?.email || body?.email),
       });
     } catch (e) {
       console.warn('[auth-signup-guard] Failed to parse request body:', e);
@@ -162,11 +158,6 @@ serve(async (req) => {
             }
           }
           
-          console.log('[auth-signup-guard] Using secret for signature verification', {
-            secretLength: secretToUse.length,
-            secretFormat: expectedSecret.startsWith('v1,whsec_') ? 'v1,whsec_' : 'raw',
-          });
-          
           // Try multiple secret formats and payload formats
           // Some implementations use the full secret string (including v1,whsec_ prefix) as the HMAC key
           const secretVariants: { name: string; bytes: Uint8Array }[] = [
@@ -255,26 +246,11 @@ serve(async (req) => {
               matchedPayloadFormat: matchedCombo?.payloadFormat
             });
           } else {
-            // Log first few chars of signatures for debugging (without exposing full values)
-            const sigPreview = signature.substring(0, 10) + '...';
-            const computedPreviews = computedSignatures.map(c => ({
-              secretVariant: c.secretVariant,
-              payloadFormat: c.payloadFormat,
-              preview: c.signature.substring(0, 10) + '...'
-            }));
-            
             console.warn('[auth-signup-guard] Webhook signature verification failed', {
-              signatureLength: signature.length,
-              signaturePreview: sigPreview,
-              timestamp: webhookTimestamp,
-              webhookId: webhookId,
-              bodyLength: rawBody.length,
-              bodyPreview: rawBody.substring(0, 100) + '...',
-              secretLength: secretToUse.length,
-              secretFormat: expectedSecret.startsWith('v1,whsec_') ? 'v1,whsec_' : 'raw',
-              secretPreview: expectedSecret.substring(0, 20) + '...',
-              triedCombinations: computedPreviews,
-              totalCombinationsTried: computedSignatures.length,
+              timestampPresent: !!webhookTimestamp,
+              webhookIdPresent: !!webhookId,
+              payloadBytes: rawBody.length,
+              combinationsTried: computedSignatures.length,
             });
             
             // The signatures don't match - this could mean:
@@ -374,8 +350,6 @@ serve(async (req) => {
           hasValidSignature: hasValidSignature,
           hasHeaderSecret: !!headerSecret,
           hasBodySecret: !!secretFromBody,
-          headerLength: headerSecret.length,
-          bodyLength: secretFromBody.length,
           bodyKeys: Object.keys(body || {}),
           contentType: req.headers.get('content-type'),
           webhookId: webhookId || 'none',
