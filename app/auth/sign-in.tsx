@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 
@@ -42,54 +42,57 @@ export default function SignIn() {
 
   return (
     <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={[styles.title, isDark && styles.darkTitle]}>Welcome back</Text>
-          <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>Sign in to continue</Text>
-        </View>
-        <View style={[styles.card, isDark && styles.darkCard]}>
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Email</Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@health.qld.gov.au"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              style={[styles.input, isDark && styles.darkInput]}
-            />
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={styles.content}>
+          <View style={styles.header}>
+            <Text style={[styles.title, isDark && styles.darkTitle]}>Welcome back</Text>
+            <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>Sign in to continue</Text>
           </View>
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>Password</Text>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              secureTextEntry
-              style={[styles.input, isDark && styles.darkInput]}
-            />
+          <View style={[styles.card, isDark && styles.darkCard]}>
+            <View style={styles.field}>
+              <Text style={[styles.label, isDark && styles.darkLabel]}>Email</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@health.qld.gov.au"
+                placeholderTextColor={isDark ? '#666' : '#999'}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoFocus={true}
+                style={[styles.input, isDark && styles.darkInput]}
+              />
+            </View>
+            <View style={styles.field}>
+              <Text style={[styles.label, isDark && styles.darkLabel]}>Password</Text>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                placeholderTextColor={isDark ? '#666' : '#999'}
+                secureTextEntry
+                style={[styles.input, isDark && styles.darkInput]}
+              />
+            </View>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <TouchableOpacity 
+              onPress={() => {
+                debug('[sign-in] Sign In button pressed', { isLoading, emailLength: email.length, passwordLength: password.length });
+                onSubmit();
+              }}
+              disabled={isLoading} 
+              style={[styles.button, isLoading && styles.buttonDisabled]}
+            >
+              <Text style={styles.buttonText}>{isLoading ? 'Signing in...' : 'Sign In'}</Text>
+            </TouchableOpacity>
           </View>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <TouchableOpacity 
-            onPress={() => {
-              debug('[sign-in] Sign In button pressed', { isLoading, emailLength: email.length, passwordLength: password.length });
-              onSubmit();
-            }}
-            disabled={isLoading} 
-            style={[styles.button, isLoading && styles.buttonDisabled]}
-          >
-            <Text style={styles.buttonText}>{isLoading ? 'Signing in...' : 'Sign In'}</Text>
-          </TouchableOpacity>
+          <Link href="/auth/forgot-password">
+            <Text style={[styles.link, isDark && styles.darkLink]}>Forgot password?</Text>
+          </Link>
+          <Link href="/auth/sign-up">
+            <Text style={[styles.link, isDark && styles.darkLink, styles.linkMargin]}>Don't have an account? Sign up</Text>
+          </Link>
         </View>
-        <Link href="/auth/forgot-password">
-          <Text style={[styles.link, isDark && styles.darkLink]}>Forgot password?</Text>
-        </Link>
-        <Link href="/auth/sign-up">
-          <Text style={[styles.link, isDark && styles.darkLink, styles.linkMargin]}>Don't have an account? Sign up</Text>
-        </Link>
-      </View>
+      </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 }

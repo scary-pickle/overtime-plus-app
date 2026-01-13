@@ -372,25 +372,12 @@ async function findPackageByIdentifier(
     offering.availablePackages.forEach((pkg) => packages.push(pkg));
   });
 
-  const matchesIdentifier = (pkg: PurchasesPackage, target: string) => {
-    if (pkg.identifier === target) {
-      return true;
-    }
-    if (pkg.product?.identifier === target) {
-      return true;
-    }
-    const anyPkg = pkg as any;
-    if (anyPkg.product?.productIdentifier === target) {
-      return true;
-    }
-    if (anyPkg.storeProduct?.identifier === target) {
-      return true;
-    }
-    if (anyPkg.storeProduct?.productIdentifier === target) {
-      return true;
-    }
-    return false;
-  };
-
-  return packages.find(pkg => matchesIdentifier(pkg, identifier)) || null;
+  return (
+    packages.find(
+      (pkg) =>
+        pkg.identifier === identifier ||
+        pkg.product?.identifier === identifier ||
+        pkg.product?.productIdentifier === identifier
+    ) || null
+  );
 }

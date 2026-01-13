@@ -26,7 +26,7 @@ export function TimeInput({ value, onChange, placeholder = "Select time", disabl
     }
     
     const date = getDateFromTimeString(value);
-    openPicker(inputId, date, onChange);
+    openPicker(inputId, date, value, onChange);
   };
 
   const formatDisplayTime = (timeString: string) => {

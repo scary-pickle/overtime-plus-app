@@ -207,7 +207,7 @@ serve(async (req) => {
     const authHeader = req.headers.get('authorization');
     if (authHeader !== `Bearer ${cronSecret}`) {
       console.warn('[revenuecat-reconcile] Missing or invalid authorization header');
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
         status: 401,
         headers: JSON_HEADERS,
       });

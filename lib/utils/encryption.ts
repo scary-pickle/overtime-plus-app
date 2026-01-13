@@ -4,7 +4,7 @@
  * Includes backwards-compatible decryption for legacy XOR-encrypted values.
  */
 
-import { xchacha20poly1305 } from '@noble/ciphers/chacha';
+import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { getRandomBytesAsync } from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import base64 from 'react-native-base64';

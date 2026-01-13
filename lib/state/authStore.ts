@@ -1314,14 +1314,21 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           };
 
           let hardDeleteError = null;
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            const result = await invokeWithTimeout(8000).catch(err => ({ error: err }));
+          // Increased retries and timeout: 60s first attempt, 30s retries, up to 3 attempts
+          const timeouts = [60000, 30000, 30000]; // 60s, 30s, 30s
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const timeout = timeouts[attempt - 1] || 30000;
+            const result = await invokeWithTimeout(timeout).catch(err => ({ error: err }));
             hardDeleteError = (result as any)?.error || null;
             if (!hardDeleteError) {
+              debug.debug(`[deleteAccount] delete-account succeeded on attempt ${attempt}`);
               break;
             }
-            debug.warn(`[deleteAccount] delete-account attempt ${attempt} failed`, hardDeleteError);
-            await new Promise(res => setTimeout(res, 300 * attempt));
+            debug.warn(`[deleteAccount] delete-account attempt ${attempt} failed (timeout: ${timeout}ms)`, hardDeleteError);
+            if (attempt < 3) {
+              // Exponential backoff: 300ms, 600ms, 900ms
+              await new Promise(res => setTimeout(res, 300 * attempt));
+            }
           }
 
           if (hardDeleteError) {

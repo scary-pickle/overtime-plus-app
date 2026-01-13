@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   darkCard: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#1c1c1e',
   },
   infoHeader: {
     flexDirection: 'row',

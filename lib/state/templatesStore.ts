@@ -51,6 +51,14 @@ export const useTemplatesStore = create<TemplatesState>((set, get) => ({
               localCount: templates.length,
             });
             
+            // Apply local tombstones to avoid resurrecting deleted templates
+            const deletedTemplates = await database.getDeletedLogTemplates(effectiveUserId).catch(() => []);
+            const deletedTemplateIds = new Set(deletedTemplates.map(t => t.id));
+            remoteTemplates = remoteTemplates.filter(t => !deletedTemplateIds.has(t.id));
+            deletedTemplateIds.forEach(id => {
+              logTemplatesSync.deleteTemplate(id, effectiveUserId).catch(() => {});
+            });
+            
             // Merge with timestamp-based conflict resolution
             const localTemplateMap = new Map(templates.map(template => [template.id, template]));
             const remoteTemplateMap = new Map(remoteTemplates.map(template => [template.id, template]));
@@ -96,11 +104,11 @@ export const useTemplatesStore = create<TemplatesState>((set, get) => ({
                     debug.debug('[templatesStore.loadTemplates] Skipping remote template that was deleted locally:', remoteTemplate.id);
                   }
                 } else if (localTemplate) {
-                  // Only local exists - keep it and upload it
-                  mergedTemplates.push(localTemplate);
-                  logTemplatesSync.uploadTemplate(localTemplate, effectiveUserId).catch(err => {
-                    debug.error('[templatesStore.loadTemplates] Failed to upload local template:', err);
+                  // Remote missing - treat as remote deletion; remove locally and propagate delete
+                  await database.deleteLogTemplate(localTemplate.id, effectiveUserId).catch(err => {
+                    debug.error('Failed to delete local template after remote removal:', err);
                   });
+                  logTemplatesSync.deleteTemplate(localTemplate.id, effectiveUserId).catch(() => {});
                 }
               }
             };

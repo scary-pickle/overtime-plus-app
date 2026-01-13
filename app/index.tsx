@@ -1,6 +1,6 @@
 import 'react-native-reanimated';
 import React, { useEffect, useRef } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { useAuthStore } from '../lib/state/authStore';
 import { createScopedLogger } from '../lib/utils/logger';
 
@@ -8,6 +8,7 @@ const logger = createScopedLogger('Index');
 
 export default function Index() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, emailVerified, hasCompletedOnboarding, isLoading } = useAuthStore();
   const hasNavigated = useRef(false);
 
@@ -31,6 +32,13 @@ export default function Index() {
       return;
     }
 
+    // Check if we're currently on an auth callback or reset password screen
+    // If so, don't interfere with that flow
+    if (pathname?.includes('auth-callback') || pathname?.includes('reset-password')) {
+      logger.debug('[app/index] On auth callback/reset password screen, skipping navigation', { pathname });
+      return;
+    }
+
     // Navigate based on auth state
     let targetRoute: string;
     if (!user) {
@@ -49,7 +57,7 @@ export default function Index() {
 
     hasNavigated.current = true;
     
-    // Navigate immediately - no splash overlays, just native splash then app content
+    // Navigate immediately; launch overlay handles the loading transition
     router.replace(targetRoute);
   }, [isLoading, user, emailVerified, hasCompletedOnboarding, router]);
 

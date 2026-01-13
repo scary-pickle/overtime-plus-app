@@ -6,7 +6,7 @@ interface SharedTimePickerContextType {
   showPicker: boolean;
   pickerValue: Date;
   activeInputId: string | null;
-  openPicker: (inputId: string, value: Date, onTimeChange: (time: string) => void) => void;
+  openPicker: (inputId: string, value: Date, originalValue: string, onTimeChange: (time: string) => void) => void;
   closePicker: () => void;
   renderPicker: () => React.ReactNode;
 }
@@ -21,11 +21,20 @@ export function SharedTimePickerProvider({ children }: { children: React.ReactNo
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const openPicker = (inputId: string, value: Date, timeChangeCallback: (time: string) => void) => {
+  const openPicker = (inputId: string, value: Date, originalValue: string, timeChangeCallback: (time: string) => void) => {
     setPickerValue(value);
     setActiveInputId(inputId);
     setOnTimeChange(() => timeChangeCallback);
     setShowPicker(true);
+    
+    // Automatically set the time when picker opens if the field was empty
+    // This ensures the displayed time is immediately recognized as selected
+    if (!originalValue || originalValue === 'N/A') {
+      const hours = value.getHours();
+      const minutes = value.getMinutes();
+      const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      timeChangeCallback(timeString);
+    }
   };
 
   const closePicker = () => {

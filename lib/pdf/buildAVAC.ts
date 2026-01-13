@@ -17,7 +17,7 @@ function sanitizeTextForPDF(text: string): string {
 
 /**
  * Calculate text position and size to fit within a box with proper text wrapping algorithm
- * Implements word boundary wrapping with font size optimization
+ * Implements word boundary wrapping with font size optimisation
  */
 function getTextPositionAndSize(box: { x: number; y: number; width?: number; height?: number }, text: string, font: any, maxFontSize: number = 12) {
   // Sanitize text to prevent encoding errors
@@ -1096,7 +1096,7 @@ async function drawFieldLabels(page: any) {
   const helvetica = await page.doc.embedFont(StandardFonts.Helvetica);
   const helveticaBold = await page.doc.embedFont(StandardFonts.HelveticaBold);
   
-  // Import field analyzer
+  // Import field analyser
   const { avacFieldPositions, getTableRowFields } = await import('./field-analyzer');
   
   // Draw all field positions
@@ -1397,7 +1397,7 @@ async function drawProfessionalFormStructure(page: any, helveticaBold: any): Pro
     rotate: degrees(90)
   });
   
-  // Draw organizational details section
+  // Draw organisational details section
   page.drawText('Organisational Details', {
     x: 50,
     y: 760,

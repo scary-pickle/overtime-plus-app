@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Keyboard, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, SafeAreaView, Keyboard, ScrollView, StyleSheet, useColorScheme, TouchableWithoutFeedback } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { createScopedLogger } from '../../lib/utils/logger';
@@ -16,6 +16,8 @@ const maskEmail = (email?: string | null) => {
 export default function VerifyEmail() {
   debug('[verify-email] component render');
   const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const {
     user,
     emailVerified,
@@ -294,23 +296,26 @@ export default function VerifyEmail() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
       <ScrollView 
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
       >
-        <Text style={styles.title}>Verify your email</Text>
-        
-        <Text style={styles.description}>
-          Enter the 6-digit code we emailed to {pendingEmail || userEmail || 'your email'}.
-        </Text>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View>
+            <Text style={[styles.title, isDark && styles.darkTitle]}>Verify your email</Text>
+            
+            <Text style={[styles.description, isDark && styles.darkDescription]}>
+              Enter the 6-digit code we emailed to {pendingEmail || userEmail || 'your email'}.
+            </Text>
 
-        <View style={styles.formContainer}>
+            <View style={styles.formContainer}>
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {statusMsg ? (
-            <Text style={styles.statusText}>{statusMsg}</Text>
+            <Text style={[styles.statusText, isDark && styles.darkStatusText]}>{statusMsg}</Text>
           ) : (
-            <Text style={styles.instructionText}>
+            <Text style={[styles.instructionText, isDark && styles.darkInstructionText]}>
               Check your email for the 6-digit code.
             </Text>
           )}
@@ -325,10 +330,11 @@ export default function VerifyEmail() {
               setOtpCode(text);
             }}
             placeholder="Enter 6-digit code"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={isDark ? '#666' : '#9CA3AF'}
             keyboardType="number-pad"
             maxLength={6}
             returnKeyType="done"
+            autoFocus={true}
             onSubmitEditing={() => {
               debug('[verify-email] OTP input onSubmitEditing', { 
                 otpCodeLength: otpCode.length, 
@@ -353,7 +359,7 @@ export default function VerifyEmail() {
             onFocus={() => {
               debug('[verify-email] OTP input onFocus', { otpCodeLength: otpCode.length });
             }}
-            style={styles.input}
+            style={[styles.input, isDark && styles.darkInput]}
           />
           <TouchableOpacity
             onPress={() => {
@@ -376,11 +382,13 @@ export default function VerifyEmail() {
             disabled={busy || cooldown > 0}
             style={styles.resendButton}
           >
-            <Text style={[styles.resendText, (busy || cooldown > 0) && styles.resendTextDisabled]}>
+            <Text style={[styles.resendText, isDark && styles.darkResendText, (busy || cooldown > 0) && styles.resendTextDisabled]}>
               {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend 6-digit code'}
             </Text>
           </TouchableOpacity>
-        </View>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
       </ScrollView>
     </SafeAreaView>
   );
@@ -390,6 +398,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  darkContainer: {
+    backgroundColor: '#000',
   },
   content: {
     flexGrow: 1,
@@ -404,12 +415,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  darkTitle: {
+    color: '#fff',
+  },
   description: {
     fontSize: 16,
     color: '#333',
     textAlign: 'center',
     marginBottom: 40,
     lineHeight: 24,
+  },
+  darkDescription: {
+    color: '#aaa',
   },
   formContainer: {
     width: '100%',
@@ -425,10 +442,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
+  darkStatusText: {
+    color: '#fff',
+  },
   instructionText: {
     color: '#4b5563',
     fontSize: 14,
     textAlign: 'center',
+  },
+  darkInstructionText: {
+    color: '#aaa',
   },
   input: {
     borderWidth: 1,
@@ -438,6 +461,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#111',
     backgroundColor: '#fff',
+  },
+  darkInput: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#444',
+    color: '#fff',
   },
   button: {
     backgroundColor: '#007AFF',
@@ -464,6 +492,9 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 14,
     fontWeight: '500',
+  },
+  darkResendText: {
+    color: '#aaa',
   },
   resendTextDisabled: {
     color: '#9CA3AF',

@@ -213,6 +213,7 @@ export default function EmailSettingsScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            autoFocus={true}
           />
         </View>
 
@@ -322,7 +323,7 @@ export default function EmailSettingsScreen() {
             </View>
           </View>
           <Text style={[styles.sectionDescription, isDark && styles.darkText]}>
-            Customize the email message sent with your AVAC forms. Use {'{User Name}'} and {'{Date}'} as variables.
+            Customise the email message sent with your AVAC forms. Use {'{User Name}'} and {'{Date}'} as variables.
           </Text>
           <TextInput
             ref={templateInputRef}

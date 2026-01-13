@@ -1265,6 +1265,33 @@ class Database {
     }));
   }
 
+  async getDeletedLogTemplates(userId?: string | null): Promise<LogTemplate[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const query = userId
+      ? `SELECT * FROM log_templates WHERE user_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`
+      : `SELECT * FROM log_templates WHERE user_id IS NULL AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`;
+    const params = userId ? [userId] : [];
+
+    const result = await this.db.getAllAsync(query, params);
+
+    return result.map((row: any) => ({
+      id: row.id as string,
+      name: row.name as string,
+      rosteredStart: row.rostered_start as string | undefined,
+      rosteredFinish: row.rostered_finish as string | undefined,
+      mealBreakMinutes: row.meal_break_minutes as number,
+      category: row.category as LogTemplate['category'],
+      comments: row.comments as string | undefined,
+      concurrentEmployment: row.concurrent_employment === 1,
+      smoCategories: row.smo_categories ? JSON.parse(row.smo_categories) : undefined,
+      userId: row.user_id as string | null,
+      createdAt: row.created_at as string,
+      updatedAt: row.updated_at as string,
+      deletedAt: row.deleted_at as string,
+    }));
+  }
+
   // Restore deleted items (clear deleted_at)
   async restoreLog(id: string, userId?: string | null): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');

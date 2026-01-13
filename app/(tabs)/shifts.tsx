@@ -337,9 +337,9 @@ export default function ShiftsScreen() {
           <Text style={[styles.title, isDark && styles.darkText]}>
             Shifts
           </Text>
-          <View style={[styles.viewModeChip, styles.viewModeChipDisabled]}>
-            <Text style={styles.viewModeChipText}>Weekly</Text>
-            <Ionicons name="chevron-down" size={16} color="#A0A6AD" />
+          <View style={[styles.viewModeChip, styles.viewModeChipDisabled, isDark && styles.darkViewModeChipDisabled]}>
+            <Text style={[styles.viewModeChipText, isDark && styles.darkViewModeChipTextDisabled]}>Weekly</Text>
+            <Ionicons name="chevron-down" size={16} color={isDark ? '#666' : '#A0A6AD'} />
           </View>
         </View>
         <ScrollView
@@ -1052,6 +1052,13 @@ const styles = StyleSheet.create({
   viewModeChipDisabled: {
     borderColor: '#dfe2e6',
     opacity: 0.7,
+  },
+  darkViewModeChipDisabled: {
+    borderColor: '#333',
+    backgroundColor: '#1c1c1e',
+  },
+  darkViewModeChipTextDisabled: {
+    color: '#666',
   },
   addMenuOverlay: {
     flex: 1,

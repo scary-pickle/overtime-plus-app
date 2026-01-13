@@ -1,11 +1,11 @@
 import 'react-native-reanimated';
 import 'react-native-url-polyfill/auto';
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect } from 'react';
 import '../lib/utils/consoleSafe';
 import '../lib/utils/secureFetch';
 import { Stack, useRouter, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme, View, StyleSheet } from 'react-native';
+import { useColorScheme, View, StyleSheet, InteractionManager } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { database } from '../lib/db/sqlite';
 import { useProfileStore } from '../lib/state/profileStore';
@@ -15,6 +15,7 @@ import { useDeletedItemsStore } from '../lib/state/deletedItemsStore';
 import { notificationManager } from '../lib/notifications';
 import { subscribeToAuthDeepLinks } from '../lib/auth/deeplinks';
 import { useAuthStore } from '../lib/state/authStore';
+import * as Linking from 'expo-linking';
 import { syncQueue } from '../lib/sync/queue';
 import { templatesSync, templateOTAEnabled } from '../lib/supabase';
 import { purgeLegacyAuthStorage } from '../lib/auth/migrateAuthStorage';
@@ -22,16 +23,17 @@ import { cleanupOldPDFs } from '../lib/utils/cacheCleanup';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useSubscriptionStore } from '../lib/state/subscriptionStore';
 import { createScopedLogger } from '../lib/utils/logger';
+import { AnimatedSplashIcon } from '../components/AnimatedSplashIcon';
 
 const debug = createScopedLogger('App');
 
-// Keep the splash screen visible while we fetch resources
+// Prevent auto-hide so we can switch from native splash to the JS overlay.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { user, checkSession, emailVerified, isLoading } = useAuthStore();
-  const { loadProfile } = useProfileStore();
+  const { loadProfile, isLoading: isProfileLoading } = useProfileStore();
   const { loadShifts } = useShiftsStore();
   const { loadLogs, loadExportBatches } = useLogsStore();
   const router = useRouter();
@@ -41,9 +43,54 @@ export default function RootLayout() {
   const initializeSubscription = useSubscriptionStore((state) => state.init);
   const resetSubscription = useSubscriptionStore((state) => state.reset);
   const [appIsReady, setAppIsReady] = React.useState(false);
+  const [showLaunchOverlay, setShowLaunchOverlay] = React.useState(true);
+
+  // Hide the native splash once the JS overlay is mounted.
+  useEffect(() => {
+    if (!showLaunchOverlay) {
+      return;
+    }
+
+    SplashScreen.hideAsync().catch(() => {
+      // Splash may already be hidden, ignore error
+    });
+  }, [showLaunchOverlay]);
+
+  useEffect(() => {
+    if (!appIsReady || isLoading || isProfileLoading || !pathname || pathname === '/') {
+      return;
+    }
+
+    const task = InteractionManager.runAfterInteractions(() => {
+      setShowLaunchOverlay(false);
+    });
+
+    return () => {
+      task.cancel?.();
+    };
+  }, [appIsReady, isLoading, isProfileLoading, pathname]);
 
   useEffect(() => {
     (async () => {
+      // Check if we're opening from a password reset deep link
+      // If so, skip the normal checkSession to avoid interfering with password reset flow
+      const initialUrl = await Linking.getInitialURL();
+      const isPasswordResetFlow = initialUrl?.includes('auth-callback') || initialUrl?.includes('reset-password');
+      
+      if (isPasswordResetFlow) {
+        debug.debug('Password reset flow detected, skipping checkSession to avoid interference');
+        // Still initialize database but skip auth check
+        try {
+          await database.init();
+          debug.debug('Database initialized');
+          await purgeLegacyAuthStorage();
+        } catch (error) {
+          debug.error('Failed to initialize database:', error);
+        }
+        setAppIsReady(true);
+        return;
+      }
+      
       // Initialize database FIRST before checking session
       // Local tables back offline data; purge any legacy auth tokens from SQLite
       try {
@@ -80,16 +127,6 @@ export default function RootLayout() {
       // Mark app as ready
       setAppIsReady(true);
       
-      // Delay hiding splash screen to ensure React Native screen is rendered first
-      // This creates seamless transition - native splash stays visible until RN screen is ready
-      // The home screen will show identical splash replica, so user won't notice the transition
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          SplashScreen.hideAsync().catch((error) => {
-            // Splash may already be hidden, ignore error
-          });
-        }, 100); // Small delay to ensure React Native screen has rendered
-      });
     })();
     const unsubscribeLinking = subscribeToAuthDeepLinks();
     return () => {
@@ -97,8 +134,7 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Don't hide splash screen here - let index.tsx handle it after navigation
-  // This ensures smooth transition without white flash
+  // Native splash is hidden once app init completes and the first route is ready.
 
   useEffect(() => {
     // Only initialize/reset if state actually changed to prevent loops
@@ -264,6 +300,7 @@ export default function RootLayout() {
     <ErrorBoundary>
       <View style={styles.rootContainer}>
         <StatusBar style="dark" />
+        <AnimatedSplashIcon visible={showLaunchOverlay} />
         <Stack
           screenOptions={{
             contentStyle: { backgroundColor: '#ffffff' },
@@ -276,6 +313,7 @@ export default function RootLayout() {
         <Stack.Screen name="auth/sign-up" options={{ headerShown: false }} />
         <Stack.Screen name="auth/verify-email" options={{ headerShown: false }} />
         <Stack.Screen name="auth/forgot-password" options={{ headerShown: false }} />
+        <Stack.Screen name="auth/reset-password" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen 
           name="log/[id]" 

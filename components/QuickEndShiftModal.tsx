@@ -9,6 +9,8 @@ import {
   TextInput,
   useColorScheme,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { OvertimeLog } from '../types';
@@ -314,7 +316,11 @@ export function QuickEndShiftModal({
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      >
         <View style={[styles.modalContent, isDark && styles.darkModalContent]}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, isDark && styles.darkText]}>End Shift</Text>
@@ -323,7 +329,12 @@ export function QuickEndShiftModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            style={styles.modalBody} 
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.scrollContent}
+          >
             {/* Rostered Times */}
             <View style={[styles.section, isDark && styles.darkCard]}>
               <View style={styles.sectionHeader}>
@@ -588,7 +599,7 @@ export function QuickEndShiftModal({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -631,6 +642,9 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     padding: 16,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   modalFooter: {
     flexDirection: 'row',

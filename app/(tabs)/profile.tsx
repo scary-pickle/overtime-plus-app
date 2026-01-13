@@ -1418,7 +1418,7 @@ export default function ProfileScreen() {
                 Email Settings
               </Text>
               <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
-                Customize email template
+                Customise email template
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
@@ -1449,6 +1449,21 @@ export default function ProfileScreen() {
               </Text>
               <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
                 Restore or permanently delete
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => router.push('/analytics')}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Analytics
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                View overtime insights and trends
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />

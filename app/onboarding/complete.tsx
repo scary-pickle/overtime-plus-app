@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../lib/state/authStore';
@@ -9,6 +9,8 @@ const debug = createScopedLogger('OnboardingComplete');
 
 export default function OnboardingComplete() {
   const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const { completeOnboarding } = useAuthStore();
 
   const handleStartUsingApp = async () => {
@@ -23,32 +25,32 @@ export default function OnboardingComplete() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
       <View style={styles.content}>
         <View style={styles.iconContainer}>
-          <View style={styles.checkmarkCircle}>
+          <View style={[styles.checkmarkCircle, isDark && styles.darkCheckmarkCircle]}>
             <Ionicons name="checkmark" size={60} color="#4CAF50" />
           </View>
         </View>
         
-        <Text style={styles.title}>All Set!</Text>
+        <Text style={[styles.title, isDark && styles.darkTitle]}>All Set!</Text>
         
-        <Text style={styles.description}>
+        <Text style={[styles.description, isDark && styles.darkDescription]}>
           Your profile is complete and you're ready to start tracking overtime.
         </Text>
 
         <View style={styles.featuresList}>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={styles.featureText}>Profile set up successfully</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Profile set up successfully</Text>
           </View>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={styles.featureText}>Ready to create logs</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Ready to create logs</Text>
           </View>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={styles.featureText}>Ready to generate AVAC forms</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Ready to generate AVAC forms</Text>
           </View>
         </View>
 
@@ -69,6 +71,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  darkContainer: {
+    backgroundColor: '#000',
+  },
   content: {
     flex: 1,
     padding: 24,
@@ -86,6 +91,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  darkCheckmarkCircle: {
+    backgroundColor: '#1B5E20',
+  },
   title: {
     fontSize: 32,
     fontWeight: '700',
@@ -93,12 +101,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  darkTitle: {
+    color: '#fff',
+  },
   description: {
     fontSize: 16,
     color: '#333',
     textAlign: 'center',
     marginBottom: 40,
     lineHeight: 24,
+  },
+  darkDescription: {
+    color: '#aaa',
   },
   featuresList: {
     width: '100%',
@@ -113,6 +127,9 @@ const styles = StyleSheet.create({
   featureText: {
     fontSize: 16,
     color: '#111',
+  },
+  darkFeatureText: {
+    color: '#fff',
   },
   button: {
     backgroundColor: '#007AFF',

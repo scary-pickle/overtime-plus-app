@@ -185,11 +185,19 @@ export const useLogsStore = create<LogsState>((set, get) => ({
       
       // Sync from Supabase in background (non-blocking)
       if (userId) {
-        logsSync.downloadLogs(userId).then(remoteLogs => {
+        logsSync.downloadLogs(userId).then(async remoteLogs => {
           if (remoteLogs.length > 0 || logs.length > 0) {
             debug.debug('Syncing logs from Supabase in background', {
               remoteCount: remoteLogs.length,
               localCount: logs.length,
+            });
+
+            // Apply local tombstones to avoid resurrecting deleted logs
+            const deletedLogs = await database.getDeletedLogs(userId).catch(() => []);
+            const deletedLogIds = new Set(deletedLogs.map(l => l.id));
+            remoteLogs = remoteLogs.filter(log => !deletedLogIds.has(log.id));
+            deletedLogIds.forEach(id => {
+              logsSync.deleteLog(id, userId).catch(() => {});
             });
             
             // Merge with timestamp-based conflict resolution
@@ -231,19 +239,11 @@ export const useLogsStore = create<LogsState>((set, get) => ({
                   });
                 }
               } else if (localLog) {
-                // Only local - add it and upload if not already synced
-                mergedLogs.push(localLog);
-                logsSync.uploadLog(localLog, userId).catch(err => {
-                  debug.error('Failed to upload local-only log:', err);
-                  // Add to sync queue for retry
-                  const { syncQueue } = require('../sync/queue');
-                  syncQueue.add({
-                    type: 'log',
-                    operation: 'create',
-                    data: localLog,
-                    userId,
-                  }).catch(() => {});
+                // Remote missing - treat as remote deletion; remove locally and tombstone
+                await database.deleteOvertimeLog(logId, userId).catch(err => {
+                  debug.error('Failed to delete local log after remote removal:', err);
                 });
+                logsSync.deleteLog(logId, userId).catch(() => {});
               } else if (remoteLog) {
                 // Only remote - add it and save locally
                 mergedLogs.push(remoteLog);
@@ -289,13 +289,20 @@ export const useLogsStore = create<LogsState>((set, get) => ({
             // Merge local and remote data intelligently
             const localBatchMap = new Map(exportBatches.map(batch => [batch.id, batch]));
             const remoteBatchMap = new Map(remoteBatches.map(batch => [batch.id, batch]));
+            const deletedBatches = await database.getDeletedExportBatches(userId).catch(() => []);
+            const deletedBatchIds = new Set(deletedBatches.map(b => b.id));
+            // Drop remote batches that are tombstoned locally; re-send deletes upstream
+            const filteredRemote = remoteBatches.filter(batch => !deletedBatchIds.has(batch.id));
+            deletedBatchIds.forEach(id => {
+              exportSync.deleteExportBatch(id, userId).catch(() => {});
+            });
             
             const mergedMap = new Map<string, ExportBatch>();
-            const allBatchIds = new Set([...localBatchMap.keys(), ...remoteBatchMap.keys()]);
+            const allBatchIds = new Set([...localBatchMap.keys(), ...filteredRemote.map(b => b.id)]);
             
             for (const batchId of allBatchIds) {
               const localBatch = localBatchMap.get(batchId);
-              const remoteBatch = remoteBatchMap.get(batchId);
+              const remoteBatch = filteredRemote.find(b => b.id === batchId);
               
               if (localBatch && remoteBatch) {
                 // Both exist - merge intelligently
@@ -320,7 +327,9 @@ export const useLogsStore = create<LogsState>((set, get) => ({
               } else if (remoteBatch) {
                 mergedMap.set(batchId, remoteBatch);
               } else if (localBatch) {
-                mergedMap.set(batchId, localBatch);
+                // Remote missing - treat as remote deletion; drop locally and propagate delete
+                await database.deleteExportBatch(batchId, userId).catch(() => {});
+                exportSync.deleteExportBatch(batchId, userId).catch(() => {});
               }
             }
             

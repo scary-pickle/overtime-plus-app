@@ -1251,11 +1251,11 @@ export default function LogScreen() {
             Logs
           </Text>
           <View style={styles.placeholderHeaderActions}>
-            <View style={[styles.filterButton, styles.disabledFilterButton]}>
-              <Ionicons name="checkbox-outline" size={18} color="#A0A6AD" />
+            <View style={[styles.filterButton, styles.disabledFilterButton, isDark && styles.darkDisabledFilterButton]}>
+              <Ionicons name="checkbox-outline" size={18} color={isDark ? '#666' : '#A0A6AD'} />
             </View>
-            <View style={[styles.filterButton, styles.disabledFilterButton]}>
-              <Ionicons name="options" size={18} color="#A0A6AD" />
+            <View style={[styles.filterButton, styles.disabledFilterButton, isDark && styles.darkDisabledFilterButton]}>
+              <Ionicons name="options" size={18} color={isDark ? '#666' : '#A0A6AD'} />
             </View>
           </View>
         </View>
@@ -1281,12 +1281,16 @@ export default function LogScreen() {
                   style={[
                     styles.previewChip,
                     chip.active && styles.previewChipActive,
+                    isDark && styles.darkPreviewChip,
+                    chip.active && isDark && styles.darkPreviewChipActive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.previewChipText,
                       chip.active && styles.previewChipTextActive,
+                      isDark && styles.darkPreviewChipText,
+                      chip.active && isDark && styles.darkPreviewChipTextActive,
                     ]}
                   >
                     {chip.label}
@@ -2222,12 +2226,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     borderColor: '#007AFF',
   },
+  darkPreviewChip: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#3a3a3c',
+  },
+  darkPreviewChipActive: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
   previewChipText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#4b5563',
   },
   previewChipTextActive: {
+    color: '#fff',
+  },
+  darkPreviewChipText: {
+    color: '#999',
+  },
+  darkPreviewChipTextActive: {
     color: '#fff',
   },
   previewLogCard: {
@@ -2332,6 +2350,10 @@ const styles = StyleSheet.create({
   disabledFilterButton: {
     borderColor: '#e0e0e0',
     backgroundColor: '#f4f4f4',
+  },
+  darkDisabledFilterButton: {
+    borderColor: '#333',
+    backgroundColor: '#2c2c2e',
   },
   modalOverlay: {
     flex: 1,

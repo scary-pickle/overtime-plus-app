@@ -1,5 +1,5 @@
 /**
- * Field analyzer for AVAC template
+ * Field analyser for AVAC template
  * This helps identify the exact positions of all input fields
  */
 

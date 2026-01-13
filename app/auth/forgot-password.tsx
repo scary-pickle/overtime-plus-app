@@ -49,6 +49,7 @@ export default function ForgotPassword() {
               placeholderTextColor={isDark ? '#666' : '#999'}
               autoCapitalize="none"
               keyboardType="email-address"
+              autoFocus={true}
               style={[styles.input, isDark && styles.darkInput]}
             />
           </View>

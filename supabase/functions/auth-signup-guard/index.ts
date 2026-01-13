@@ -267,19 +267,29 @@ serve(async (req) => {
       }
     }
 
-    // In development mode, allow requests without secret if explicitly enabled
-    if (allowDevMode && !expectedSecret) {
-      console.warn('[auth-signup-guard] DEV MODE: Allowing request without secret check');
-      // Continue to domain validation below
-    } else if (!expectedSecret) {
-      console.warn('[auth-signup-guard] SIGNUP_GUARD_SECRET not set – request will be rejected');
-      return new Response(JSON.stringify({ 
-        error: 'Server misconfigured',
-        message: 'SIGNUP_GUARD_SECRET environment variable is not set. Please configure it in Supabase Dashboard → Edge Functions → Settings.'
-      }), {
-        status: 500,
-        headers: JSON_HEADERS,
-      });
+    // Check if domain validation is required - if not, we can skip authentication
+    const requireDomain = (Deno.env.get('REQUIRE_DOMAIN') ?? 'true').toLowerCase() === 'true';
+    
+    // If domain validation is disabled, we don't need authentication (no security risk)
+    if (!requireDomain) {
+      console.log('[auth-signup-guard] Domain validation disabled - skipping authentication check');
+      // Skip to domain validation (which will pass since requireDomain is false)
+    } else {
+      // Domain validation is enabled - require authentication
+      // In development mode, allow requests without secret if explicitly enabled
+      if (allowDevMode && !expectedSecret) {
+        console.warn('[auth-signup-guard] DEV MODE: Allowing request without secret check');
+        // Continue to domain validation below
+      } else if (!expectedSecret) {
+        console.warn('[auth-signup-guard] SIGNUP_GUARD_SECRET not set – request will be rejected');
+        return new Response(JSON.stringify({ 
+          error: 'Server misconfigured',
+          message: 'SIGNUP_GUARD_SECRET environment variable is not set. Please configure it in Supabase Dashboard → Edge Functions → Settings.'
+        }), {
+          status: 500,
+          headers: JSON_HEADERS,
+        });
+      }
     }
 
     // Helper function for timing-safe comparison
@@ -298,9 +308,13 @@ serve(async (req) => {
     };
 
     // Validate authentication: either signature verification OR secret match
+    // Skip if domain validation is disabled (already checked above)
     let hasValidAuth = false;
     
-    if (expectedSecret) {
+    if (!requireDomain) {
+      // Domain validation disabled - no need for authentication
+      hasValidAuth = true;
+    } else if (expectedSecret) {
       // If we have a webhook signature, try to verify it first
       if (webhookSignature) {
         hasValidAuth = hasValidSignature;
@@ -358,7 +372,7 @@ serve(async (req) => {
         };
         console.error('[auth-signup-guard] Authentication validation failed', debugInfo);
         return new Response(JSON.stringify({ 
-          error: 'Unauthorized',
+          error: 'Unauthorised',
           message: 'Hook requires valid authentication. Verify the webhook signature or provide the secret in the Authorization header or request body.',
         }), {
         status: 401,
@@ -383,7 +397,7 @@ serve(async (req) => {
     // GoTrue hooks may send { event: 'user_signed_up', user: {...} } or { record: {...} }
     const email: string | undefined = body?.user?.email ?? body?.record?.email ?? body?.email;
 
-    const requireDomain = (Deno.env.get('REQUIRE_DOMAIN') ?? 'true').toLowerCase() === 'true';
+    // requireDomain was already checked above
     const allowedEnv = Deno.env.get('ALLOWED_DOMAINS') ?? 'health.qld.gov.au';
     const allowed = allowedEnv.split(',').map((s) => s.trim()).filter(Boolean);
 

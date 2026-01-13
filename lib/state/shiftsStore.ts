@@ -50,11 +50,19 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
       
       // Sync from Supabase in background (non-blocking)
       if (userId) {
-        shiftsSync.downloadShifts(userId).then(remoteShifts => {
+        shiftsSync.downloadShifts(userId).then(async remoteShifts => {
           if (remoteShifts.length > 0 || shifts.length > 0) {
             devLog.debug('[shiftsStore.loadShifts] Syncing shifts from Supabase in background', {
               remoteCount: remoteShifts.length,
               localCount: shifts.length,
+            });
+
+            // Apply local tombstones to avoid resurrecting deleted shifts
+            const deletedShifts = await database.getDeletedShifts(userId).catch(() => []);
+            const deletedShiftIds = new Set(deletedShifts.map(s => s.id));
+            remoteShifts = remoteShifts.filter(shift => !deletedShiftIds.has(shift.id));
+            deletedShiftIds.forEach(id => {
+              shiftsSync.deleteShift(id, userId).catch(() => {});
             });
             
             // Merge with timestamp-based conflict resolution
@@ -96,18 +104,9 @@ export const useShiftsStore = create<ShiftsState>((set, get) => ({
                   });
                 }
               } else if (localShift) {
-                // Only local - add it and upload if not already synced
-                mergedShifts.push(localShift);
-                shiftsSync.uploadShift(localShift, userId).catch((err: unknown) => {
-                  devLog.error('Failed to upload local-only shift:', err);
-                  // Add to sync queue for retry
-                  const { syncQueue } = require('../sync/queue');
-                  syncQueue.add({
-                    type: 'shift',
-                    operation: 'create',
-                    data: localShift,
-                    userId,
-                  }).catch(() => {});
+                // Remote missing - treat as remote deletion; remove locally
+                await database.deleteUsualShift(shiftId, userId).catch((err: unknown) => {
+                  devLog.error('Failed to delete local shift after remote removal:', err);
                 });
               } else if (remoteShift) {
                 // Only remote - add it and save locally

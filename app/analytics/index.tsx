@@ -180,9 +180,9 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 40, // Same width as back button to center the title
   },
-  headerRow: { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 6, backgroundColor: '#fff' },
+  headerRow: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, backgroundColor: '#fff' },
   darkHeaderRow: { backgroundColor: '#000' },
-  subtitle: { marginTop: 2, color: '#666', fontSize: 12 },
+  subtitle: { marginTop: 4, color: '#666', fontSize: 14, lineHeight: 20, letterSpacing: 0.2 },
   darkSubtitle: { color: '#aaa' },
   darkText: { color: '#fff' },
   segment: { flexDirection: 'row', backgroundColor: '#f2f2f7', marginHorizontal: 16, marginTop: 16, borderRadius: 12, overflow: 'hidden' },

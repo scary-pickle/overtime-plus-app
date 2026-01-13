@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, SafeAreaView, StyleSheet, useColorScheme, KeyboardAvoidingView, ScrollView, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useAuthStore } from '../../lib/state/authStore';
 import { isAllowedDomain, isValidEmail, validatePasswordStrength } from '../../lib/auth/validation';
@@ -60,7 +60,8 @@ export default function SignUp() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <View style={styles.content}>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.content}>
             <View style={styles.header}>
               <Text style={[styles.title, isDark && styles.darkTitle]}>Create your account</Text>
               <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>Use your @health.qld.gov.au email</Text>
@@ -77,6 +78,7 @@ export default function SignUp() {
                   placeholderTextColor={isDark ? '#666' : '#999'}
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  autoFocus={true}
                   style={[styles.input, isDark && styles.darkInput]}
                 />
               </View>
@@ -116,7 +118,8 @@ export default function SignUp() {
             <Link href="/auth/sign-in">
               <Text style={[styles.link, isDark && styles.darkLink]}>Already have an account? Sign in</Text>
             </Link>
-          </View>
+            </View>
+          </TouchableWithoutFeedback>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -56,7 +56,7 @@ function sanitizeTextForPDF(text: string): string {
 
 /**
  * Calculate text position and size to fit within a box with proper text wrapping algorithm
- * Implements word boundary wrapping with font size optimization
+ * Implements word boundary wrapping with font size optimisation
  */
 function getTextPositionAndSize(box: { x: number; y: number; width?: number; height?: number }, text: string, font: any, maxFontSize: number = 12, rowNumber?: number) {
   // Sanitize text to prevent encoding errors

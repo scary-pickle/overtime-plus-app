@@ -2127,7 +2127,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   darkCard: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#1c1c1e',
     borderColor: '#3a3a3c',
   },
   exportHeader: {

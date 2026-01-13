@@ -151,7 +151,10 @@ function getSupabaseClient(): SupabaseClient {
         storage: SecureStoreAdapter,
         persistSession: true,
         autoRefreshToken: true,
-        flowType: 'pkce',
+        // Use implicit flow for native/mobile deep links
+        // Password reset and email verification links will include access_token/refresh_token
+        // directly in the URL fragment, which we handle in our deeplink handler.
+        flowType: 'implicit',
         detectSessionInUrl: false,
       },
       global: {
@@ -815,6 +818,24 @@ export const logsSync = {
           },
           body: JSON.stringify(logData),
         });
+
+        // Handle unique constraint conflict by retrying as update
+        if (response.status === 409 || response.status === 42501) {
+          debug.warn('[logsSync.uploadLog] Conflict on insert, retrying as update');
+          const findExisting = `${SUPABASE_URL}/rest/v1/overtime_logs?user_id=eq.${userId}&extras->>id=eq.${log.id}&select=id&limit=1`;
+          const findResp = await authenticatedFetch(findExisting, { method: 'GET' });
+          if (findResp.ok) {
+            const existingData = await findResp.json();
+            if (Array.isArray(existingData) && existingData[0]?.id) {
+              const updateUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?id=eq.${existingData[0].id}&select=*`;
+              response = await authenticatedFetch(updateUrl, {
+                method: 'PATCH',
+                headers: { 'Prefer': 'return=representation' },
+                body: JSON.stringify(logData),
+              });
+            }
+          }
+        }
       }
 
       if (!response.ok) {
@@ -1018,7 +1039,27 @@ export const logsSync = {
     }
 
     try {
-      // Find the log by user_id and extras.id
+      // Use REST with access token to ensure delete reaches server even if RPC fails
+      const deleteUrl = `${SUPABASE_URL}/rest/v1/overtime_logs?user_id=eq.${userId}&extras->>id=eq.${logId}&deleted_at=is.null`;
+      const now = new Date().toISOString();
+      const response = await authenticatedFetch(deleteUrl, {
+        method: 'PATCH',
+        headers: {
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
+          deleted_at: now,
+          updated_at: now,
+        }),
+      });
+
+      // Treat any 2xx/404/406 as success; fallback to RPC only on non-2xx
+      if (response.ok || response.status === 404 || response.status === 406) {
+        debug.debug('[logsSync.deleteLog] Log deleted via REST patch or already absent', { logId });
+        return;
+      }
+
+      // Fallback: use RPC soft delete (bypasses RLS issues)
       // @ts-ignore
       const { data: existing } = await supabase
         .from('overtime_logs')
@@ -1028,22 +1069,28 @@ export const logsSync = {
         .is('deleted_at', null)
         .maybeSingle();
 
-      if (existing) {
-        // Soft delete using RPC function to bypass RLS policy issues
+      if (existing?.id) {
         // @ts-ignore
         const { error } = await supabase.rpc('soft_delete_overtime_log', {
           log_uuid: existing.id,
         });
-
         if (error) {
-          debug.error('[logsSync.deleteLog] Error deleting log:', error);
+          debug.error('[logsSync.deleteLog] RPC delete failed:', error);
           throw error;
         }
-
-        debug.debug('[logsSync.deleteLog] Log deleted successfully from Supabase', {
-          logId,
-        });
+        debug.debug('[logsSync.deleteLog] Log deleted via RPC fallback', { logId });
+        return;
       }
+
+      // If nothing deleted and no row found, consider it already removed
+      if (!existing) {
+        debug.debug('[logsSync.deleteLog] Log already removed (no matching row)', { logId });
+        return;
+      }
+
+      debug.debug('[logsSync.deleteLog] Log deleted successfully from Supabase', {
+        logId,
+      });
     } catch (error) {
       debug.error('[logsSync.deleteLog] Failed to delete log from Supabase:', error);
       throw error;
@@ -1116,6 +1163,24 @@ export const shiftsSync = {
           },
           body: JSON.stringify(shiftData),
         });
+
+        // Handle unique constraint conflict by retrying as update
+        if (response.status === 409 || response.status === 42501) {
+          debug.warn('[shiftsSync.uploadShift] Conflict on insert, retrying as update');
+          const findExisting = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${shift.id}&notes=eq.usual_shift_pattern&select=id&limit=1`;
+          const findResp = await authenticatedFetch(findExisting, { method: 'GET' });
+          if (findResp.ok) {
+            const existingData = await findResp.json();
+            if (Array.isArray(existingData) && existingData[0]?.id) {
+              const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingData[0].id}&select=*`;
+              response = await authenticatedFetch(updateUrl, {
+                method: 'PATCH',
+                headers: { 'Prefer': 'return=representation' },
+                body: JSON.stringify(shiftData),
+              });
+            }
+          }
+        }
       }
 
       if (!response.ok) {
@@ -1678,6 +1743,24 @@ export const logTemplatesSync = {
           },
           body: JSON.stringify(templateData),
         });
+
+        // Handle unique constraint conflict by retrying as update
+        if (response.status === 409 || response.status === 42501) {
+          debug.warn('[logTemplatesSync.uploadTemplate] Conflict on insert, retrying as update');
+          const findExisting = `${SUPABASE_URL}/rest/v1/shifts?user_id=eq.${userId}&extras->>id=eq.${template.id}&notes=eq.log_template&select=id&limit=1`;
+          const findResp = await authenticatedFetch(findExisting, { method: 'GET' });
+          if (findResp.ok) {
+            const existingData = await findResp.json();
+            if (Array.isArray(existingData) && existingData[0]?.id) {
+              const updateUrl = `${SUPABASE_URL}/rest/v1/shifts?id=eq.${existingData[0].id}&select=*`;
+              response = await authenticatedFetch(updateUrl, {
+                method: 'PATCH',
+                headers: { 'Prefer': 'return=representation' },
+                body: JSON.stringify(templateData),
+              });
+            }
+          }
+        }
       }
 
       if (!response.ok) {
@@ -1974,6 +2057,24 @@ export const exportSync = {
           },
           body: JSON.stringify(batchData),
         });
+
+        // Handle unique constraint conflict by retrying as update
+        if (response.status === 409 || response.status === 42501) {
+          debug.warn('[exportSync.uploadExportBatch] Conflict on insert, retrying as update');
+          const findExisting = `${SUPABASE_URL}/rest/v1/export_batches?user_id=eq.${userId}&params->>id=eq.${batch.id}&select=id&limit=1`;
+          const findResp = await authenticatedFetch(findExisting, { method: 'GET' });
+          if (findResp.ok) {
+            const existingData = await findResp.json();
+            if (Array.isArray(existingData) && existingData[0]?.id) {
+              const updateUrl = `${SUPABASE_URL}/rest/v1/export_batches?id=eq.${existingData[0].id}&select=*`;
+              response = await authenticatedFetch(updateUrl, {
+                method: 'PATCH',
+                headers: { 'Prefer': 'return=representation' },
+                body: JSON.stringify(batchData),
+              });
+            }
+          }
+        }
       }
 
       if (!response.ok) {
@@ -2291,10 +2392,70 @@ export const sync = {
       
       // Download remote data
       try {
-        const remoteLogs = await logsSync.downloadLogs(userId);
-        const remoteShifts = await shiftsSync.downloadShifts(userId);
+        // Pull remote data
+        let remoteLogs = await logsSync.downloadLogs(userId);
+        let remoteShifts = await shiftsSync.downloadShifts(userId);
         const remoteProfile = await profileSync.downloadProfile(userId);
-        const remoteBatches = await exportSync.downloadExportBatches(userId);
+        let remoteBatches = await exportSync.downloadExportBatches(userId);
+
+        // Fetch local tombstones and enforce them before merging to avoid resurrection.
+        const deletedLogs = await database.getDeletedLogs(userId).catch(() => []);
+        const deletedShifts = await database.getDeletedShifts(userId).catch(() => []);
+        const deletedBatches = await database.getDeletedExportBatches(userId).catch(() => []);
+
+        const deletedLogIds = new Set(deletedLogs.map((log) => log.id));
+        const deletedShiftIds = new Set(deletedShifts.map((shift) => shift.id));
+        const deletedBatchIds = new Set(deletedBatches.map((batch) => batch.id));
+
+        // Best-effort remote cleanup for tombstoned items
+        for (const logId of deletedLogIds) {
+          logsSync.deleteLog(logId, userId).catch(() => {});
+        }
+        for (const shiftId of deletedShiftIds) {
+          shiftsSync.deleteShift(shiftId, userId).catch(() => {});
+        }
+        for (const batchId of deletedBatchIds) {
+          exportSync.deleteExportBatch(batchId, userId).catch(() => {});
+        }
+
+        // Drop remote items that the local device has tombstoned
+        remoteLogs = remoteLogs.filter((log) => !deletedLogIds.has(log.id));
+        remoteShifts = remoteShifts.filter((shift) => !deletedShiftIds.has(shift.id));
+        remoteBatches = remoteBatches.filter((batch) => !deletedBatchIds.has(batch.id));
+
+        // Align local state with remote deletions to avoid resurrecting removed items.
+        if (logsSuccess) {
+          const remoteLogIds = new Set(remoteLogs.map((log) => log.id));
+          for (const localLog of localLogs) {
+            if (!remoteLogIds.has(localLog.id)) {
+              await database.deleteOvertimeLog(localLog.id, userId).catch((err) => {
+                debug.warn('[sync.fullSync] Failed to apply remote log deletion locally', err);
+              });
+            }
+          }
+        }
+
+        if (shiftsSuccess) {
+        const remoteShiftIds = new Set(remoteShifts.map((shift) => shift.id));
+        for (const localShift of localShifts) {
+          if (!remoteShiftIds.has(localShift.id)) {
+            await database.deleteUsualShift(localShift.id, userId).catch((err) => {
+              debug.warn('[sync.fullSync] Failed to apply remote shift deletion locally', err);
+            });
+            }
+          }
+        }
+
+        if (exportsSuccess) {
+          const remoteBatchIds = new Set(remoteBatches.map((batch) => batch.id));
+          for (const localBatch of localBatches) {
+            if (!remoteBatchIds.has(localBatch.id)) {
+              await database.deleteExportBatch(localBatch.id, userId).catch((err) => {
+                debug.warn('[sync.fullSync] Failed to apply remote export deletion locally', err);
+              });
+            }
+          }
+        }
         
         // Merge with timestamp-based conflict resolution
         // Logs: merge with timestamp comparison
@@ -2353,6 +2514,11 @@ export const sync = {
           await profileStorage.saveProfile(remoteProfile, userId).catch(() => {});
         }
         
+        // Persist remote export batches locally before caching PDFs
+        for (const batch of remoteBatches) {
+          await database.createExportBatch(batch, userId).catch(() => {});
+        }
+
         // Download cloud PDFs to local cache for offline access
         const { downloadPDFFromStorage, isCloudURL } = await import('./storage/pdfStorage');
         const { getExportFileName } = await import('./utils/exportFilename');
@@ -2378,6 +2544,7 @@ export const sync = {
         if (remoteProfile) {
           await profileStore.loadProfile(userId);
         }
+        await logsStore.loadExportBatches(userId);
         
         debug.debug('[sync.fullSync] Full sync completed successfully');
       } catch (error) {

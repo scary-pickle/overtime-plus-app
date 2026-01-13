@@ -101,7 +101,7 @@ serve(async (req) => {
     // Verify webhook signature
     if (!verifyWebhookSignature(req, secret)) {
       console.warn('[revenuecat-webhook] Invalid webhook signature');
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
         status: 401,
         headers: JSON_HEADERS,
       });
