@@ -440,6 +440,63 @@ export default function ShiftsScreen() {
           </TouchableOpacity>
           <Text style={styles.previewCTAText}>Add first shift</Text>
         </>
+
+        {/* Add Menu Modal */}
+        <Modal
+          visible={showAddMenu}
+          transparent={true}
+          animationType="none"
+          onRequestClose={handleCloseAddMenu}
+        >
+          <TouchableWithoutFeedback onPress={handleCloseAddMenu}>
+            <View style={styles.addMenuOverlay}>
+              <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+                <Animated.View
+                  style={[
+                    styles.addMenuContainer,
+                    isDark && styles.darkAddMenuContainer,
+                    {
+                      transform: [
+                        {
+                          scale: menuAnimation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.8, 1],
+                          }),
+                        },
+                        {
+                          translateY: menuAnimation.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [20, 0],
+                          }),
+                        },
+                      ],
+                      opacity: menuAnimation,
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={handleQuickShift}
+                  >
+                    <Ionicons name="flash-outline" size={20} color={isDark ? '#fff' : '#333'} />
+                    <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
+                      Quick Shift
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={handleCreateShiftPattern}
+                  >
+                    <Ionicons name="calendar-outline" size={20} color={isDark ? '#fff' : '#333'} />
+                    <Text style={[styles.menuItemText, isDark && styles.darkMenuItemText]}>
+                      Create Shift Pattern
+                    </Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </Modal>
       </View>
     );
   }

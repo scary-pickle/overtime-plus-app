@@ -43,7 +43,7 @@ export default function ExportsScreen() {
   const isDark = colorScheme === 'dark';
   
   const { user } = useAuthStore();
-  const { exportBatches, loadExportBatches, deleteExportBatch, updateExportBatch, markBatchAsSubmitted, isLoading, hasLoadedExportBatchesOnce } = useLogsStore();
+  const { exportBatches, loadExportBatches, deleteExportBatch, updateExportBatch, markBatchAsSubmitted, isLoading, hasLoadedExportBatchesOnce, logs, loadLogs, getReadyLogs } = useLogsStore();
   const { profile } = useProfileStore();
   const [refreshing, setRefreshing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -61,13 +61,15 @@ export default function ExportsScreen() {
 
   useEffect(() => {
     loadExportBatches(user?.id);
+    loadLogs(user?.id);
   }, [user?.id]);
 
-  // Reload export batches when screen comes into focus
+  // Reload export batches and logs when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       loadExportBatches(user?.id);
-    }, [loadExportBatches, user?.id])
+      loadLogs(user?.id);
+    }, [loadExportBatches, loadLogs, user?.id])
   );
 
   // Check and schedule unsubmitted AVAC notification when export batches change
@@ -227,7 +229,10 @@ export default function ExportsScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadExportBatches(user?.id);
+    await Promise.all([
+      loadExportBatches(user?.id),
+      loadLogs(user?.id)
+    ]);
     setRefreshing(false);
   };
 
@@ -1736,9 +1741,47 @@ export default function ExportsScreen() {
     );
   };
 
-  const renderEmptyState = () => (
-    <View style={styles.emptyStateContainer}>
-      <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+  const renderEmptyState = () => {
+    const readyLogs = getReadyLogs();
+    const hasReadyLogs = readyLogs.length > 0;
+
+    if (hasReadyLogs) {
+      // Show message that ready logs are available and can be exported
+      return (
+        <View style={styles.emptyStateContainer}>
+          <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+            <Text style={[styles.previewTitle, isDark && styles.darkText]}>
+              Ready to export
+            </Text>
+            <Text style={[styles.previewDescription, isDark && styles.darkPreviewDescription]}>
+              You have {readyLogs.length} log{readyLogs.length !== 1 ? 's' : ''} ready to export. Create your first AVAC form by exporting them.
+            </Text>
+            <View style={[styles.previewHighlight, isDark && styles.darkPreviewHighlight]}>
+              <Ionicons name="document-text" size={18} color="#2e7d32" />
+              <View>
+                <Text style={styles.previewHighlightTitle}>{readyLogs.length} log{readyLogs.length !== 1 ? 's' : ''} ready</Text>
+                <Text style={styles.previewHighlightSubtitle}>Tap to export a PDF bundle</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
+            <Text style={[styles.previewDescription, isDark && styles.darkPreviewDescription]}>
+              Each export keeps the PDF, log count, total hours and submission status together.
+            </Text>
+          </View>
+
+          <Text style={[styles.previewHelperText, isDark && styles.darkPreviewDescription]}>
+            Export your ready logs to create your first AVAC form.
+          </Text>
+        </View>
+      );
+    }
+
+    // Show placeholder when no ready logs exist
+    return (
+      <View style={styles.emptyStateContainer}>
+        <View style={[styles.previewCard, isDark && styles.darkPreviewCard]}>
           <Text style={[styles.previewTitle, isDark && styles.darkText]}>
             Ready to export overview
           </Text>
@@ -1814,7 +1857,8 @@ export default function ExportsScreen() {
           Export your ready logs to create your first AVAC form.
         </Text>
       </View>
-  );
+    );
+  };
 
   // Only show full loading screen on initial load, not on subsequent navigations
   if (isLoading && exportBatches.length === 0 && !hasLoadedExportBatchesOnce) {
@@ -1903,13 +1947,27 @@ export default function ExportsScreen() {
       />
       {exportBatches.length === 0 && (
         <>
-          <TouchableOpacity
-            style={styles.previewCTAButton}
-            onPress={() => router.push('/log/new')}
-          >
-            <Ionicons name="add" size={24} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.previewCTAText}>Add first log</Text>
+          {getReadyLogs().length > 0 ? (
+            <>
+              <TouchableOpacity
+                style={styles.previewCTAButton}
+                onPress={() => router.push('/export/preview')}
+              >
+                <Ionicons name="document-text" size={24} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.previewCTAText}>Export ready logs</Text>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={styles.previewCTAButton}
+                onPress={() => router.push('/log/new')}
+              >
+                <Ionicons name="add" size={24} color="#fff" />
+              </TouchableOpacity>
+              <Text style={styles.previewCTAText}>Add first log</Text>
+            </>
+          )}
         </>
       )}
       <Modal

@@ -201,7 +201,7 @@ export default function OnboardingProfileSetup() {
 
     try {
       await saveProfile(profileData, user?.id);
-      router.push('/onboarding/complete');
+      router.push('/onboarding/create-first-log');
     } catch (error) {
       debug.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');

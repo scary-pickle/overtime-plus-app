@@ -1469,6 +1469,29 @@ export default function ProfileScreen() {
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
 
+          {/* Temporary: Test Guided Log Creation */}
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={async () => {
+              try {
+                await router.push('/onboarding/create-first-log?from=profile');
+              } catch (error) {
+                debug.error('Navigation error:', error);
+                Alert.alert('Error', `Failed to navigate: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              }
+            }}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Test Guided Log Creation
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Preview the onboarding log creation flow
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
             onPress={() => openLegalLink(PRIVACY_POLICY_URL, 'Privacy Policy')}

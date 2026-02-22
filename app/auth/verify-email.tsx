@@ -303,7 +303,7 @@ export default function VerifyEmail() {
         keyboardDismissMode="interactive"
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View>
+          <View style={styles.innerContainer}>
             <Text style={[styles.title, isDark && styles.darkTitle]}>Verify your email</Text>
             
             <Text style={[styles.description, isDark && styles.darkDescription]}>
@@ -311,81 +311,91 @@ export default function VerifyEmail() {
             </Text>
 
             <View style={styles.formContainer}>
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {statusMsg ? (
-            <Text style={[styles.statusText, isDark && styles.darkStatusText]}>{statusMsg}</Text>
-          ) : (
-            <Text style={[styles.instructionText, isDark && styles.darkInstructionText]}>
-              Check your email for the 6-digit code.
-            </Text>
-          )}
-          <TextInput
-            value={otpCode}
-            onChangeText={(text) => {
-              debug('[verify-email] OTP input changed', { 
-                oldLength: otpCode.length, 
-                newLength: text.length,
-                text: text.length > 0 ? '***' : 'empty',
-              });
-              setOtpCode(text);
-            }}
-            placeholder="Enter 6-digit code"
-            placeholderTextColor={isDark ? '#666' : '#9CA3AF'}
-            keyboardType="number-pad"
-            maxLength={6}
-            returnKeyType="done"
-            autoFocus={true}
-            onSubmitEditing={() => {
-              debug('[verify-email] OTP input onSubmitEditing', { 
-                otpCodeLength: otpCode.length, 
-                busy,
-                shouldSubmit: otpCode.length === 6 && !busy,
-              });
-              if (otpCode.length === 6 && !busy) {
-                debug('[verify-email] OTP input onSubmitEditing - submitting');
-                Keyboard.dismiss();
-                onVerifyOtp();
-              } else {
-                debug('[verify-email] OTP input onSubmitEditing - not submitting', {
-                  otpCodeLength: otpCode.length,
-                  busy,
-                });
-              }
-            }}
-            onBlur={() => {
-              debug('[verify-email] OTP input onBlur');
-              Keyboard.dismiss();
-            }}
-            onFocus={() => {
-              debug('[verify-email] OTP input onFocus', { otpCodeLength: otpCode.length });
-            }}
-            style={[styles.input, isDark && styles.darkInput]}
-          />
-          <TouchableOpacity
-            onPress={() => {
-              debug('[verify-email] Verify button pressed', { 
-                busy, 
-                isVerifying, 
-                isLoading, 
-                isSending,
-                otpCodeLength: otpCode.length,
-              });
-              onVerifyOtp();
-            }}
-            disabled={busy}
-            style={[styles.button, busy && styles.buttonDisabled]}
-          >
-            <Text style={styles.buttonText}>{verifyLabel}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onSendOtp}
-            disabled={busy || cooldown > 0}
-            style={styles.resendButton}
-          >
-            <Text style={[styles.resendText, isDark && styles.darkResendText, (busy || cooldown > 0) && styles.resendTextDisabled]}>
-              {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend 6-digit code'}
-            </Text>
-          </TouchableOpacity>
+              {error ? (
+                <View style={styles.messageContainer}>
+                  <Text style={[styles.errorText, isDark && styles.darkErrorText]}>{error}</Text>
+                </View>
+              ) : statusMsg ? (
+                <View style={styles.messageContainer}>
+                  <Text style={[styles.statusText, isDark && styles.darkStatusText]}>{statusMsg}</Text>
+                </View>
+              ) : (
+                <View style={styles.messageContainer}>
+                  <Text style={[styles.instructionText, isDark && styles.darkInstructionText]}>
+                    Check your email for the 6-digit code.
+                  </Text>
+                </View>
+              )}
+              
+              <TextInput
+                value={otpCode}
+                onChangeText={(text) => {
+                  debug('[verify-email] OTP input changed', { 
+                    oldLength: otpCode.length, 
+                    newLength: text.length,
+                    text: text.length > 0 ? '***' : 'empty',
+                  });
+                  setOtpCode(text);
+                }}
+                placeholder="Enter 6-digit code"
+                placeholderTextColor={isDark ? '#666' : '#9CA3AF'}
+                keyboardType="number-pad"
+                maxLength={6}
+                returnKeyType="done"
+                autoFocus={true}
+                onSubmitEditing={() => {
+                  debug('[verify-email] OTP input onSubmitEditing', { 
+                    otpCodeLength: otpCode.length, 
+                    busy,
+                    shouldSubmit: otpCode.length === 6 && !busy,
+                  });
+                  if (otpCode.length === 6 && !busy) {
+                    debug('[verify-email] OTP input onSubmitEditing - submitting');
+                    Keyboard.dismiss();
+                    onVerifyOtp();
+                  } else {
+                    debug('[verify-email] OTP input onSubmitEditing - not submitting', {
+                      otpCodeLength: otpCode.length,
+                      busy,
+                    });
+                  }
+                }}
+                onBlur={() => {
+                  debug('[verify-email] OTP input onBlur');
+                  Keyboard.dismiss();
+                }}
+                onFocus={() => {
+                  debug('[verify-email] OTP input onFocus', { otpCodeLength: otpCode.length });
+                }}
+                style={[styles.input, isDark && styles.darkInput]}
+              />
+              
+              <TouchableOpacity
+                onPress={() => {
+                  debug('[verify-email] Verify button pressed', { 
+                    busy, 
+                    isVerifying, 
+                    isLoading, 
+                    isSending,
+                    otpCodeLength: otpCode.length,
+                  });
+                  onVerifyOtp();
+                }}
+                disabled={busy}
+                style={[styles.button, busy && styles.buttonDisabled]}
+              >
+                <Text style={styles.buttonText}>{verifyLabel}</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                onPress={onSendOtp}
+                disabled={busy || cooldown > 0}
+                style={styles.resendButton}
+              >
+                <Text style={[styles.resendText, isDark && styles.darkResendText, (busy || cooldown > 0) && styles.resendTextDisabled]}>
+                  {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend 6-digit code'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </TouchableWithoutFeedback>
@@ -400,72 +410,90 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   darkContainer: {
-    backgroundColor: '#000',
+    backgroundColor: '#000000',
   },
   content: {
     flexGrow: 1,
     padding: 24,
     justifyContent: 'center',
-    alignItems: 'center',
+  },
+  innerContainer: {
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
     color: '#111',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   darkTitle: {
-    color: '#fff',
+    color: '#FFFFFF',
   },
   description: {
     fontSize: 16,
     color: '#333',
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 32,
     lineHeight: 24,
+    paddingHorizontal: 8,
   },
   darkDescription: {
-    color: '#aaa',
+    color: '#AAAAAA',
   },
   formContainer: {
     width: '100%',
-    gap: 16,
+    gap: 20,
+  },
+  messageContainer: {
+    minHeight: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   errorText: {
-    color: '#b91c1c',
+    color: '#DC2626',
     fontSize: 14,
     textAlign: 'center',
+    fontWeight: '500',
+  },
+  darkErrorText: {
+    color: '#EF4444',
   },
   statusText: {
-    color: '#111827',
+    color: '#059669',
     fontSize: 14,
     textAlign: 'center',
+    fontWeight: '500',
   },
   darkStatusText: {
-    color: '#fff',
+    color: '#10B981',
   },
   instructionText: {
-    color: '#4b5563',
+    color: '#6B7280',
     fontSize: 14,
     textAlign: 'center',
   },
   darkInstructionText: {
-    color: '#aaa',
+    color: '#9CA3AF',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#D1D5DB',
     borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
+    padding: 18,
+    fontSize: 18,
     color: '#111',
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+    textAlign: 'center',
+    letterSpacing: 4,
+    fontWeight: '600',
   },
   darkInput: {
-    backgroundColor: '#2c2c2e',
-    borderColor: '#444',
-    color: '#fff',
+    backgroundColor: '#1C1C1E',
+    borderColor: '#3A3A3C',
+    color: '#FFFFFF',
   },
   button: {
     backgroundColor: '#007AFF',
@@ -475,28 +503,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.5,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   buttonText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
   },
   resendButton: {
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
+    paddingVertical: 8,
   },
   resendText: {
-    color: '#111827',
-    fontSize: 14,
+    color: '#007AFF',
+    fontSize: 15,
     fontWeight: '500',
   },
   darkResendText: {
-    color: '#aaa',
+    color: '#4FC3F7',
   },
   resendTextDisabled: {
     color: '#9CA3AF',
+    opacity: 0.6,
   },
 });

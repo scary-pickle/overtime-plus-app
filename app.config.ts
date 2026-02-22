@@ -20,7 +20,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.overtimeplus.app',
-    buildNumber: '5',
+    buildNumber: '6',
     infoPlist: {
       NSUserNotificationUsageDescription: 'Overtime+ uses notifications to remind you when your rostered shift ends and to send snoozed reminders.',
       NSAllowsLocalNetworking: process.env.EXPO_PUBLIC_ALLOW_HTTP_IN_DEV === 'true',

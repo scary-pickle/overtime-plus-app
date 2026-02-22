@@ -1,35 +1,37 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 export default function OnboardingWelcome() {
   const router = useRouter();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, isDark && styles.darkContainer]}>
       <View style={styles.content}>
         <View style={styles.iconContainer}>
           <Ionicons name="time-outline" size={80} color="#007AFF" />
         </View>
         
-        <Text style={styles.title}>Welcome to Overtime+</Text>
+        <Text style={[styles.title, isDark && styles.darkTitle]}>Welcome to Overtime+</Text>
         
-        <Text style={styles.description}>
+        <Text style={[styles.description, isDark && styles.darkDescription]}>
           Track your overtime hours, manage your shifts, and generate AVAC forms with ease.
         </Text>
 
         <View style={styles.featuresList}>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={styles.featureText}>Track overtime hours</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Track overtime hours</Text>
           </View>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={styles.featureText}>Manage shift patterns</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Manage shift patterns</Text>
           </View>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={styles.featureText}>Generate AVAC PDFs</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Generate AVAC PDFs</Text>
           </View>
         </View>
 
@@ -50,6 +52,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  darkContainer: {
+    backgroundColor: '#000000',
+  },
   content: {
     flex: 1,
     padding: 24,
@@ -66,12 +71,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  darkTitle: {
+    color: '#FFFFFF',
+  },
   description: {
     fontSize: 16,
     color: '#333',
     textAlign: 'center',
     marginBottom: 40,
     lineHeight: 24,
+  },
+  darkDescription: {
+    color: '#AAAAAA',
   },
   featuresList: {
     width: '100%',
@@ -86,6 +97,9 @@ const styles = StyleSheet.create({
   featureText: {
     fontSize: 16,
     color: '#333',
+  },
+  darkFeatureText: {
+    color: '#AAAAAA',
   },
   button: {
     backgroundColor: '#007AFF',
