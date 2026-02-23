@@ -1,5 +1,7 @@
 import '../lib/utils/consoleSafe';
 import '../lib/utils/secureFetch';
+// Register the geofence background task handler at module scope (required by expo-task-manager)
+import '../lib/location/geofenceManager';
 import React from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -170,6 +172,10 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="notifications-settings"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="geofence-settings"
             options={{ headerShown: false }}
           />
         </Stack>

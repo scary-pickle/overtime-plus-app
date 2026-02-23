@@ -86,8 +86,10 @@ export default function OnboardingProfileSetup() {
     setTimeout(() => {
       const position = fieldPositions.current[fieldKey];
       if (position !== undefined && scrollViewRef.current) {
+        // Scroll so the focused field sits at the top of the visible area (not just above keyboard)
+        const topOffset = 24;
         scrollViewRef.current.scrollTo({
-          y: Math.max(0, position - 150), // Scroll to show input with 150px padding from top
+          y: Math.max(0, position - topOffset),
           animated: true,
         });
       }
@@ -188,7 +190,7 @@ export default function OnboardingProfileSetup() {
 
     try {
       await saveProfile(profileData, localUserId);
-      router.push('/onboarding/create-first-log');
+      router.push('/onboarding/location-permissions');
     } catch (error) {
       debug.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to save profile. Please try again.');

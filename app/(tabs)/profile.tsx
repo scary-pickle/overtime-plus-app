@@ -1125,6 +1125,21 @@ export default function ProfileScreen() {
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => router.push('/geofence-settings')}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Auto Shift Detection
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Automatically log shifts using hospital geofence
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
           
           <TouchableOpacity
             style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}

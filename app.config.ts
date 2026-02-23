@@ -23,6 +23,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     buildNumber: '6',
     infoPlist: {
       NSUserNotificationUsageDescription: 'Overtime+ uses notifications to remind you when your rostered shift ends and to send snoozed reminders.',
+      NSLocationWhenInUseUsageDescription: 'Overtime+ uses your location to detect when you arrive at and leave your hospital, so it can automatically create draft shift logs for you to confirm.',
+      NSLocationAlwaysAndWhenInUseUsageDescription: 'Overtime+ uses your location in the background to detect when you arrive at and leave your hospital, so it can automatically create draft shift logs even when the app is not open.',
       NSAllowsLocalNetworking: process.env.EXPO_PUBLIC_ALLOW_HTTP_IN_DEV === 'true',
       // Ensure URL scheme is properly registered for deep linking
       CFBundleURLTypes: [
@@ -49,6 +51,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     'expo-router',
     'expo-secure-store',
+    [
+      'expo-location',
+      {
+        locationAlwaysAndWhenInUsePermission: 'Overtime+ uses your location to detect when you arrive at and leave your hospital, automatically creating draft shift logs for you to confirm.'
+      }
+    ],
     [
       'expo-notifications',
       {

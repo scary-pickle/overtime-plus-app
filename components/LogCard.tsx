@@ -110,6 +110,16 @@ export function LogCard({
     setIsExpanded(!isExpanded);
   };
 
+  const getGeofenceBadge = () => {
+    if (log.source !== 'geofence-proposed') return null;
+    return (
+      <View style={[styles.statusBadge, styles.geofenceBadge]}>
+        <Ionicons name="location" size={12} color="#5b21b6" />
+        <Text style={styles.geofenceText}>GPS</Text>
+      </View>
+    );
+  };
+
   const getStatusBadge = () => {
     if (log.status === 'ready') {
       return (
@@ -169,6 +179,7 @@ export function LogCard({
         </View>
         
         <View style={styles.headerRight}>
+          {getGeofenceBadge()}
           {getStatusBadge()}
           {!showSelection && (
             <TouchableOpacity 
@@ -355,7 +366,25 @@ export function LogCard({
                   </View>
                 )}
 
-                {log.status === 'draft' && !log.comments && (
+                {log.source === 'geofence-proposed' && log.isActiveShift && (
+                  <View style={styles.metaRow}>
+                    <Ionicons name="radio-button-on" size={14} color="#7c3aed" />
+                    <Text style={[styles.metaText, styles.geofenceMetaText]}>
+                      Shift in progress — tracking your hours
+                    </Text>
+                  </View>
+                )}
+
+                {log.source === 'geofence-proposed' && !log.isActiveShift && (
+                  <View style={styles.metaRow}>
+                    <Ionicons name="location" size={14} color="#7c3aed" />
+                    <Text style={[styles.metaText, styles.geofenceMetaText]}>
+                      Auto-detected — tap Edit to review times before confirming
+                    </Text>
+                  </View>
+                )}
+
+                {log.status === 'draft' && !log.comments && log.source !== 'geofence-proposed' && (
                   <Text style={[styles.draftHelperText, isDark && styles.darkSecondaryText]}>
                     Draft logs stay here until you're ready to submit.
                   </Text>
@@ -476,6 +505,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#1e40af',
+  },
+  geofenceBadge: {
+    backgroundColor: '#ede9fe',
+  },
+  geofenceText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#5b21b6',
+  },
+  geofenceMetaText: {
+    color: '#7c3aed',
+    fontStyle: 'italic',
   },
   expandedContent: {
     marginTop: 8,

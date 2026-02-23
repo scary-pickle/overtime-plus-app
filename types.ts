@@ -96,6 +96,16 @@ export type NotificationSettings = {
   snoozeMinutes: number;   // default snooze duration
 };
 
+export type GeofenceSettings = {
+  enabled: boolean;
+  radiusMeters: number;   // geofence radius in metres (200, 500, or 1000)
+  hospitalName: string;   // the hospital being geofenced (matches Profile.location)
+  notifyOnEntry: boolean;
+  notifyOnExit: boolean;
+  // For custom hospitals not in our coordinates database — set via GPS on-site
+  customCoordinates?: { latitude: number; longitude: number };
+};
+
 export type TimeRange = {
   start: string; // "HH:mm"
   finish: string; // "HH:mm"

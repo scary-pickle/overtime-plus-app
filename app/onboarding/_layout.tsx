@@ -12,6 +12,7 @@ export default function OnboardingLayout() {
       >
         <Stack.Screen name="welcome" />
         <Stack.Screen name="profile-setup" />
+        <Stack.Screen name="location-permissions" />
         <Stack.Screen name="create-first-log" />
         <Stack.Screen name="complete" />
       </Stack>

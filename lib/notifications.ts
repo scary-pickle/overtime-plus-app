@@ -236,6 +236,8 @@ class NotificationManager {
             id.startsWith('overtime_') ||
             id.startsWith('shift_start_reminder_') ||
             id.startsWith('active_shift_reminder_') ||
+            id.startsWith('geofence_entry_') ||
+            id.startsWith('geofence_exit_') ||
             id === 'weekly_summary' ||
             id === 'unexported_logs_reminder' ||
             id === 'unsubmitted_avac_reminder' ||
@@ -246,7 +248,9 @@ class NotificationManager {
             type === 'weekly_summary' ||
             type === 'unexported_logs_reminder' ||
             type === 'unsubmitted_avac_reminder' ||
-            type === 'incomplete_draft_reminder'
+            type === 'incomplete_draft_reminder' ||
+            type === 'geofence_entry' ||
+            type === 'geofence_exit'
           );
         }
       );
@@ -1338,10 +1342,11 @@ class NotificationManager {
   handleNotificationResponse(response: Notifications.NotificationResponse): void {
     const { data } = response.notification.request.content;
     
-    if (data?.type === 'shift_end_reminder' || data?.type === 'shift_end_snooze' || 
+    if (data?.type === 'shift_end_reminder' || data?.type === 'shift_end_snooze' ||
         data?.type === 'active_shift_8hr_reminder' || data?.type === 'shift_start_reminder' ||
         data?.type === 'unexported_logs_reminder' || data?.type === 'unsubmitted_avac_reminder' ||
-        data?.type === 'incomplete_draft_reminder' || data?.type === 'weekly_summary') {
+        data?.type === 'incomplete_draft_reminder' || data?.type === 'weekly_summary' ||
+        data?.type === 'geofence_entry' || data?.type === 'geofence_exit') {
       // This will be handled by the app's notification listener
       debug.debug('Notification tapped:', data);
     }
