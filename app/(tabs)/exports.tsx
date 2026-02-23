@@ -25,7 +25,7 @@ import { getInfoAsync, readAsStringAsync, writeAsStringAsync, deleteAsync } from
 import { PDFDocument } from 'pdf-lib';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useProfileStore } from '../../lib/state/profileStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { formatMinutes } from '../../lib/time';
 import { ExportBatch } from '../../types';
 import { sendAVACEmail, sendAVACEmailWithAttachment, getAVACRecipientInfo } from '../../lib/email/emailService';
@@ -42,7 +42,7 @@ export default function ExportsScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { exportBatches, loadExportBatches, deleteExportBatch, updateExportBatch, markBatchAsSubmitted, isLoading, hasLoadedExportBatchesOnce, logs, loadLogs, getReadyLogs } = useLogsStore();
   const { profile } = useProfileStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -60,21 +60,21 @@ export default function ExportsScreen() {
   const [isBatchSharing, setIsBatchSharing] = useState(false);
 
   useEffect(() => {
-    loadExportBatches(user?.id);
-    loadLogs(user?.id);
-  }, [user?.id]);
+    loadExportBatches(localUserId);
+    loadLogs(localUserId);
+  }, [localUserId]);
 
   // Reload export batches and logs when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      loadExportBatches(user?.id);
-      loadLogs(user?.id);
-    }, [loadExportBatches, loadLogs, user?.id])
+      loadExportBatches(localUserId);
+      loadLogs(localUserId);
+    }, [loadExportBatches, loadLogs, localUserId])
   );
 
   // Check and schedule unsubmitted AVAC notification when export batches change
   useEffect(() => {
-    if (user?.id && exportBatches.length > 0) {
+    if (localUserId && exportBatches.length > 0) {
       const { notificationManager } = require('../../lib/notifications');
       // Create a stable reference for the notification check
       const batchesForNotification = exportBatches.map(b => ({
@@ -86,7 +86,7 @@ export default function ExportsScreen() {
         debug.error('Failed to check unsubmitted AVAC notification:', err);
       });
     }
-  }, [exportBatches.length, user?.id]);
+  }, [exportBatches.length, localUserId]);
 
   const handleToggleFilter = () => {
     setIsFilterExpanded(!isFilterExpanded);
@@ -230,8 +230,8 @@ export default function ExportsScreen() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
-      loadExportBatches(user?.id),
-      loadLogs(user?.id)
+      loadExportBatches(localUserId),
+      loadLogs(localUserId)
     ]);
     setRefreshing(false);
   };

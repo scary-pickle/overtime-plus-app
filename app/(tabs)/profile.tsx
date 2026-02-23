@@ -25,10 +25,7 @@ import { HospitalDropdown } from '../../components/HospitalDropdown';
 import { getDepartmentsForHospital, getHospitalById, QUEENSLAND_HOSPITALS, getDelegateForDepartment } from '../../lib/data/hospitalDepartments';
 import { Profile } from '../../types';
 import { profileStorage } from '../../lib/storage/profile';
-import { useAuthStore } from '../../lib/state/authStore';
-import { useSyncStore } from '../../lib/state/syncStore';
-import { useSubscriptionStore } from '../../lib/state/subscriptionStore';
-import { getManageSubscriptionUrl } from '../../lib/utils/subscription';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 
 import { createScopedLogger } from '../../lib/utils/logger';
 
@@ -38,248 +35,6 @@ const FEEDBACK_EMAIL = 'overtimeplusapp@proton.me';
 const PRIVACY_POLICY_URL = process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL;
 const TERMS_URL = process.env.EXPO_PUBLIC_TERMS_URL;
 
-const subscriptionStatusCopy = (reason: string): { title: string; detail: string } => {
-  switch (reason) {
-    case 'trial':
-      return { title: 'Trial Active', detail: 'Enjoy all features until your trial expires.' };
-    case 'legacy-free':
-      return { title: 'Legacy Access', detail: 'You have temporary access during the rollout.' };
-    case 'grace':
-      return { title: 'Grace Period', detail: 'Exports remain available for 7 days after expiry.' };
-    case 'active':
-    case 'customer-entitled':
-      return { title: 'Subscription Active', detail: 'Billing is current. Manage anytime.' };
-    case 'paywall-disabled':
-      return { title: 'Paywall Disabled', detail: 'Subscriptions are not enforced in this build.' };
-    default:
-      return { title: 'Subscription Required', detail: 'Start a trial or subscribe to keep access.' };
-  }
-};
-
-function SubscriptionStatusCard({ isDark }: { isDark: boolean }) {
-  const router = useRouter();
-  const access = useSubscriptionStore((state) => state.access);
-  const snapshot = useSubscriptionStore((state) => state.snapshot);
-  const trialEligible = useSubscriptionStore((state) => state.isTrialEligible());
-  const trialDaysRemaining = useSubscriptionStore((state) => state.trialDaysRemaining());
-  const graceDaysRemaining = useSubscriptionStore((state) => state.graceDaysRemaining());
-  const refreshSubscription = useSubscriptionStore((state) => state.refresh);
-  const refreshing = useSubscriptionStore((state) => state.refreshing);
-  const shouldShowPaywall = useSubscriptionStore((state) => state.access.shouldShowPaywall);
-
-  const manageLabel = Platform.OS === 'ios' ? 'Manage in App Store' : 'Manage in Play Store';
-
-  const handleManage = () => {
-    const url = getManageSubscriptionUrl(Platform.OS === 'ios' ? 'ios' : 'android');
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Manage Subscription', 'Unable to open subscription settings.');
-    });
-  };
-
-  const copy = subscriptionStatusCopy(access.reason);
-
-  return (
-    <View style={[styles.subscriptionCard, isDark && styles.darkCard]}>
-      <View style={styles.subscriptionHeader}>
-        <Ionicons name="card-outline" size={20} color={isDark ? '#fff' : '#111'} />
-        <View style={{ marginLeft: 12, flex: 1 }}>
-          <Text style={[styles.subscriptionTitle, isDark && styles.darkSectionTitle]}>{copy.title}</Text>
-          <Text style={[styles.subscriptionDetail, isDark && styles.darkSubtitle]}>{copy.detail}</Text>
-        </View>
-      </View>
-      {trialEligible && (
-        <Text style={[styles.subscriptionBadge, isDark && styles.darkSubscriptionBadge]}>
-          Eligible for 1-month free trial
-        </Text>
-      )}
-      {typeof trialDaysRemaining === 'number' && access.reason === 'trial' && (
-        <Text style={[styles.subscriptionMeta, isDark && styles.darkSubtitle]}>
-          Trial ends in {trialDaysRemaining} day{trialDaysRemaining === 1 ? '' : 's'}.
-        </Text>
-      )}
-      {typeof graceDaysRemaining === 'number' && access.reason === 'grace' && (
-        <Text style={[styles.subscriptionMeta, isDark && styles.darkSubtitle]}>
-          Grace period ends in {graceDaysRemaining} day{graceDaysRemaining === 1 ? '' : 's'}.
-        </Text>
-      )}
-      {snapshot?.subscriptionExpiresAt && (
-        <Text style={[styles.subscriptionMeta, isDark && styles.darkSubtitle]}>
-          Next renewal: {new Date(snapshot.subscriptionExpiresAt).toLocaleDateString()}
-        </Text>
-      )}
-      {snapshot?.legacyFreeAccess && (
-        <Text style={[styles.subscriptionMeta, styles.subscriptionLegacy]}>
-          Legacy access enabled until you accept the paywall.
-        </Text>
-      )}
-      <View style={styles.subscriptionButtons}>
-        <TouchableOpacity
-          style={[styles.subscriptionPrimaryButton, shouldShowPaywall && styles.subscriptionCTA]}
-          onPress={() => router.push('/subscription/paywall')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.subscriptionPrimaryButtonText}>
-            {shouldShowPaywall ? 'Unlock Access' : 'View Paywall'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.subscriptionSecondaryButton, isDark && styles.darkSecondaryButton]}
-          onPress={handleManage}
-          activeOpacity={0.85}
-        >
-          <Text style={[styles.subscriptionSecondaryButtonText, isDark && styles.darkText]}>
-            {manageLabel}
-          </Text>
-        </TouchableOpacity>
-      </View>
-      <TouchableOpacity
-        style={styles.subscriptionRefresh}
-        onPress={() => refreshSubscription()}
-        disabled={refreshing}
-      >
-        {refreshing ? (
-          <Text style={styles.subscriptionRefreshText}>Refreshing…</Text>
-        ) : (
-          <Text style={styles.subscriptionRefreshText}>Refresh subscription status</Text>
-        )}
-      </TouchableOpacity>
-    </View>
-  );
-}
-// Sync Status Indicator Component
-function SyncStatusIndicator({ isDark }: { isDark: boolean }) {
-  const { status, lastSyncTime, pendingOperations, error, checkSyncStatus, triggerFullSync } = useSyncStore();
-  const { user } = useAuthStore();
-  const [isRefreshing, setIsRefreshing] = React.useState(false);
-
-  React.useEffect(() => {
-    if (user?.id) {
-      checkSyncStatus();
-      // Check sync status every 30 seconds
-      const interval = setInterval(() => {
-        checkSyncStatus();
-      }, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [user?.id, checkSyncStatus]);
-
-  const handleSync = async () => {
-    if (!user?.id) return;
-    setIsRefreshing(true);
-    try {
-      await triggerFullSync(user.id);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  const getStatusIcon = () => {
-    switch (status) {
-      case 'synced':
-        return 'checkmark-circle';
-      case 'syncing':
-        return 'sync';
-      case 'error':
-        return 'alert-circle';
-      case 'offline':
-        return 'cloud-offline';
-      case 'pending':
-        return 'time';
-      default:
-        return 'help-circle';
-    }
-  };
-
-  const getStatusColor = () => {
-    switch (status) {
-      case 'synced':
-        return '#4CAF50';
-      case 'syncing':
-        return '#2196F3';
-      case 'error':
-        return '#f44336';
-      case 'offline':
-        return '#ff9800';
-      case 'pending':
-        return '#ff9800';
-      default:
-        return isDark ? '#999' : '#666';
-    }
-  };
-
-  const getStatusText = () => {
-    switch (status) {
-      case 'synced':
-        return 'Synced';
-      case 'syncing':
-        return 'Syncing...';
-      case 'error':
-        return error || 'Sync Error';
-      case 'offline':
-        return 'Offline';
-      case 'pending':
-        return `Pending (${pendingOperations})`;
-      default:
-        return 'Unknown';
-    }
-  };
-
-  const formatLastSync = () => {
-    if (!lastSyncTime) return null;
-    const lastSync = new Date(lastSyncTime);
-    const now = new Date();
-    const diffMs = now.getTime() - lastSync.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  };
-
-  return (
-    <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-          <Ionicons 
-            name={getStatusIcon() as any} 
-            size={18} 
-            color={getStatusColor()} 
-            style={{ marginRight: 8 }}
-          />
-          <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-            Sync Status
-          </Text>
-        </View>
-        <Text style={[styles.settingValue, isDark && styles.darkSettingValue, { marginTop: 4 }]}>
-          {getStatusText()}
-        </Text>
-        {lastSyncTime && status === 'synced' && (
-          <Text style={[styles.settingValue, isDark && styles.darkSettingValue, { fontSize: 12, marginTop: 2, opacity: 0.7 }]}>
-            Last synced: {formatLastSync()}
-          </Text>
-        )}
-      </View>
-      <TouchableOpacity
-        onPress={handleSync}
-        disabled={isRefreshing || status === 'syncing'}
-        style={[
-          styles.syncButton,
-          (isRefreshing || status === 'syncing') && styles.syncButtonDisabled,
-          isDark && styles.darkSyncButton,
-        ]}
-      >
-        <Ionicons 
-          name={status === 'syncing' ? 'sync' : 'refresh'} 
-          size={18} 
-          color={isDark ? '#fff' : '#2196F3'} 
-        />
-      </TouchableOpacity>
-    </View>
-  );
-}
 
 // Separate component file would be better, but defining here for now
 // This component uses local state to prevent keyboard dismissal
@@ -534,7 +289,7 @@ export default function ProfileScreen() {
   const profile = useProfileStore((state) => state.profile);
   const saveProfile = useProfileStore((state) => state.saveProfile);
   const loadProfile = useProfileStore((state) => state.loadProfile);
-  const { user } = useAuthStore(); // Get user for userId
+  const { localUserId } = useLocalUserStore();
   // Compute isComplete locally instead of from store to avoid re-renders
   const isComplete = profile ? profileStorage.isProfileComplete(profile) : false;
   const [formData, setFormData] = useState<Partial<Profile>>({});
@@ -614,8 +369,8 @@ export default function ProfileScreen() {
   const settingsAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    loadProfile(user?.id);
-  }, [loadProfile, user?.id]);
+    loadProfile(localUserId);
+  }, [loadProfile, localUserId]);
 
   // Refresh profile when screen gains focus (prevents stale completeness state)
   // But don't reload if we're currently editing to prevent keyboard dismissal
@@ -623,9 +378,9 @@ export default function ProfileScreen() {
     React.useCallback(() => {
       // Only reload if not editing to prevent interrupting user input
       if (!isEditing) {
-        loadProfile(user?.id);
+        loadProfile(localUserId);
       }
-    }, [isEditing, user?.id]) // Include isEditing and user?.id to check if we should reload
+    }, [isEditing, localUserId])
   );
 
   // Only update formData from profile when NOT editing and NOT typing to prevent keyboard dismissal
@@ -727,7 +482,7 @@ export default function ProfileScreen() {
     });
 
     try {
-      await saveProfile(profileData, user?.id);
+      await saveProfile(profileData, localUserId);
       setIsEditing(false);
       debug.debug('Profile saved successfully, profileData:', profileData);
       Alert.alert('Success', 'Profile saved successfully!');
@@ -806,7 +561,7 @@ export default function ProfileScreen() {
     return names.map(name => name.charAt(0)).join('').toUpperCase().substring(0, 3);
   };
 
-  const canEditFullName = !profile;
+  const canEditFullName = true;
 
   const handleFullNameChange = React.useCallback((value: string) => {
     if (!canEditFullName) {
@@ -956,8 +711,6 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
-        <SubscriptionStatusCard isDark={isDark} />
-
         {/* Missing Fields Alert */}
         {!isProfileComplete && missingFields.length > 0 && (
           <View style={[styles.missingFieldsCard, isDark && styles.darkMissingFieldsCard]}>
@@ -1067,25 +820,6 @@ export default function ProfileScreen() {
             isDark={isDark}
             isEditing={isEditing && canEditFullName}
           />
-          {!canEditFullName && (
-            <View style={[
-              styles.lockedFieldNotice,
-              isDark && styles.darkLockedFieldNotice,
-            ]}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={16}
-                color={isDark ? '#ffb74d' : '#f57c00'}
-                style={styles.lockedFieldIcon}
-              />
-              <Text style={[
-                styles.lockedFieldText,
-                isDark && styles.darkLockedFieldText,
-              ]}>
-                Your full name is locked to your verified QLD Health email. Contact support if it needs updating.
-              </Text>
-            </View>
-          )}
           <FieldInput
             fieldKey="payrollNumber"
             label="Payroll Number"
@@ -1303,11 +1037,11 @@ export default function ProfileScreen() {
           />
         </CollapsibleSection>
 
-        {/* Account Management */}
+        {/* Data Management */}
         <CollapsibleSection
           sectionKey="account"
-          title="Account"
-          subtitle="Sign in and account management"
+          title="Data"
+          subtitle="Backup and device data management"
           showEdit={false}
           isDark={isDark}
           isExpanded={expandedSections.account}
@@ -1316,80 +1050,33 @@ export default function ProfileScreen() {
           onToggle={toggleSection}
           onLayout={handleSectionLayout('account')}
         >
-          {/* Email Address */}
-          {user?.email && (
-            <View style={[styles.settingRow, isDark && styles.darkSettingRow]}>
-              <View>
-                <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-                  Email Address
-                </Text>
-                <Text style={[styles.settingValue, isDark && styles.darkSettingValue, { marginTop: 4 }]}>
-                  {user.email}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Sync Status */}
-          {user && (
-            <SyncStatusIndicator isDark={isDark} />
-          )}
-          
-          {/* Sign Out action */}
-          <TouchableOpacity
-            style={[styles.settingRow, isDark && styles.darkSettingRow]}
-            onPress={async () => {
-              Alert.alert(
-                'Sign Out',
-                'Are you sure you want to sign out?',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Sign Out',
-                    style: 'destructive',
-                    onPress: async () => {
-                      try {
-                        await useAuthStore.getState().signOut();
-                        router.replace('/auth/welcome');
-                      } catch (e) {
-                        Alert.alert('Error', 'Failed to sign out. Please try again.');
-                      }
-                    },
-                  },
-                ]
-              );
-            }}
-          >
-            <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel, { color: '#dc2626' }]}>
-              Sign Out
-            </Text>
-            <Ionicons name="log-out-outline" size={20} color="#dc2626" />
-          </TouchableOpacity>
-
-          {/* Delete Account action */}
+          {/* Backup & Restore */}
           <TouchableOpacity
             style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
-            onPress={() => {
-              Alert.alert(
-                'Delete account',
-                'This will delete your account, synced data, and local data on this device. This cannot be undone.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Continue',
-                    style: 'destructive',
-                    onPress: () => router.push('/delete-account')
-                  }
-                ]
-              );
-            }}
+            onPress={() => router.push('/backup')}
+          >
+            <View style={styles.settingLeft}>
+              <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
+                Backup & Restore
+              </Text>
+              <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
+                Export or import all your data as a file
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />
+          </TouchableOpacity>
+
+          {/* Reset App action */}
+          <TouchableOpacity
+            style={[styles.settingRowStacked, isDark && styles.darkSettingRow]}
+            onPress={() => router.push('/reset-app')}
           >
             <View style={styles.settingLeft}>
               <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel, { color: '#dc2626' }]}>
-                Delete Account
+                Reset App
               </Text>
               <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
-                Permanently remove account and data
+                Permanently delete all local data from this device
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#f87171' : '#dc2626'} />
@@ -1999,106 +1686,5 @@ const styles = StyleSheet.create({
     color: '#000',
     fontSize: 15,
     fontWeight: '600',
-  },
-  syncButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'transparent',
-  },
-  syncButtonDisabled: {
-    opacity: 0.5,
-  },
-  darkSyncButton: {
-    backgroundColor: 'transparent',
-  },
-  subscriptionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  subscriptionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  subscriptionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  subscriptionDetail: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 2,
-  },
-  subscriptionBadge: {
-    backgroundColor: '#E8F5E9',
-    color: '#2e7d32',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    fontWeight: '600',
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  darkSubscriptionBadge: {
-    backgroundColor: '#1b2e1b',
-    color: '#81C784',
-  },
-  subscriptionMeta: {
-    fontSize: 13,
-    color: '#555',
-    marginBottom: 4,
-  },
-  subscriptionLegacy: {
-    color: '#ff9800',
-    fontWeight: '600',
-  },
-  subscriptionButtons: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 12,
-  },
-  subscriptionPrimaryButton: {
-    flex: 1,
-    backgroundColor: '#007AFF',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  subscriptionCTA: {
-    backgroundColor: '#00c853',
-  },
-  subscriptionPrimaryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  subscriptionSecondaryButton: {
-    flex: 1,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  darkSecondaryButton: {
-    borderColor: '#333',
-    backgroundColor: '#1e1e1e',
-  },
-  subscriptionSecondaryButtonText: {
-    fontWeight: '600',
-    color: '#333',
-  },
-  subscriptionRefresh: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  subscriptionRefreshText: {
-    color: '#007AFF',
-    fontSize: 13,
-    fontWeight: '500',
   },
 });

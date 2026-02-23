@@ -16,12 +16,10 @@ import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useLogsStore } from '../../lib/state/logsStore';
-import { useAuthStore } from '../../lib/state/authStore';
-import { exportSync } from '../../lib/supabase';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { buildAVAC, validateLogsForPDF } from '../../lib/pdf/buildAVAC';
 import { buildSMOAVAC } from '../../lib/pdf/buildSMOAVAC';
 import { formatMinutes } from '../../lib/time';
-import { isCloudURL } from '../../lib/storage/pdfStorage';
 import InAppPDFViewer from '../../components/InAppPDFViewer';
 import { createScopedLogger } from '../../lib/utils/logger';
 import { OvertimeLog } from '../../types';
@@ -35,7 +33,7 @@ export default function ExportPreviewScreen() {
   const isDark = colorScheme === 'dark';
   
   const { profile } = useProfileStore();
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { logs, getReadyLogs, batchExport, updateExportBatch, markBatchAsSubmitted } = useLogsStore();
   
   const [pdfUri, setPdfUri] = useState<string | null>(null);
@@ -333,8 +331,7 @@ export default function ExportPreviewScreen() {
             : await buildAVAC(profile, finalExpandedLogs, customFileName));
       setPdfUri(pdfUri);
       
-      // Get userId for cloud upload
-      const userId = user?.id;
+      const userId = localUserId;
       
       if (!regenerate) {
         // Store the log IDs used for this batch (include both logs in shift swaps)
@@ -351,34 +348,12 @@ export default function ExportPreviewScreen() {
         await updateExportBatch(updatedBatch, userId);
         setExportBatch(updatedBatch);
         
-        // Upload PDF to cloud storage in background (non-blocking)
-        // The exportSync.uploadExportBatch will handle this, but we can also trigger it here
-        // for immediate feedback
-        if (userId) {
-          exportSync.uploadExportBatch(updatedBatch, userId)
-            .then(() => {
-              debug.debug('PDF uploaded to cloud storage successfully');
-            })
-            .catch(err => {
-              debug.error('PDF upload to cloud storage failed (non-fatal):', err);
-            });
-        }
       } else if (exportBatch) {
         // Update existing batch with new custom name and PDF URI
         const updatedBatch = { ...exportBatch, customName: customName.trim() || undefined, pdfUri };
         await updateExportBatch(updatedBatch, userId);
         setExportBatch(updatedBatch);
         
-        // Upload PDF to cloud storage in background (non-blocking)
-        if (userId) {
-          exportSync.uploadExportBatch(updatedBatch, userId)
-            .then(() => {
-              debug.debug('PDF re-uploaded to cloud storage successfully');
-            })
-            .catch(err => {
-              debug.error('PDF re-upload to cloud storage failed (non-fatal):', err);
-            });
-        }
       }
       
       debug.debug('PDF generated successfully:', pdfUri);
@@ -395,7 +370,7 @@ export default function ExportPreviewScreen() {
     // Just update the batch name without regenerating PDF immediately
     // This avoids errors and is more performant
     if (exportBatch) {
-      const userId = user?.id;
+      const userId = localUserId;
       const updatedBatch = { ...exportBatch, customName: text.trim() || undefined };
       // Update optimistically in state
       setExportBatch(updatedBatch);
@@ -435,12 +410,6 @@ export default function ExportPreviewScreen() {
 
   const getPDFInfo = async () => {
     if (!pdfUri) return null;
-
-    // Only get info for local files, not cloud URLs
-    if (isCloudURL(pdfUri)) {
-      debug.debug('Skipping file info for cloud URL');
-      return null;
-    }
 
     // Check if it's a local file path
     if (!pdfUri.startsWith('file://') && !pdfUri.startsWith('/')) {

@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { profileStorage } from '../../lib/storage/profile';
 import { getCurrentTime, getCurrentDate, formatMinutes, getShiftStartDate, getHoursElapsedSinceShiftStart } from '../../lib/time';
 import { getRosterForDate } from '../../lib/roster';
@@ -36,7 +36,7 @@ export default function HomeScreen() {
   const isDark = colorScheme === 'dark';
   
   // Get user from auth store for userId
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { profile, loadProfile, initials, isLoading: isProfileLoading } = useProfileStore();
   
   // Compute profile state from profile object
@@ -156,19 +156,19 @@ export default function HomeScreen() {
   // Reload profile when screen comes into focus
   useEffect(() => {
     const refreshProfile = () => {
-      loadProfile(user?.id);
+      loadProfile(localUserId);
     };
     
     // Reload profile immediately
     refreshProfile();
-  }, [loadProfile, user?.id]);
+  }, [loadProfile, localUserId]);
 
   // Refresh profile and logs when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      loadProfile(user?.id);
-      loadLogs(user?.id);
-    }, [loadProfile, loadLogs, user?.id])
+      loadProfile(localUserId);
+      loadLogs(localUserId);
+    }, [loadProfile, loadLogs, localUserId])
   );
 
   // Handle pull-to-refresh
@@ -176,9 +176,9 @@ export default function HomeScreen() {
     setRefreshing(true);
     try {
       await Promise.all([
-        loadProfile(user?.id),
-        loadLogs(user?.id),
-        loadShifts(user?.id)
+        loadProfile(localUserId),
+        loadLogs(localUserId),
+        loadShifts(localUserId)
       ]);
       // Update current time
       setCurrentTime(getCurrentTime());
@@ -210,7 +210,7 @@ export default function HomeScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [loadProfile, loadLogs, loadShifts, hasProfile, getRosterFor, hasLoggedShiftForDate, getLoggedShiftForDate, user?.id]);
+  }, [loadProfile, loadLogs, loadShifts, hasProfile, getRosterFor, hasLoggedShiftForDate, getLoggedShiftForDate, localUserId]);
 
   const handleStartShift = async () => {
     if (!hasProfile || !isComplete) {
@@ -277,7 +277,7 @@ export default function HomeScreen() {
               await notificationManager.cancelActiveShiftReminder(activeShiftDraft.id);
               
               // Delete the active draft
-              await deleteLog(activeShiftDraft.id, user?.id);
+              await deleteLog(activeShiftDraft.id, localUserId);
               
               // Clear the active shift state
               setActiveShiftDraft(null);

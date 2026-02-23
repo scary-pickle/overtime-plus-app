@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 import { OvertimeLog, UsualShift, ExportBatch } from '../../types';
 import { database } from '../db/sqlite';
-import { useAuthStore } from './authStore';
-import { logsSync, shiftsSync, exportSync } from '../supabase';
 import { createScopedLogger } from '../utils/logger';
 
 const debug = createScopedLogger('deletedItemsStore');
@@ -13,7 +11,7 @@ interface DeletedItemsState {
   deletedBatches: ExportBatch[];
   isLoading: boolean;
   error: string | null;
-  
+
   // Actions
   loadDeletedItems: (userId?: string | null) => Promise<void>;
   restoreLog: (id: string, userId?: string | null) => Promise<void>;
@@ -37,26 +35,23 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   loadDeletedItems: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Load deleted items from local database
       const [logs, shifts, batches] = await Promise.all([
-        database.getDeletedLogs(finalUserId),
-        database.getDeletedShifts(finalUserId),
-        database.getDeletedExportBatches(finalUserId),
+        database.getDeletedLogs(userId ?? null),
+        database.getDeletedShifts(userId ?? null),
+        database.getDeletedExportBatches(userId ?? null),
       ]);
-      
-      set({ 
+
+      set({
         deletedLogs: logs,
         deletedShifts: shifts,
         deletedBatches: batches,
         isLoading: false,
-        error: null 
+        error: null
       });
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to load deleted items' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to load deleted items'
       });
     }
   },
@@ -64,35 +59,22 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   restoreLog: async (id: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Restore in local database
-      await database.restoreLog(id, finalUserId);
-      
-      // Remove from deleted items list
+      await database.restoreLog(id, userId ?? null);
+
       const { deletedLogs } = get();
-      const restoredLog = deletedLogs.find(l => l.id === id);
-      set({ 
+      set({
         deletedLogs: deletedLogs.filter(l => l.id !== id),
         isLoading: false,
-        error: null 
+        error: null
       });
-      
-      // Sync to Supabase in background
-      if (finalUserId && restoredLog) {
-        const logWithoutDeletedAt = { ...restoredLog, deletedAt: undefined };
-        logsSync.uploadLog(logWithoutDeletedAt, finalUserId).catch(err => {
-          debug.error('Background sync failed (non-fatal):', err);
-        });
-      }
-      
+
       // Reload the logs in the main store
       const { useLogsStore } = await import('./logsStore');
-      await useLogsStore.getState().loadLogs(finalUserId);
+      await useLogsStore.getState().loadLogs(userId ?? null);
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to restore log' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to restore log'
       });
     }
   },
@@ -100,35 +82,22 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   restoreShift: async (id: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Restore in local database
-      await database.restoreShift(id, finalUserId);
-      
-      // Remove from deleted items list
+      await database.restoreShift(id, userId ?? null);
+
       const { deletedShifts } = get();
-      const restoredShift = deletedShifts.find(s => s.id === id);
-      set({ 
+      set({
         deletedShifts: deletedShifts.filter(s => s.id !== id),
         isLoading: false,
-        error: null 
+        error: null
       });
-      
-      // Sync to Supabase in background
-      if (finalUserId && restoredShift) {
-        const shiftWithoutDeletedAt = { ...restoredShift, deletedAt: undefined };
-        shiftsSync.uploadShift(shiftWithoutDeletedAt, finalUserId).catch(err => {
-          debug.error('Background sync failed (non-fatal):', err);
-        });
-      }
-      
+
       // Reload the shifts in the main store
       const { useShiftsStore } = await import('./shiftsStore');
-      await useShiftsStore.getState().loadShifts(finalUserId);
+      await useShiftsStore.getState().loadShifts(userId ?? null);
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to restore shift' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to restore shift'
       });
     }
   },
@@ -136,35 +105,22 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   restoreBatch: async (id: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Restore in local database
-      await database.restoreExportBatch(id, finalUserId);
-      
-      // Remove from deleted items list
+      await database.restoreExportBatch(id, userId ?? null);
+
       const { deletedBatches } = get();
-      const restoredBatch = deletedBatches.find(b => b.id === id);
-      set({ 
+      set({
         deletedBatches: deletedBatches.filter(b => b.id !== id),
         isLoading: false,
-        error: null 
+        error: null
       });
-      
-      // Sync to Supabase in background
-      if (finalUserId && restoredBatch) {
-        const batchWithoutDeletedAt = { ...restoredBatch, deletedAt: undefined };
-        exportSync.uploadExportBatch(batchWithoutDeletedAt, finalUserId).catch(err => {
-          debug.error('Background sync failed (non-fatal):', err);
-        });
-      }
-      
+
       // Reload the export batches in the main store
       const { useLogsStore } = await import('./logsStore');
-      await useLogsStore.getState().loadExportBatches(finalUserId);
+      await useLogsStore.getState().loadExportBatches(userId ?? null);
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to restore export batch' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to restore export batch'
       });
     }
   },
@@ -172,25 +128,18 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   permanentlyDeleteLog: async (id: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Permanently delete from local database
-      await database.permanentlyDeleteLog(id, finalUserId);
-      
-      // Remove from deleted items list
+      await database.permanentlyDeleteLog(id, userId ?? null);
+
       const { deletedLogs } = get();
-      set({ 
+      set({
         deletedLogs: deletedLogs.filter(l => l.id !== id),
         isLoading: false,
-        error: null 
+        error: null
       });
-      
-      // Note: Cloud version will auto-delete after 30 days
-      // No need to explicitly delete from cloud here
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to permanently delete log' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to permanently delete log'
       });
     }
   },
@@ -198,22 +147,18 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   permanentlyDeleteShift: async (id: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Permanently delete from local database
-      await database.permanentlyDeleteShift(id, finalUserId);
-      
-      // Remove from deleted items list
+      await database.permanentlyDeleteShift(id, userId ?? null);
+
       const { deletedShifts } = get();
-      set({ 
+      set({
         deletedShifts: deletedShifts.filter(s => s.id !== id),
         isLoading: false,
-        error: null 
+        error: null
       });
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to permanently delete shift' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to permanently delete shift'
       });
     }
   },
@@ -221,22 +166,18 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   permanentlyDeleteBatch: async (id: string, userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Permanently delete from local database
-      await database.permanentlyDeleteExportBatch(id, finalUserId);
-      
-      // Remove from deleted items list
+      await database.permanentlyDeleteExportBatch(id, userId ?? null);
+
       const { deletedBatches } = get();
-      set({ 
+      set({
         deletedBatches: deletedBatches.filter(b => b.id !== id),
         isLoading: false,
-        error: null 
+        error: null
       });
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to permanently delete export batch' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to permanently delete export batch'
       });
     }
   },
@@ -244,19 +185,16 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   cleanupOldItems: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Clean up items deleted more than 30 days ago
-      const result = await database.cleanupOldDeletedItems(finalUserId);
-      
+      const result = await database.cleanupOldDeletedItems(userId ?? null);
+
       // Reload deleted items to reflect cleanup
-      await get().loadDeletedItems(finalUserId);
-      
+      await get().loadDeletedItems(userId ?? null);
+
       return result;
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to cleanup old items' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to cleanup old items'
       });
       throw error;
     }
@@ -265,25 +203,21 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
   deleteAllItems: async (userId?: string | null) => {
     set({ isLoading: true, error: null });
     try {
-      const finalUserId = userId ?? useAuthStore.getState().user?.id ?? null;
-      
-      // Delete all deleted items regardless of age
-      const result = await database.deleteAllDeletedItems(finalUserId);
-      
-      // Clear the deleted items from state
-      set({ 
+      const result = await database.deleteAllDeletedItems(userId ?? null);
+
+      set({
         deletedLogs: [],
         deletedShifts: [],
         deletedBatches: [],
         isLoading: false,
-        error: null 
+        error: null
       });
-      
+
       return result;
     } catch (error) {
-      set({ 
-        isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to delete all items' 
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : 'Failed to delete all items'
       });
       throw error;
     }
@@ -291,4 +225,3 @@ export const useDeletedItemsStore = create<DeletedItemsState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 }));
-

@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useProfileStore } from '../../../lib/state/profileStore';
 import { useTemplatesStore } from '../../../lib/state/templatesStore';
-import { useAuthStore } from '../../../lib/state/authStore';
+import { useLocalUserStore } from '../../../lib/state/localUserStore';
 import { NAButton } from '../../../components/NAButton';
 import { SharedTimePickerProvider } from '../../../components/SharedTimePicker';
 import { TimeInput } from '../../../components/TimeInput';
@@ -40,7 +40,7 @@ export default function NewTemplateScreen() {
   const isDark = colorScheme === 'dark';
   
   const { profile } = useProfileStore();
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { addTemplate } = useTemplatesStore();
   
   const [templateName, setTemplateName] = useState('');
@@ -105,7 +105,7 @@ export default function NewTemplateScreen() {
     };
 
     try {
-      await addTemplate(template, user?.id);
+      await addTemplate(template, localUserId);
       Alert.alert('Success', 'Template created successfully!', [
         { text: 'OK', onPress: () => router.back() }
       ]);

@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProfileStore } from '../lib/state/profileStore';
-import { useAuthStore } from '../lib/state/authStore';
+import { useLocalUserStore } from '../lib/state/localUserStore';
 import { getDefaultEmailTemplate } from '../lib/email/emailService';
 import { createScopedLogger } from '../lib/utils/logger';
 
@@ -28,7 +28,7 @@ export default function EmailSettingsScreen() {
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { profile, saveProfile, isLoading } = useProfileStore();
   const [email, setEmail] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
@@ -75,7 +75,7 @@ export default function EmailSettingsScreen() {
         emailSubmissionMethod
       };
       
-      await saveProfile(updatedProfile, user?.id);
+      await saveProfile(updatedProfile, localUserId);
       Alert.alert('Success', 'Email settings saved successfully.');
     } catch (error) {
       Alert.alert('Error', 'Failed to save email settings. Please try again.');
@@ -120,7 +120,7 @@ export default function EmailSettingsScreen() {
           ...profile,
           emailSubmissionMethod: method
         };
-        await saveProfile(updatedProfile, user?.id);
+        await saveProfile(updatedProfile, localUserId);
         
         // Show brief success message
         Alert.alert(

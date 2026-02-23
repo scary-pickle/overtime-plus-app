@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useProfileStore } from '../../lib/state/profileStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
@@ -38,7 +38,7 @@ export default function LeaveScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   
   const { profile, initials } = useProfileStore();
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { addLeaveLogs } = useLogsStore();
   
   const [leaveEntries, setLeaveEntries] = useState<LeaveEntry[]>([
@@ -221,7 +221,7 @@ export default function LeaveScreen() {
           comments: comments.trim() || 'Sick leave',
           status,
         },
-        user?.id
+        localUserId
       );
       
       Alert.alert(

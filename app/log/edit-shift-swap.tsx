@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useProfileStore } from '../../lib/state/profileStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
@@ -30,7 +30,7 @@ export default function EditShiftSwapScreen() {
   const isDark = colorScheme === 'dark';
   
   const { profile, initials } = useProfileStore();
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { logs, updateShiftSwapLogs } = useLogsStore();
   
   const [shiftSwapId, setShiftSwapId] = useState<string | null>(null);
@@ -600,7 +600,7 @@ export default function EditShiftSwapScreen() {
           mealBreakMinutes,
           status,
         },
-        user?.id
+        localUserId
       );
       
       // Navigate back immediately to prevent useEffect from running again with updated logs

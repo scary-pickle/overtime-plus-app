@@ -17,7 +17,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useProfileStore } from '../../lib/state/profileStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { LogCard } from '../../components/LogCard';
 import { OvertimeLog } from '../../types';
 
@@ -30,8 +30,7 @@ export default function LogScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  // Get user from auth store for userId
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { logs, deleteLog, markReady, loadLogs, getReadyLogs, getExportedLogs, resetLogsToReady, isLoading, getActiveShiftDraft } = useLogsStore();
   const { profile } = useProfileStore();
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
@@ -51,8 +50,8 @@ export default function LogScreen() {
   // Load logs when screen comes into focus (similar to home screen)
   useFocusEffect(
     React.useCallback(() => {
-      loadLogs(user?.id);
-    }, [loadLogs, user?.id])
+      loadLogs(localUserId);
+    }, [loadLogs, localUserId])
   );
 
   const handleToggleFilter = () => {
@@ -62,7 +61,7 @@ export default function LogScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadLogs(user?.id);
+    await loadLogs(localUserId);
     setRefreshing(false);
   };
 

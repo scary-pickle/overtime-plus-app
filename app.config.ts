@@ -72,10 +72,5 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       // Linked EAS project ID created by `eas build:configure`
       projectId: 'ab788c8c-812d-4a78-a620-4f1131f759de',
     },
-    revenuecat: {
-      iosApiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_IOS,
-      androidApiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_ANDROID,
-      amazonApiKey: process.env.EXPO_PUBLIC_REVENUECAT_API_KEY_AMAZON
-    }
   }
 });

@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLogsStore } from '../../lib/state/logsStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import BarChart from '../../components/charts/Line';
 import Pie from '../../components/charts/Pie';
 import { CalendarPicker } from '../../components/CalendarPicker';
@@ -24,7 +24,7 @@ const debug = createScopedLogger('Analytics');
 type RangeMode = 'month' | 'week' | 'custom';
 
 export default function AnalyticsScreen() {
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { logs, loadLogs } = useLogsStore();
   const [mode, setMode] = useState<RangeMode>('month');
   const colorScheme = useColorScheme();
@@ -42,8 +42,8 @@ export default function AnalyticsScreen() {
 
   // Load logs when screen mounts
   useEffect(() => {
-    loadLogs(user?.id);
-  }, [loadLogs, user?.id]);
+    loadLogs(localUserId);
+  }, [loadLogs, localUserId]);
 
   // Date range state (custom)
   const defaultRange = getLast30DaysRange();

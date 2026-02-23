@@ -13,7 +13,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useShiftTemplatesStore } from '../../lib/state/shiftTemplatesStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
@@ -52,7 +52,7 @@ export default function QuickAddShiftScreen() {
   
   const { addShift } = useShiftsStore();
   const { templates, loadTemplates, updateTemplate, deleteTemplate } = useShiftTemplatesStore();
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   
   const [selectedDate, setSelectedDate] = useState(getCurrentDate());
   const [startTime, setStartTime] = useState(getCurrentTime());
@@ -65,8 +65,8 @@ export default function QuickAddShiftScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
-    loadTemplates(user?.id);
-  }, [user?.id, loadTemplates]);
+    loadTemplates(localUserId);
+  }, [localUserId, loadTemplates]);
 
   // Validate date is today or future
   const isDateValid = (date: string): boolean => {
@@ -120,11 +120,11 @@ export default function QuickAddShiftScreen() {
 
   const handleSaveTemplate = async (template: ShiftTemplate) => {
     try {
-      await updateTemplate(template, user?.id);
+      await updateTemplate(template, localUserId);
       setShowEditModal(false);
       setEditingTemplate(null);
       // Reload templates to get updated list
-      await loadTemplates(user?.id);
+      await loadTemplates(localUserId);
       Alert.alert('Success', 'Template updated successfully');
       // If the edited template was selected, update the form
       if (selectedTemplate?.id === template.id) {
@@ -153,7 +153,7 @@ export default function QuickAddShiftScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteTemplate(template.id, user?.id);
+              await deleteTemplate(template.id, localUserId);
               // If deleted template was selected, clear selection
               if (selectedTemplate?.id === template.id) {
                 setSelectedTemplate(null);
@@ -161,7 +161,7 @@ export default function QuickAddShiftScreen() {
                 setFinishTime('');
               }
               // Reload templates to get updated list
-              await loadTemplates(user?.id);
+              await loadTemplates(localUserId);
               Alert.alert('Success', 'Template deleted successfully');
             } catch (error) {
               debug.error('Failed to delete template:', error);
@@ -267,7 +267,7 @@ export default function QuickAddShiftScreen() {
           activeTo,
         };
 
-        return addShift(shift, user?.id);
+        return addShift(shift, localUserId);
       });
 
       await Promise.all(shiftPromises);

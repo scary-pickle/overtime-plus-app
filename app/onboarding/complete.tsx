@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
+import { useOnboardingStore } from '../../lib/state/onboardingStore';
 import { createScopedLogger } from '../../lib/utils/logger';
 
 const debug = createScopedLogger('OnboardingComplete');
@@ -11,11 +12,12 @@ export default function OnboardingComplete() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { completeOnboarding } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
+  const { completeOnboarding } = useOnboardingStore();
 
   const handleStartUsingApp = async () => {
     try {
-      await completeOnboarding();
+      await completeOnboarding(localUserId);
       router.replace('/(tabs)/home');
     } catch (error) {
       debug.error('Error completing onboarding:', error);

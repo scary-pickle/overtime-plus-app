@@ -14,7 +14,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useProfileStore } from '../../lib/state/profileStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
+import { useOnboardingStore } from '../../lib/state/onboardingStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { TimeInput } from '../../components/TimeInput';
@@ -63,7 +64,8 @@ export default function OnboardingCreateFirstLog() {
   const insets = useSafeAreaInsets();
   
   const { profile, initials } = useProfileStore();
-  const { user, completeOnboarding } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
+  const { completeOnboarding } = useOnboardingStore();
   const { shifts, getRosterFor } = useShiftsStore();
   const { addLog } = useLogsStore();
   
@@ -418,7 +420,7 @@ export default function OnboardingCreateFirstLog() {
 
     try {
       await addLog(log);
-      await completeOnboarding();
+      await completeOnboarding(localUserId);
       router.replace('/(tabs)/home');
     } catch (error) {
       debug.error('Error completing onboarding:', error);

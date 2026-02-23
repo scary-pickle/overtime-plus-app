@@ -488,6 +488,27 @@ class Database {
     } catch (error) {
       // Column already exists, which is fine
     }
+
+    try {
+      await this.db.execAsync(`DROP TABLE IF EXISTS auth_sessions;`);
+      debug.debug('Dropped auth_sessions table');
+    } catch (error) {
+      // Table doesn't exist, which is fine
+    }
+
+    try {
+      await this.db.execAsync(`DROP TABLE IF EXISTS template_versions;`);
+      debug.debug('Dropped template_versions table');
+    } catch (error) {
+      // Table doesn't exist, which is fine
+    }
+
+    try {
+      await this.db.execAsync(`DROP TABLE IF EXISTS template_cache;`);
+      debug.debug('Dropped template_cache table');
+    } catch (error) {
+      // Table doesn't exist, which is fine
+    }
   }
 
   // UsualShifts CRUD
@@ -1426,6 +1447,106 @@ class Database {
       shiftsDeleted: shiftsResult.changes || 0,
       batchesDeleted: batchesResult.changes || 0
     };
+  }
+
+  async clearAllUserData(): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    await this.db.execAsync(`
+      DELETE FROM overtime_logs;
+      DELETE FROM usual_shifts;
+      DELETE FROM export_batches;
+      DELETE FROM log_templates;
+      DELETE FROM shift_templates;
+    `);
+  }
+
+  async exportAllData(userId?: string | null): Promise<{
+    usualShifts: any[];
+    overtimeLogs: any[];
+    exportBatches: any[];
+    logTemplates: any[];
+    shiftTemplates: any[];
+  }> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const run = async (query: string, params: any[] = []) =>
+      this.db!.getAllAsync(query, params);
+
+    const [usualShifts, overtimeLogs, exportBatches, logTemplates, shiftTemplates] =
+      await Promise.all([
+        run(userId ? `SELECT * FROM usual_shifts WHERE user_id = ?` : `SELECT * FROM usual_shifts WHERE user_id IS NULL`, userId ? [userId] : []),
+        run(userId ? `SELECT * FROM overtime_logs WHERE user_id = ?` : `SELECT * FROM overtime_logs WHERE user_id IS NULL`, userId ? [userId] : []),
+        run(userId ? `SELECT * FROM export_batches WHERE user_id = ?` : `SELECT * FROM export_batches WHERE user_id IS NULL`, userId ? [userId] : []),
+        run(userId ? `SELECT * FROM log_templates WHERE user_id = ?` : `SELECT * FROM log_templates WHERE user_id IS NULL`, userId ? [userId] : []),
+        run(userId ? `SELECT * FROM shift_templates WHERE user_id = ?` : `SELECT * FROM shift_templates WHERE user_id IS NULL`, userId ? [userId] : []),
+      ]);
+
+    return { usualShifts, overtimeLogs, exportBatches, logTemplates, shiftTemplates };
+  }
+
+  async importAllData(data: {
+    usualShifts: any[];
+    overtimeLogs: any[];
+    exportBatches: any[];
+    logTemplates: any[];
+    shiftTemplates: any[];
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await this.db.withTransactionAsync(async () => {
+      await this.db!.execAsync(`
+        DELETE FROM overtime_logs;
+        DELETE FROM usual_shifts;
+        DELETE FROM export_batches;
+        DELETE FROM log_templates;
+        DELETE FROM shift_templates;
+      `);
+
+      for (const row of data.usualShifts) {
+        const keys = Object.keys(row).join(', ');
+        const placeholders = Object.keys(row).map(() => '?').join(', ');
+        await this.db!.runAsync(
+          `INSERT OR REPLACE INTO usual_shifts (${keys}) VALUES (${placeholders})`,
+          Object.values(row)
+        );
+      }
+
+      for (const row of data.overtimeLogs) {
+        const keys = Object.keys(row).join(', ');
+        const placeholders = Object.keys(row).map(() => '?').join(', ');
+        await this.db!.runAsync(
+          `INSERT OR REPLACE INTO overtime_logs (${keys}) VALUES (${placeholders})`,
+          Object.values(row)
+        );
+      }
+
+      for (const row of data.exportBatches) {
+        const keys = Object.keys(row).join(', ');
+        const placeholders = Object.keys(row).map(() => '?').join(', ');
+        await this.db!.runAsync(
+          `INSERT OR REPLACE INTO export_batches (${keys}) VALUES (${placeholders})`,
+          Object.values(row)
+        );
+      }
+
+      for (const row of data.logTemplates) {
+        const keys = Object.keys(row).join(', ');
+        const placeholders = Object.keys(row).map(() => '?').join(', ');
+        await this.db!.runAsync(
+          `INSERT OR REPLACE INTO log_templates (${keys}) VALUES (${placeholders})`,
+          Object.values(row)
+        );
+      }
+
+      for (const row of data.shiftTemplates) {
+        const keys = Object.keys(row).join(', ');
+        const placeholders = Object.keys(row).map(() => '?').join(', ');
+        await this.db!.runAsync(
+          `INSERT OR REPLACE INTO shift_templates (${keys}) VALUES (${placeholders})`,
+          Object.values(row)
+        );
+      }
+    });
   }
 }
 

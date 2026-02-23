@@ -17,10 +17,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { Profile } from '../../types';
-import { parseNameFromEmail } from '../../lib/utils/emailNameParser';
 import { validateOnboardingProfile } from '../../lib/validation/onboardingValidation';
 import { HospitalDropdown } from '../../components/HospitalDropdown';
 import { DepartmentDropdown } from '../../components/DepartmentDropdown';
@@ -34,7 +33,7 @@ export default function OnboardingProfileSetup() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { saveProfile } = useProfileStore();
 
   const scrollViewRef = useRef<ScrollView>(null);
@@ -50,7 +49,7 @@ export default function OnboardingProfileSetup() {
   const fieldPositions = useRef<{ [key: string]: number }>({});
 
   const [formData, setFormData] = useState<Partial<Profile>>({
-    email: user?.email || '',
+    email: '',
     fullName: '',
     payrollNumber: '',
     orgUnitNo: '',
@@ -73,18 +72,6 @@ export default function OnboardingProfileSetup() {
   const [customDepartments, setCustomDepartments] = useState<string[]>([]);
   const [isDelegateAutoFilled, setIsDelegateAutoFilled] = useState(false);
 
-  // Auto-fill email and name on mount
-  useEffect(() => {
-    if (user?.email) {
-      const parsedName = parseNameFromEmail(user.email);
-      setFormData(prev => ({
-        ...prev,
-        email: user.email || '',
-        fullName: parsedName || prev.fullName,
-        employeeInitial: parsedName ? generateEmployeeInitial(parsedName) : '',
-      }));
-    }
-  }, [user?.email]);
 
   const generateEmployeeInitial = (fullName: string): string => {
     const names = fullName.trim().split(' ');
@@ -195,12 +182,12 @@ export default function OnboardingProfileSetup() {
       pdfTemplateVersion: 'qld_avac_v8.5',
       timezone: 'Australia/Brisbane',
       concurrentEmploymentDefault: false,
-      email: formData.email || user?.email || '',
+      email: formData.email || '',
       isSMO: formData.isSMO || false,
     };
 
     try {
-      await saveProfile(profileData, user?.id);
+      await saveProfile(profileData, localUserId);
       router.push('/onboarding/create-first-log');
     } catch (error) {
       debug.error('Error saving profile:', error);
@@ -241,17 +228,19 @@ export default function OnboardingProfileSetup() {
           
           <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
-              Email Address
+              Email Address (Optional)
             </Text>
             <TextInput
-              style={[styles.input, styles.disabledInput, isDark && styles.darkInput, isDark && styles.darkDisabledInput]}
+              style={[styles.input, isDark && styles.darkInput]}
               value={formData.email}
-              editable={false}
+              onChangeText={(value) => setFormData(prev => ({ ...prev, email: value }))}
               placeholder="your.email@health.qld.gov.au"
               placeholderTextColor={isDark ? '#666' : '#999'}
+              keyboardType="email-address"
+              autoCapitalize="none"
             />
             <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
-              This is the email you signed in with
+              Used on AVAC forms — you can add this later in your profile
             </Text>
           </View>
 

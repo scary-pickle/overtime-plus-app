@@ -20,7 +20,7 @@ import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { createScopedLogger } from '../../lib/utils/logger';
 
 const debug = createScopedLogger('Shifts');
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { ShiftCard } from '../../components/ShiftCard';
 import { ShiftsCalendarView } from '../../components/ShiftsCalendarView';
 import { UsualShift } from '../../types';
@@ -31,7 +31,7 @@ export default function ShiftsScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { shifts, deleteShift, loadShifts } = useShiftsStore();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -42,20 +42,20 @@ export default function ShiftsScreen() {
 
   useEffect(() => {
     debug.debug('Loading shifts...');
-    loadShifts(user?.id);
-  }, [user?.id]);
+    loadShifts(localUserId);
+  }, [localUserId]);
 
   // Reload shifts when screen comes into focus (e.g., when navigating back from creating a shift)
   useFocusEffect(
     React.useCallback(() => {
       debug.debug('Shifts screen focused, reloading shifts...');
-      loadShifts(user?.id);
-    }, [loadShifts, user?.id])
+      loadShifts(localUserId);
+    }, [loadShifts, localUserId])
   );
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadShifts(user?.id);
+    await loadShifts(localUserId);
     setRefreshing(false);
   };
 

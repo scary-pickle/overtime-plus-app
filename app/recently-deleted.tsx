@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useDeletedItemsStore } from '../lib/state/deletedItemsStore';
-import { useAuthStore } from '../lib/state/authStore';
+import { useLocalUserStore } from '../lib/state/localUserStore';
 import { OvertimeLog, UsualShift, ExportBatch } from '../types';
 
 type DeletedItemType = 'log' | 'shift' | 'batch';
@@ -34,7 +34,7 @@ export default function RecentlyDeletedScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const {
     deletedLogs,
     deletedShifts,
@@ -56,12 +56,12 @@ export default function RecentlyDeletedScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    loadDeletedItems(user?.id);
-  }, [user?.id]);
+    loadDeletedItems(localUserId);
+  }, [localUserId]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadDeletedItems(user?.id);
+    await loadDeletedItems(localUserId);
     setRefreshing(false);
   };
 
@@ -104,13 +104,13 @@ export default function RecentlyDeletedScreen() {
           onPress: async () => {
             try {
               if (item.type === 'log') {
-                await restoreLog(item.id, user?.id);
+                await restoreLog(item.id, localUserId);
                 Alert.alert('Success', 'Log restored successfully');
               } else if (item.type === 'shift') {
-                await restoreShift(item.id, user?.id);
+                await restoreShift(item.id, localUserId);
                 Alert.alert('Success', 'Shift restored successfully');
               } else if (item.type === 'batch') {
-                await restoreBatch(item.id, user?.id);
+                await restoreBatch(item.id, localUserId);
                 Alert.alert('Success', 'Export batch restored successfully');
               }
             } catch (error) {
@@ -134,13 +134,13 @@ export default function RecentlyDeletedScreen() {
           onPress: async () => {
             try {
               if (item.type === 'log') {
-                await permanentlyDeleteLog(item.id, user?.id);
+                await permanentlyDeleteLog(item.id, localUserId);
                 Alert.alert('Success', 'Log permanently deleted');
               } else if (item.type === 'shift') {
-                await permanentlyDeleteShift(item.id, user?.id);
+                await permanentlyDeleteShift(item.id, localUserId);
                 Alert.alert('Success', 'Shift permanently deleted');
               } else if (item.type === 'batch') {
-                await permanentlyDeleteBatch(item.id, user?.id);
+                await permanentlyDeleteBatch(item.id, localUserId);
                 Alert.alert('Success', 'Export batch permanently deleted');
               }
             } catch (error) {
@@ -169,7 +169,7 @@ export default function RecentlyDeletedScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const result = await deleteAllItems(user?.id);
+              const result = await deleteAllItems(localUserId);
               const total = result.logsDeleted + result.shiftsDeleted + result.batchesDeleted;
               if (total > 0) {
                 Alert.alert('Success', `Deleted ${total} item(s)`);
@@ -196,7 +196,7 @@ export default function RecentlyDeletedScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const result = await cleanupOldItems(user?.id);
+              const result = await cleanupOldItems(localUserId);
               const total = result.logsDeleted + result.shiftsDeleted + result.batchesDeleted;
               if (total > 0) {
                 Alert.alert('Success', `Cleaned up ${total} old item(s)`);

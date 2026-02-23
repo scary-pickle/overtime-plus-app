@@ -11,7 +11,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useShiftTemplatesStore } from '../../lib/state/shiftTemplatesStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
@@ -53,7 +53,7 @@ export default function NewShiftScreen() {
   
   const { addShift } = useShiftsStore();
   const { templates, loadTemplates, addTemplate, updateTemplate, deleteTemplate } = useShiftTemplatesStore();
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   
   const [label, setLabel] = useState('');
   const [type, setType] = useState<'weekly' | 'biweekly' | 'custom'>('weekly');
@@ -76,8 +76,8 @@ export default function NewShiftScreen() {
 
   useEffect(() => {
     // Load templates on mount
-    loadTemplates(user?.id);
-  }, [user?.id, loadTemplates]);
+    loadTemplates(localUserId);
+  }, [localUserId, loadTemplates]);
 
   useEffect(() => {
     // Set finish time to 8 hours after start time by default
@@ -126,11 +126,11 @@ export default function NewShiftScreen() {
 
   const handleSaveTemplate = async (template: ShiftTemplate) => {
     try {
-      await updateTemplate(template, user?.id);
+      await updateTemplate(template, localUserId);
       setShowEditModal(false);
       setEditingTemplate(null);
       // Reload templates to get updated list
-      await loadTemplates(user?.id);
+      await loadTemplates(localUserId);
       Alert.alert('Success', 'Template updated successfully');
     } catch (error) {
       debug.error('Failed to update template:', error);
@@ -153,13 +153,13 @@ export default function NewShiftScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteTemplate(template.id, user?.id);
+              await deleteTemplate(template.id, localUserId);
               // If deleted template was selected, clear selection
               if (selectedTemplateId === template.id) {
                 handleClearTemplate();
               }
               // Reload templates to get updated list
-              await loadTemplates(user?.id);
+              await loadTemplates(localUserId);
               Alert.alert('Success', 'Template deleted successfully');
             } catch (error) {
               debug.error('Failed to delete template:', error);
@@ -254,7 +254,7 @@ export default function NewShiftScreen() {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        await addTemplate(template, user?.id);
+        await addTemplate(template, localUserId);
         debug.debug('Template saved successfully');
       }
 

@@ -13,7 +13,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useProfileStore } from '../../lib/state/profileStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { useTemplatesStore } from '../../lib/state/templatesStore';
@@ -48,7 +48,7 @@ export default function NewLogScreen() {
   const isDark = colorScheme === 'dark';
   
   const { profile, initials } = useProfileStore();
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { shifts, getRosterFor } = useShiftsStore();
   const { addLog, getYesterdayLog, logs } = useLogsStore();
   const { templates, loadTemplates, isLoading: templatesLoading } = useTemplatesStore();
@@ -130,8 +130,8 @@ export default function NewLogScreen() {
   useFocusEffect(
     useCallback(() => {
       // Reload templates whenever screen comes into focus
-      loadTemplates(user?.id);
-    }, [loadTemplates, user?.id])
+      loadTemplates(localUserId);
+    }, [loadTemplates, localUserId])
   );
 
   useEffect(() => {
@@ -378,7 +378,7 @@ export default function NewLogScreen() {
     };
 
     try {
-      await addLog(log);
+      await addLog(log, localUserId);
       Alert.alert(
         'Success',
         `Log ${status === 'draft' ? 'saved as draft' : 'marked as ready'}!`,

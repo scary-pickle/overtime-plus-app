@@ -147,7 +147,8 @@ class NotificationManager {
           if (roster.rosteredFinish && this.settings.shiftEndReminders) {
             const notificationTime = this.calculateNotificationTime(
               roster.rosteredFinish,
-              this.settings.reminderMinutes
+              this.settings.reminderMinutes,
+              date
             );
             
             const notificationId = `overtime_${dateStr}`;
@@ -643,14 +644,19 @@ class NotificationManager {
   }
 
   /**
-   * Calculate notification time based on rostered finish and reminder minutes
+   * Calculate notification time based on rostered finish, reminder minutes, and target date.
+   * Uses the target date so each day gets its own notification time (prevents duplicate notifications).
    */
-  private calculateNotificationTime(rosteredFinish: string, reminderMinutes: number): Date {
+  private calculateNotificationTime(
+    rosteredFinish: string,
+    reminderMinutes: number,
+    targetDate: Date
+  ): Date {
     const [hours, minutes] = rosteredFinish.split(':').map(Number);
-    const notificationTime = new Date();
+    const notificationTime = new Date(targetDate);
     notificationTime.setHours(hours, minutes - reminderMinutes, 0, 0);
     
-    // If the time has already passed today, schedule for tomorrow
+    // If the time has already passed on the target date, schedule for the next day
     if (notificationTime <= new Date()) {
       notificationTime.setDate(notificationTime.getDate() + 1);
     }
@@ -672,10 +678,10 @@ class NotificationManager {
       }
 
       // Get current user ID for user-specific storage
-      const { useAuthStore } = require('./state/authStore');
-      const userId = useAuthStore.getState().user?.id;
-      const STORAGE_KEY = userId 
-        ? `unexported_logs_notification_state_${userId}` 
+      const { useLocalUserStore } = require('./state/localUserStore');
+      const userId = useLocalUserStore.getState().localUserId;
+      const STORAGE_KEY = userId
+        ? `unexported_logs_notification_state_${userId}`
         : 'unexported_logs_notification_state';
       
       // Also cancel any old global notifications (for migration)
@@ -1172,10 +1178,10 @@ class NotificationManager {
       const now = new Date();
       
       // Get current user ID for user-specific storage
-      const { useAuthStore } = require('./state/authStore');
-      const userId = useAuthStore.getState().user?.id;
-      const STORAGE_KEY = userId 
-        ? `weekly_summary_last_sent_${userId}` 
+      const { useLocalUserStore } = require('./state/localUserStore');
+      const userId = useLocalUserStore.getState().localUserId;
+      const STORAGE_KEY = userId
+        ? `weekly_summary_last_sent_${userId}`
         : 'weekly_summary_last_sent';
       
       // Check when the last weekly summary was sent

@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { clearTestData, checkDataExists } from '../lib/clearTestData';
 import { useLogsStore } from '../lib/state/logsStore';
 import { useShiftsStore } from '../lib/state/shiftsStore';
-import { useAuthStore } from '../lib/state/authStore';
+import { useLocalUserStore } from '../lib/state/localUserStore';
 
 export default function ClearDataScreen() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function ClearDataScreen() {
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { loadLogs } = useLogsStore();
   const { loadShifts } = useShiftsStore();
   
@@ -54,8 +54,8 @@ export default function ClearDataScreen() {
               if (success) {
                 // Reload data in stores
                 await Promise.all([
-                  loadLogs(user?.id),
-                  loadShifts(user?.id),
+                  loadLogs(localUserId),
+                  loadShifts(localUserId),
                 ]);
                 
                 // Check data status again

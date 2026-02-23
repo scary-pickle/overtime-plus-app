@@ -15,7 +15,7 @@ import { createScopedLogger } from '../../lib/utils/logger';
 const debug = createScopedLogger('WidgetConfirm');
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useShiftsStore } from '../../lib/state/shiftsStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { getCurrentTime, getCurrentDate } from '../../lib/time';
 import { QuickEndShiftModal } from '../../components/QuickEndShiftModal';
 import { OvertimeLog } from '../../types';
@@ -26,7 +26,7 @@ export default function WidgetConfirmScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { profile, loadProfile, initials } = useProfileStore();
   const { shifts, getRosterFor, loadShifts } = useShiftsStore();
   const { addLog, getActiveShiftDraft, loadLogs } = useLogsStore();
@@ -39,9 +39,9 @@ export default function WidgetConfirmScreen() {
   useEffect(() => {
     const initialize = async () => {
       await Promise.all([
-        loadProfile(user?.id),
-        loadShifts(user?.id),
-        loadLogs(user?.id)
+        loadProfile(localUserId),
+        loadShifts(localUserId),
+        loadLogs(localUserId)
       ]);
       if (action === 'end-shift') {
         loadActiveShift();
@@ -50,12 +50,12 @@ export default function WidgetConfirmScreen() {
       }
     };
     initialize();
-  }, [action, user?.id]);
+  }, [action, localUserId]);
 
   const loadActiveShift = async () => {
     try {
       // Ensure logs are loaded
-      await loadLogs(user?.id);
+      await loadLogs(localUserId);
       const activeShift = getActiveShiftDraft();
       if (activeShift) {
         setEndShiftDraft(activeShift);

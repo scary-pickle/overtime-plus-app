@@ -12,11 +12,21 @@ jest.mock('../lib/db/sqlite', () => ({
   },
 }));
 
-// Mock the auth store
-jest.mock('../lib/state/authStore', () => ({
-  useAuthStore: {
+// Mock localUserStore
+jest.mock('../lib/state/localUserStore', () => ({
+  useLocalUserStore: {
     getState: jest.fn(() => ({
-      user: { id: 'test-user-id' },
+      localUserId: 'test-user-id',
+    })),
+  },
+}));
+
+// Mock profileStore (used by addLeaveLogs/updateLeaveLogs)
+jest.mock('../lib/state/profileStore', () => ({
+  useProfileStore: {
+    getState: jest.fn(() => ({
+      profile: null,
+      initials: 'ND',
     })),
   },
 }));
@@ -141,7 +151,7 @@ describe('Logs Store - Active Shift Management', () => {
           id: 'log_active',
           isActiveShift: false,
         }),
-        'test-user-id' // userId parameter
+        null // userId parameter (not passed by clearActiveShift)
       );
     });
 
@@ -185,7 +195,7 @@ describe('Logs Store - Active Shift Management', () => {
 
       await useLogsStore.getState().addLog(newLog);
 
-      expect(database.createOvertimeLog).toHaveBeenCalledWith(newLog, 'test-user-id');
+      expect(database.createOvertimeLog).toHaveBeenCalledWith(newLog, null);
       
       const logs = useLogsStore.getState().logs;
       expect(logs).toHaveLength(1);

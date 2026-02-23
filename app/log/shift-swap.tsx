@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useProfileStore } from '../../lib/state/profileStore';
-import { useAuthStore } from '../../lib/state/authStore';
+import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { useLogsStore } from '../../lib/state/logsStore';
 import { TimeInput } from '../../components/TimeInput';
 import { CalendarPicker } from '../../components/CalendarPicker';
@@ -28,7 +28,7 @@ export default function ShiftSwapScreen() {
   const isDark = colorScheme === 'dark';
   
   const { profile, initials } = useProfileStore();
-  const { user } = useAuthStore();
+  const { localUserId } = useLocalUserStore();
   const { addShiftSwapLogs } = useLogsStore();
   
   const [personADate, setPersonADate] = useState(getCurrentDate());
@@ -449,7 +449,7 @@ export default function ShiftSwapScreen() {
           mealBreakMinutes,
           status,
         },
-        user?.id
+        localUserId
       );
       
       Alert.alert(
