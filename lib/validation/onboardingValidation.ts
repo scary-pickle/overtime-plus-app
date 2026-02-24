@@ -7,7 +7,7 @@ export interface OnboardingValidationResult {
 
 /**
  * Validates profile for onboarding completion
- * Delegate information is optional
+ * Delegate information is optional during onboarding
  * payLevel is required only if isSMO is false
  */
 export function validateOnboardingProfile(profile: Partial<Profile>): OnboardingValidationResult {
@@ -25,7 +25,6 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
     delegateAreaCode: 'Area Code',
     delegatePhone: 'Phone Number',
     employeeInitial: 'Employee Initial',
-    email: 'Email Address',
     payLevel: 'Pay Level',
     serviceEnquiryNumber: 'Service Enquiry Number',
     pdfTemplateVersion: 'PDF Template Version',
@@ -49,7 +48,6 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
     delegateAreaCode: 'Delegate Details',
     delegatePhone: 'Delegate Details',
     employeeInitial: 'Employee Details',
-    email: 'Employee Details',
     payLevel: 'Employee Details',
     serviceEnquiryNumber: 'Organisation',
     pdfTemplateVersion: 'Settings',
@@ -61,11 +59,10 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
       isSMO: 'Employee Details',
     };
 
-  // Required fields (excluding delegate info and organisation unit number)
+  // Required fields for onboarding (excluding delegate info and organisation unit number)
   const requiredFields: (keyof Profile)[] = [
     'fullName',
     'payrollNumber',
-    'email',
     'employeeInitial',
     'location', // hospital
     'orgUnitName', // department
@@ -104,8 +101,6 @@ export function validateOnboardingProfile(profile: Partial<Profile>): Onboarding
     missingFields,
   };
 }
-
-
 
 
 

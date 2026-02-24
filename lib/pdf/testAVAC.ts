@@ -21,7 +21,6 @@ function generateTestProfile(): Profile {
     pdfTemplateVersion: 'qld_avac_v8.5',
     timezone: 'Australia/Brisbane',
     concurrentEmploymentDefault: false,
-    email: '',
     isSMO: false,
     
   };

@@ -30,7 +30,6 @@ export default function EmailSettingsScreen() {
   
   const { localUserId } = useLocalUserStore();
   const { profile, saveProfile, isLoading } = useProfileStore();
-  const [email, setEmail] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [emailTemplate, setEmailTemplate] = useState('');
   const [emailSubmissionMethod, setEmailSubmissionMethod] = useState<'apple-mail' | 'share-sheet'>('share-sheet');
@@ -42,7 +41,6 @@ export default function EmailSettingsScreen() {
 
   useEffect(() => {
     if (profile) {
-      setEmail(profile.email || '');
       setRecipientEmail(profile.recipientEmail || '');
       setEmailTemplate(profile.emailTemplate || getDefaultEmailTemplate());
       setEmailSubmissionMethod(profile.emailSubmissionMethod || 'share-sheet');
@@ -52,14 +50,8 @@ export default function EmailSettingsScreen() {
   const handleSave = async () => {
     if (!profile) return;
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (email && !emailRegex.test(email)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
-      return;
-    }
-    
     // Recipient email is optional, but if provided, must be valid
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (recipientEmail && recipientEmail.trim() && !emailRegex.test(recipientEmail)) {
       Alert.alert('Invalid Recipient Email', 'Please enter a valid recipient email address or leave it empty.');
       return;
@@ -69,16 +61,15 @@ export default function EmailSettingsScreen() {
     try {
       const updatedProfile = {
         ...profile,
-        email: email.trim(),
         recipientEmail: recipientEmail.trim() || undefined,
         emailTemplate: emailTemplate.trim() || undefined,
         emailSubmissionMethod
       };
       
       await saveProfile(updatedProfile, localUserId);
-      Alert.alert('Success', 'Email settings saved successfully.');
+      Alert.alert('Success', 'Submission settings saved successfully.');
     } catch (error) {
-      Alert.alert('Error', 'Failed to save email settings. Please try again.');
+      Alert.alert('Error', 'Failed to save submission settings. Please try again.');
     } finally {
       setIsSaving(false);
     }
@@ -87,7 +78,7 @@ export default function EmailSettingsScreen() {
   const handleResetTemplate = () => {
     Alert.alert(
       'Reset Template',
-      'Are you sure you want to reset the email template to default?',
+      'Are you sure you want to reset the submission message template to default?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -104,7 +95,7 @@ export default function EmailSettingsScreen() {
       .replace(/{Date}/g, new Date().toLocaleDateString('en-AU'));
     
     Alert.alert(
-      'Email Preview',
+      'Submission Preview',
       `Subject: AVAC Submission - ${profile?.fullName || 'John Smith'}\n\n${previewText}`,
       [{ text: 'OK' }]
     );
@@ -126,8 +117,8 @@ export default function EmailSettingsScreen() {
         Alert.alert(
           'Saved',
           method === 'apple-mail' 
-            ? 'Email submission will use Apple Mail with full auto-fill.'
-            : 'Email submission will use Share Sheet (works with Outlook).',
+            ? 'Submission will use Apple Mail with full auto-fill.'
+            : 'Submission will use Share Sheet (works with Outlook).',
           [{ text: 'OK' }]
         );
       } catch (error) {
@@ -142,7 +133,7 @@ export default function EmailSettingsScreen() {
       <View style={[styles.container, styles.centerContent, isDark && styles.darkContainer]}>
         <ActivityIndicator size="large" color="#007AFF" />
         <Text style={[styles.loadingText, isDark && styles.darkText]}>
-          Loading email settings...
+          Loading submission settings...
         </Text>
       </View>
     );
@@ -192,31 +183,11 @@ export default function EmailSettingsScreen() {
             <Ionicons name="arrow-back" size={24} color={isDark ? '#fff' : '#000'} />
           </TouchableOpacity>
           <Text style={[styles.title, isDark && styles.darkText]}>
-            Email Settings
+            Submission Settings
           </Text>
           <View style={styles.headerSpacer} />
         </View>
         
-        <View style={[styles.section, isDark && styles.darkSection]}>
-          <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-            Your Email Address
-          </Text>
-          <Text style={[styles.sectionDescription, isDark && styles.darkText]}>
-            Your Queensland Health email address
-          </Text>
-          <TextInput
-            style={[styles.textInput, isDark && styles.darkTextInput]}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="your.name@health.qld.gov.au"
-            placeholderTextColor={isDark ? '#666' : '#999'}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoFocus={true}
-          />
-        </View>
-
         <View style={[styles.section, isDark && styles.darkSection]}>
           <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
             AVAC Recipient Email
@@ -238,10 +209,10 @@ export default function EmailSettingsScreen() {
 
         <View style={[styles.section, isDark && styles.darkSection]}>
           <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-            Email Submission Method
+            Submission Method
           </Text>
           <Text style={[styles.sectionDescription, isDark && styles.darkText]}>
-            Choose how you want to submit AVAC forms via email
+            Choose how you want to submit AVAC forms
           </Text>
           
           <TouchableOpacity
@@ -303,7 +274,7 @@ export default function EmailSettingsScreen() {
         >
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, isDark && styles.darkText]}>
-              Email Template
+              Submission Message Template
             </Text>
             <View style={styles.sectionActions}>
               <TouchableOpacity
@@ -330,7 +301,7 @@ export default function EmailSettingsScreen() {
             style={[styles.textArea, isDark && styles.darkTextInput]}
             value={emailTemplate}
             onChangeText={setEmailTemplate}
-            placeholder="Enter your email template..."
+            placeholder="Enter your submission message template..."
             placeholderTextColor={isDark ? '#666' : '#999'}
             multiline
             numberOfLines={8}

@@ -186,11 +186,6 @@ export default function PDFViewerScreen() {
       return;
     }
 
-    if (!profile.email) {
-      Alert.alert('Email Required', 'Please add your email address in Settings before submitting AVAC forms.');
-      return;
-    }
-
     const pdfUri = localPdfUri || exportBatch?.pdfUri;
     if (!pdfUri) {
       Alert.alert('Error', 'PDF file not found');

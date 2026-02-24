@@ -11,6 +11,7 @@ export default function OnboardingLayout() {
         }}
       >
         <Stack.Screen name="welcome" />
+        <Stack.Screen name="how-it-works" />
         <Stack.Screen name="profile-setup" />
         <Stack.Screen name="location-permissions" />
         <Stack.Screen name="create-first-log" />
@@ -19,7 +20,6 @@ export default function OnboardingLayout() {
     </ErrorBoundary>
   );
 }
-
 
 
 

@@ -2,6 +2,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, useColorScheme } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { OnboardingHeader } from '../../components/OnboardingHeader';
+
 export default function OnboardingWelcome() {
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -14,32 +16,34 @@ export default function OnboardingWelcome() {
           <Ionicons name="time-outline" size={80} color="#007AFF" />
         </View>
         
-        <Text style={[styles.title, isDark && styles.darkTitle]}>Welcome to Overtime+</Text>
-        
-        <Text style={[styles.description, isDark && styles.darkDescription]}>
-          Track your overtime hours, manage your shifts, and generate AVAC forms with ease.
-        </Text>
+        <OnboardingHeader
+          step={1}
+          title="Welcome to Overtime+"
+          subtitle="Set up the essentials, learn where each feature lives, and create your first overtime log before you land on Home."
+          align="center"
+          containerStyle={styles.headerBlock}
+        />
 
         <View style={styles.featuresList}>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Track overtime hours</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Add your profile basics</Text>
           </View>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Manage shift patterns</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Learn the app tabs and workflow</Text>
           </View>
           <View style={styles.featureItem}>
             <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Generate AVAC PDFs</Text>
+            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Create your first log with guidance</Text>
           </View>
         </View>
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/onboarding/profile-setup')}
+          onPress={() => router.push('/onboarding/how-it-works')}
         >
-          <Text style={styles.buttonText}>Get Started</Text>
+          <Text style={styles.buttonText}>Start Setup</Text>
           <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 8 }} />
         </TouchableOpacity>
       </View>
@@ -62,7 +66,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconContainer: {
-    marginBottom: 32,
+    marginBottom: 24,
+  },
+  headerBlock: {
+    width: '100%',
+    marginBottom: 12,
   },
   title: {
     fontSize: 32,
@@ -117,8 +125,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-
 
 
 

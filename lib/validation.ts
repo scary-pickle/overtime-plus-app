@@ -42,7 +42,6 @@ export const profileSchema = z.object({
   pdfTemplateVersion: z.literal('qld_avac_v8.5'),
   timezone: z.string().default('Australia/Brisbane'),
   concurrentEmploymentDefault: z.boolean().default(false),
-  email: z.string().email({ message: 'Invalid email address' }).default(''),
   isSMO: z.boolean().default(false)
 });
 

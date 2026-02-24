@@ -4,6 +4,7 @@ import { database } from '../db/sqlite';
 import { computeMinutes, roundToNearest5, getPreviousISODate, getCurrentDate, calculateDuration } from '../time';
 import { useProfileStore } from './profileStore';
 import { useLocalUserStore } from './localUserStore';
+import { useGeofenceStore } from './geofenceStore';
 import { createScopedLogger } from '../utils/logger';
 
 const debug = createScopedLogger('logsStore');
@@ -899,10 +900,29 @@ export const useLogsStore = create<LogsState>((set, get) => ({
 
   updateLog: async (log: OvertimeLog, userId?: string | null) => {
     set({ isLoading: true, error: null });
+
+    // When a geofence-proposed log that was actively tracking a shift gets finalised
+    // (user sets a finish time, or confirms/marks ready), clear the active-shift state
+    // so the "Shift in progress" badge disappears and the background EXIT event is
+    // correctly treated as a no-op rather than overwriting the user's manual changes.
+    let finalLog = log;
+    if (log.source === 'geofence-proposed' && log.isActiveShift) {
+      const hasFinishTime = log.actualFinish && log.actualFinish !== 'N/A';
+      const isConfirmed = log.status !== 'draft';
+      if (hasFinishTime || isConfirmed) {
+        finalLog = { ...log, isActiveShift: false };
+        try {
+          await useGeofenceStore.getState().setActiveGeofenceLogId(null);
+        } catch {
+          // Non-critical — background EXIT guards are the safety net
+        }
+      }
+    }
+
     try {
-      await database.updateOvertimeLog(log, userId ?? null);
+      await database.updateOvertimeLog(finalLog, userId ?? null);
       const { logs } = get();
-      const updatedLogs = logs.map(l => l.id === log.id ? log : l);
+      const updatedLogs = logs.map(l => l.id === finalLog.id ? finalLog : l);
       set({
         logs: updatedLogs,
         isLoading: false,

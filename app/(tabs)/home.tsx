@@ -11,6 +11,8 @@ import {
   Modal,
   ActivityIndicator
 } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useProfileStore } from '../../lib/state/profileStore';
@@ -29,6 +31,34 @@ import { createScopedLogger } from '../../lib/utils/logger';
 // Analytics charts preview removed from Home; link provided on Weekly card instead
 
 const debug = createScopedLogger('home');
+const HOME_FEATURE_TOUR_SEEN_KEY = 'overtime_plus_home_feature_tour_seen';
+
+const HOME_FEATURE_TOUR_STEPS = [
+  {
+    key: 'home',
+    icon: 'home',
+    title: 'Home tab',
+    body: 'Use Home for quick actions: start or end a shift, create a log, and review recent overtime at a glance.',
+    jumpLabel: null,
+    jumpPath: null,
+  },
+  {
+    key: 'logs',
+    icon: 'list',
+    title: 'Logs tab',
+    body: 'Logs is where you review entries and manage Draft, Ready, and Exported status before AVAC export.',
+    jumpLabel: 'Open Logs',
+    jumpPath: '/(tabs)/log',
+  },
+  {
+    key: 'exports',
+    icon: 'document-text',
+    title: 'Exports tab',
+    body: 'Exports collects ready logs into AVAC PDF bundles so you can share or track submission status later.',
+    jumpLabel: 'Open Exports',
+    jumpPath: '/(tabs)/exports',
+  },
+] as const;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -55,6 +85,9 @@ export default function HomeScreen() {
   const [todayLoggedShift, setTodayLoggedShift] = useState<OvertimeLog | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showActiveShiftWarningModal, setShowActiveShiftWarningModal] = useState(false);
+  const [showFeatureTourModal, setShowFeatureTourModal] = useState(false);
+  const [featureTourStepIndex, setFeatureTourStepIndex] = useState(0);
+  const [hasCheckedFeatureTour, setHasCheckedFeatureTour] = useState(false);
 
   useEffect(() => {
     // Update time every minute
@@ -171,6 +204,41 @@ export default function HomeScreen() {
     }, [loadProfile, loadLogs, localUserId])
   );
 
+  const getFeatureTourStorageKey = () => (
+    localUserId ? `${HOME_FEATURE_TOUR_SEEN_KEY}_${localUserId}` : HOME_FEATURE_TOUR_SEEN_KEY
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const maybeShowFeatureTour = async () => {
+      if (!isComplete || hasCheckedFeatureTour) return;
+
+      try {
+        const storageKey = getFeatureTourStorageKey();
+        const hasSeen = await SecureStore.getItemAsync(storageKey);
+
+        if (!hasSeen && !cancelled) {
+          setFeatureTourStepIndex(0);
+          setShowFeatureTourModal(true);
+          await SecureStore.setItemAsync(storageKey, 'true').catch(() => {});
+        }
+      } catch (error) {
+        debug.warn('Failed to load home feature tour state:', error);
+      } finally {
+        if (!cancelled) {
+          setHasCheckedFeatureTour(true);
+        }
+      }
+    };
+
+    maybeShowFeatureTour();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isComplete, hasCheckedFeatureTour, localUserId]);
+
   // Handle pull-to-refresh
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
@@ -211,6 +279,28 @@ export default function HomeScreen() {
       setRefreshing(false);
     }
   }, [loadProfile, loadLogs, loadShifts, hasProfile, getRosterFor, hasLoggedShiftForDate, getLoggedShiftForDate, localUserId]);
+
+  const closeFeatureTour = () => {
+    setShowFeatureTourModal(false);
+    setFeatureTourStepIndex(0);
+  };
+
+  const handleFeatureTourNext = () => {
+    setFeatureTourStepIndex((current) => {
+      if (current >= HOME_FEATURE_TOUR_STEPS.length - 1) {
+        closeFeatureTour();
+        return current;
+      }
+      return current + 1;
+    });
+  };
+
+  const handleFeatureTourJump = () => {
+    const step = HOME_FEATURE_TOUR_STEPS[featureTourStepIndex];
+    if (!step?.jumpPath) return;
+    closeFeatureTour();
+    router.push(step.jumpPath as '/(tabs)/log' | '/(tabs)/exports');
+  };
 
   const handleStartShift = async () => {
     if (!hasProfile || !isComplete) {
@@ -553,6 +643,7 @@ export default function HomeScreen() {
   
   // Filter out shift swaps from analytics - shift swaps shouldn't count as normal overtime
   const normalLogs = logs.filter(log => !log.isShiftSwap);
+  const currentFeatureTourStep = HOME_FEATURE_TOUR_STEPS[featureTourStepIndex];
 
   // Check and schedule unexported logs notification when logs change
   useEffect(() => {
@@ -835,6 +926,69 @@ export default function HomeScreen() {
                 onPress={() => setShowActiveShiftWarningModal(false)}
               >
                 <Text style={[styles.modalButtonCancelText, isDark && styles.darkText]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* One-time feature tour after onboarding */}
+      <Modal
+        visible={showFeatureTourModal && !!currentFeatureTourStep}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeFeatureTour}
+      >
+        <View style={styles.featureTourOverlay}>
+          <View style={[styles.featureTourCard, isDark && styles.darkModalContent]}>
+            <View style={styles.featureTourHeader}>
+              <View style={[styles.featureTourBadge, isDark && styles.darkFeatureTourBadge]}>
+                <Text style={[styles.featureTourBadgeText, isDark && styles.darkFeatureTourBadgeText]}>
+                  Quick tour {featureTourStepIndex + 1}/{HOME_FEATURE_TOUR_STEPS.length}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={closeFeatureTour} style={styles.featureTourCloseButton}>
+                <Ionicons name="close" size={20} color={isDark ? '#9ca3af' : '#6b7280'} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.featureTourIconWrap, isDark && styles.darkFeatureTourIconWrap]}>
+              <Ionicons
+                name={currentFeatureTourStep?.icon as any}
+                size={24}
+                color={isDark ? '#93c5fd' : '#2563eb'}
+              />
+            </View>
+
+            <Text style={[styles.featureTourTitle, isDark && styles.darkText]}>
+              {currentFeatureTourStep?.title}
+            </Text>
+            <Text style={[styles.featureTourBody, isDark && styles.darkFeatureTourBody]}>
+              {currentFeatureTourStep?.body}
+            </Text>
+
+            {currentFeatureTourStep?.jumpPath ? (
+              <TouchableOpacity
+                style={[styles.featureTourJumpButton, isDark && styles.darkFeatureTourJumpButton]}
+                onPress={handleFeatureTourJump}
+              >
+                <Text style={[styles.featureTourJumpButtonText, isDark && styles.darkModalButtonSecondaryText]}>
+                  {currentFeatureTourStep.jumpLabel}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
+            <View style={styles.featureTourActions}>
+              <TouchableOpacity style={styles.featureTourSecondaryAction} onPress={closeFeatureTour}>
+                <Text style={[styles.featureTourSecondaryActionText, isDark && styles.darkFeatureTourBody]}>
+                  Skip tour
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.featureTourPrimaryAction} onPress={handleFeatureTourNext}>
+                <Text style={styles.featureTourPrimaryActionText}>
+                  {featureTourStepIndex === HOME_FEATURE_TOUR_STEPS.length - 1 ? 'Finish' : 'Next'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1231,5 +1385,124 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: '500',
+  },
+  featureTourOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  featureTourCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 18,
+    width: '100%',
+    maxWidth: 420,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  featureTourHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  featureTourBadge: {
+    backgroundColor: '#eaf2ff',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  darkFeatureTourBadge: {
+    backgroundColor: '#10233f',
+  },
+  featureTourBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1d4ed8',
+  },
+  darkFeatureTourBadgeText: {
+    color: '#93c5fd',
+  },
+  featureTourCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureTourIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff6ff',
+    marginBottom: 10,
+  },
+  darkFeatureTourIconWrap: {
+    backgroundColor: '#111827',
+  },
+  featureTourTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 8,
+  },
+  featureTourBody: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#4b5563',
+    marginBottom: 14,
+  },
+  darkFeatureTourBody: {
+    color: '#9ca3af',
+  },
+  featureTourJumpButton: {
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  darkFeatureTourJumpButton: {
+    backgroundColor: '#2c2c2e',
+    borderColor: '#333',
+  },
+  featureTourJumpButtonText: {
+    color: '#007AFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  featureTourActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  featureTourSecondaryAction: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  featureTourSecondaryActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4b5563',
+  },
+  featureTourPrimaryAction: {
+    backgroundColor: '#007AFF',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureTourPrimaryActionText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

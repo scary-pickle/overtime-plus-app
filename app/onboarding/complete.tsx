@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalUserStore } from '../../lib/state/localUserStore';
 import { useOnboardingStore } from '../../lib/state/onboardingStore';
 import { createScopedLogger } from '../../lib/utils/logger';
+import { OnboardingHeader } from '../../components/OnboardingHeader';
 
 const debug = createScopedLogger('OnboardingComplete');
 
@@ -34,25 +35,34 @@ export default function OnboardingComplete() {
             <Ionicons name="checkmark" size={60} color="#4CAF50" />
           </View>
         </View>
-        
-        <Text style={[styles.title, isDark && styles.darkTitle]}>All Set!</Text>
-        
-        <Text style={[styles.description, isDark && styles.darkDescription]}>
-          Your profile is complete and you're ready to start tracking overtime.
-        </Text>
+
+        <OnboardingHeader
+          step={6}
+          title="All Set!"
+          subtitle="Your setup is complete. Here is where the main features live before you open Home."
+          align="center"
+          containerStyle={styles.headerBlock}
+        />
 
         <View style={styles.featuresList}>
-          <View style={styles.featureItem}>
-            <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Profile set up successfully</Text>
-          </View>
-          <View style={styles.featureItem}>
-            <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Ready to create logs</Text>
-          </View>
-          <View style={styles.featureItem}>
-            <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-            <Text style={[styles.featureText, isDark && styles.darkFeatureText]}>Ready to generate AVAC forms</Text>
+          <View style={[styles.tabMapCard, isDark && styles.darkTabMapCard]}>
+            {[
+              { icon: 'home', title: 'Home', body: 'Start/end shift and create logs quickly.' },
+              { icon: 'list', title: 'Logs', body: 'Review entries and mark logs ready for export.' },
+              { icon: 'calendar', title: 'Shifts', body: 'Save roster patterns for faster logging.' },
+              { icon: 'document-text', title: 'Exports', body: 'Generate AVAC PDF bundles from ready logs.' },
+              { icon: 'person', title: 'Profile', body: 'Add delegate/email details later if needed.' },
+            ].map((item) => (
+              <View key={item.title} style={styles.tabRow}>
+                <View style={[styles.tabIconWrap, isDark && styles.darkTabIconWrap]}>
+                  <Ionicons name={item.icon as any} size={15} color={isDark ? '#93c5fd' : '#1d4ed8'} />
+                </View>
+                <View style={styles.tabTextGroup}>
+                  <Text style={[styles.tabLabel, isDark && styles.darkFeatureText]}>{item.title}</Text>
+                  <Text style={[styles.tabBody, isDark && styles.darkDescription]}>{item.body}</Text>
+                </View>
+              </View>
+            ))}
           </View>
         </View>
 
@@ -60,7 +70,7 @@ export default function OnboardingComplete() {
           style={styles.button}
           onPress={handleStartUsingApp}
         >
-          <Text style={styles.buttonText}>Start Using App</Text>
+          <Text style={styles.buttonText}>Open Home</Text>
           <Ionicons name="arrow-forward" size={20} color="#fff" style={{ marginLeft: 8 }} />
         </TouchableOpacity>
       </View>
@@ -83,7 +93,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconContainer: {
-    marginBottom: 32,
+    marginBottom: 20,
+  },
+  headerBlock: {
+    width: '100%',
+    marginBottom: 8,
+  },
+  stepPill: {
+    backgroundColor: '#eaf2ff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  darkStepPill: {
+    backgroundColor: '#10233f',
+  },
+  stepPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1d4ed8',
+  },
+  darkStepPillText: {
+    color: '#93c5fd',
   },
   checkmarkCircle: {
     width: 120,
@@ -110,7 +142,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 20,
     lineHeight: 24,
   },
   darkDescription: {
@@ -118,8 +150,50 @@ const styles = StyleSheet.create({
   },
   featuresList: {
     width: '100%',
-    marginBottom: 48,
-    gap: 16,
+    marginBottom: 28,
+  },
+  tabMapCard: {
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+  },
+  darkTabMapCard: {
+    backgroundColor: '#1c1c1e',
+    borderColor: '#333',
+  },
+  tabRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  tabIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#eff6ff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  darkTabIconWrap: {
+    backgroundColor: '#111827',
+  },
+  tabTextGroup: {
+    flex: 1,
+  },
+  tabLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111',
+    marginBottom: 2,
+  },
+  tabBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#555',
   },
   featureItem: {
     flexDirection: 'row',
@@ -149,8 +223,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-
 
 
 

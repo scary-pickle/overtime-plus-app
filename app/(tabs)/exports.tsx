@@ -367,11 +367,6 @@ export default function ExportsScreen() {
       return;
     }
 
-    if (!profile.email) {
-      Alert.alert('Email Required', 'Please add your email address in Settings before submitting AVAC forms.');
-      return;
-    }
-
     if (!batch.pdfUri) {
       Alert.alert('PDF Not Available', 'The PDF file is no longer available.');
       return;
@@ -978,11 +973,6 @@ export default function ExportsScreen() {
       return;
     }
 
-    if (!profile.email) {
-      Alert.alert('Email Required', 'Please add your email address in Settings before submitting AVAC forms.');
-      return;
-    }
-
     // Check all batches have PDFs
     const validBatches = unsubmittedBatches.filter(batch => batch.pdfUri);
     if (validBatches.length === 0) {
@@ -1191,11 +1181,6 @@ export default function ExportsScreen() {
       const batch = selectedBatches[0];
       if (!profile) {
         Alert.alert('Profile Required', 'Please complete your profile before submitting AVAC forms.');
-        return;
-      }
-
-      if (!profile.email) {
-        Alert.alert('Email Required', 'Please add your email address in Settings before submitting AVAC forms.');
         return;
       }
 

@@ -7,12 +7,13 @@ import {
   StyleSheet,
   SafeAreaView,
   useColorScheme,
-  Linking,
+  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
+import { OnboardingHeader } from '../../components/OnboardingHeader';
 import { useProfileStore } from '../../lib/state/profileStore';
 import { useGeofenceStore } from '../../lib/state/geofenceStore';
 import { geofenceManager } from '../../lib/location/geofenceManager';
@@ -39,7 +40,9 @@ export default function LocationPermissionsScreen() {
   const [isEnabling, setIsEnabling] = useState(false);
 
   const hasAlwaysPermission = permissionStatus?.background === 'granted';
-  const canEnable = hasAlwaysPermission && (isKnownHospital || !!customCoordinates);
+  const needsCustomHospitalLocation = !!hospitalName && !isKnownHospital;
+  const hasLocationTarget = !!hospitalName && (isKnownHospital || !!customCoordinates);
+  const canRequestEnable = !isEnabling && hasLocationTarget;
 
   useEffect(() => {
     geofenceManager.getPermissionStatus().then(setPermissionStatus);
@@ -65,6 +68,16 @@ export default function LocationPermissionsScreen() {
   };
 
   const handleEnableAndContinue = async () => {
+    if (!hospitalName) {
+      Alert.alert('Hospital Required', 'Please complete your profile hospital details before enabling automatic shift tracking.');
+      return;
+    }
+
+    if (needsCustomHospitalLocation && !customCoordinates) {
+      Alert.alert('Hospital Location Needed', 'Tap "Use My Current Location" while at your hospital, or set this up later in Settings.');
+      return;
+    }
+
     setIsEnabling(true);
     try {
       const { granted } = await geofenceManager.requestPermissions();
@@ -81,11 +94,25 @@ export default function LocationPermissionsScreen() {
           customCoordinates,
         };
         await saveSettings(settings);
-        await geofenceManager.startMonitoring(hospitalName, 500, customCoordinates);
+        const started = await geofenceManager.startMonitoring(hospitalName, 500, customCoordinates);
+        if (started) {
+          router.push('/onboarding/create-first-log');
+          return;
+        }
+
+        Alert.alert(
+          'Location Access Enabled, Setup Incomplete',
+          'We got permission, but could not start hospital monitoring yet. You can continue and finish this later in Settings.'
+        );
+        return;
       }
+
+      Alert.alert(
+        'Location Access Not Enabled',
+        'Automatic shift tracking is optional. You can continue without it and enable it later in Settings.'
+      );
     } finally {
       setIsEnabling(false);
-      router.push('/onboarding/create-first-log');
     }
   };
 
@@ -108,10 +135,14 @@ export default function LocationPermissionsScreen() {
         </View>
 
         {/* Headline */}
-        <Text style={[styles.title, isDark && styles.darkText]}>Automatic Shift Tracking</Text>
-        <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>
-          Overtime+ can automatically start and stop your shift log when you arrive at and leave your hospital.
-        </Text>
+        <OnboardingHeader
+          step={4}
+          title="Automatic Shift Tracking"
+          subtitle="Optional: Overtime+ can automatically start and stop your shift log when you arrive at and leave your hospital."
+          onBack={() => router.back()}
+          align="center"
+          containerStyle={styles.headerBlock}
+        />
 
         {/* Feature bullets */}
         <View style={[styles.card, isDark && styles.darkCard]}>
@@ -216,9 +247,9 @@ export default function LocationPermissionsScreen() {
         <View style={styles.actions}>
           {!hasAlwaysPermission ? (
             <TouchableOpacity
-              style={[styles.primaryButton, (isEnabling || (!isKnownHospital && !customCoordinates && hospitalName !== '')) && styles.primaryButtonMuted]}
+              style={[styles.primaryButton, !canRequestEnable && styles.primaryButtonMuted]}
               onPress={handleEnableAndContinue}
-              disabled={isEnabling}
+              disabled={!canRequestEnable}
             >
               {isEnabling ? (
                 <ActivityIndicator color="#fff" />
@@ -240,7 +271,9 @@ export default function LocationPermissionsScreen() {
           )}
 
           <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-            <Text style={[styles.skipText, isDark && styles.darkSkipText]}>Set up later in Settings</Text>
+            <Text style={[styles.skipText, isDark && styles.darkSkipText]}>
+              {hasAlwaysPermission ? 'Continue without changes' : 'Continue without Auto Tracking'}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -264,6 +297,28 @@ const styles = StyleSheet.create({
   iconWrap: {
     alignItems: 'center',
     marginBottom: 24,
+  },
+  headerBlock: {
+    marginBottom: 4,
+  },
+  stepPill: {
+    alignSelf: 'center',
+    backgroundColor: '#eaf2ff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 16,
+  },
+  darkStepPill: {
+    backgroundColor: '#10233f',
+  },
+  stepPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1d4ed8',
+  },
+  darkStepPillText: {
+    color: '#93c5fd',
   },
   iconCircle: {
     width: 96,

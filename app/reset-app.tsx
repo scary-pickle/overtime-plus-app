@@ -72,6 +72,8 @@ export default function ResetAppScreen() {
         'overtime_plus_local_user_id',
         'overtime_plus_onboarding_complete',
         localUserId ? `overtime_plus_onboarding_complete_${localUserId}` : null,
+        'overtime_plus_home_feature_tour_seen',
+        localUserId ? `overtime_plus_home_feature_tour_seen_${localUserId}` : null,
         'overtime_plus_profile',
         localUserId ? `overtime_plus_profile_${localUserId}` : null,
       ].filter(Boolean) as string[];

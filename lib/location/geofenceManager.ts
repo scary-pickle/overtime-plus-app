@@ -78,12 +78,27 @@ async function handleGeofenceEnter({
 }) {
   debug.debug('Handling geofence ENTER', { userId: userId?.substring(0, 8), today, currentTime });
 
-  // Check if there's already an active geofence log in progress
+  // Check if there's already an active geofence log in progress.
+  // The key may be stale if the user manually ended the shift while still inside
+  // the geofence (actualFinish set or status confirmed) — validate before trusting it.
   const storedActiveLogId = await SecureStore.getItemAsync(GEOFENCE_ACTIVE_LOG_KEY);
   if (storedActiveLogId) {
-    // Already tracking a shift — ignore double-entry events
-    debug.debug('Already tracking a shift, ignoring ENTER event', { storedActiveLogId });
-    return;
+    const allCurrentLogs = await database.getOvertimeLogs(userId);
+    const storedLog = allCurrentLogs.find(l => l.id === storedActiveLogId);
+    const isStillActive =
+      storedLog?.isActiveShift === true &&
+      storedLog?.status === 'draft' &&
+      (!storedLog?.actualFinish || storedLog?.actualFinish === 'N/A');
+
+    if (isStillActive) {
+      // Genuinely mid-shift — ignore double-entry
+      debug.debug('Already tracking an active shift, ignoring ENTER event', { storedActiveLogId });
+      return;
+    }
+
+    // Key is stale (shift was manually ended) — clear it and proceed to create a new log
+    debug.debug('Clearing stale active log key on ENTER', { storedActiveLogId, reason: storedLog ? 'manually ended' : 'log not found' });
+    await SecureStore.deleteItemAsync(GEOFENCE_ACTIVE_LOG_KEY);
   }
 
   // Check if there's a recently-exited geofence-proposed log for today that can be re-activated
@@ -165,6 +180,20 @@ async function handleGeofenceExit({
   const activeLog = allLogs.find(l => l.id === storedActiveLogId);
   if (!activeLog) {
     debug.debug('Active geofence log not found in DB, clearing stored ID');
+    await SecureStore.deleteItemAsync(GEOFENCE_ACTIVE_LOG_KEY);
+    return;
+  }
+
+  // Guard: user already manually set a finish time — don't overwrite it
+  if (activeLog.actualFinish && activeLog.actualFinish !== 'N/A') {
+    debug.debug('Log already has a manual finish time, ignoring EXIT event', { id: storedActiveLogId });
+    await SecureStore.deleteItemAsync(GEOFENCE_ACTIVE_LOG_KEY);
+    return;
+  }
+
+  // Guard: log was confirmed or exported — don't touch it
+  if (activeLog.status !== 'draft') {
+    debug.debug('Log is no longer a draft, ignoring EXIT event', { id: storedActiveLogId, status: activeLog.status });
     await SecureStore.deleteItemAsync(GEOFENCE_ACTIVE_LOG_KEY);
     return;
   }

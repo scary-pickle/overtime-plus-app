@@ -431,7 +431,7 @@ export default function ProfileScreen() {
   }, []);
 
   const handleSave = async () => {
-    if (!formData.fullName || !formData.payrollNumber || !formData.email) {
+    if (!formData.fullName || !formData.payrollNumber) {
       Alert.alert('Required Fields', 'Please fill in all required fields.');
       return;
     }
@@ -439,13 +439,6 @@ export default function ProfileScreen() {
     // Validate pay level is required only when not SMO
     if (!isSMO && !formData.payLevel) {
       Alert.alert('Required Fields', 'Please fill in your pay level.');
-      return;
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (formData.email && !emailRegex.test(formData.email)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
 
@@ -465,7 +458,6 @@ export default function ProfileScreen() {
       pdfTemplateVersion: 'qld_avac_v8.5',
       timezone: 'Australia/Brisbane',
       concurrentEmploymentDefault: formData.concurrentEmploymentDefault || false,
-      email: formData.email || '',
       emailTemplate: formData.emailTemplate,
       isSMO: isSMO,
     };
@@ -647,7 +639,6 @@ export default function ProfileScreen() {
       payrollNumber: (value: string) => updateField('payrollNumber', value),
       payLevel: (value: string) => updateField('payLevel', value),
       employeeInitial: (value: string) => updateField('employeeInitial', value),
-      email: (value: string) => updateField('email', value),
       orgUnitNo: (value: string) => updateField('orgUnitNo', value),
       serviceEnquiryNumber: (value: string) => updateField('serviceEnquiryNumber', value),
       delegateAreaCode: (value: string) => updateField('delegateAreaCode', value),
@@ -891,16 +882,6 @@ export default function ProfileScreen() {
             isDark={isDark}
             isEditing={isEditing}
           />
-          <FieldInput
-            fieldKey="email"
-            label="Email Address"
-            placeholder="your.name@health.qld.gov.au"
-            required={true}
-            initialValue={formData.email || ''}
-            onChangeText={fieldHandlers.email}
-            isDark={isDark}
-            isEditing={isEditing}
-          />
         </CollapsibleSection>
 
         {/* Organisation Details */}
@@ -1087,7 +1068,7 @@ export default function ProfileScreen() {
         <CollapsibleSection
           sectionKey="settings"
           title="Settings"
-          subtitle="Email, notifications, and preferences"
+          subtitle="Submission, notifications, and preferences"
           showEdit={false}
           isDark={isDark}
           isExpanded={expandedSections.settings}
@@ -1102,10 +1083,10 @@ export default function ProfileScreen() {
           >
             <View style={styles.settingLeft}>
               <Text style={[styles.settingLabel, isDark && styles.darkSettingLabel]}>
-                Email Settings
+                Submission Settings
               </Text>
               <Text style={[styles.settingDescription, isDark && styles.darkSettingDescription]}>
-                Customise email template
+                Recipient, template, and send method
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={isDark ? '#999' : '#666'} />

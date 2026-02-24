@@ -14,7 +14,6 @@ export type Profile = {
   pdfTemplateVersion: 'qld_avac_v8.5';
   timezone: string; // "Australia/Brisbane"
   concurrentEmploymentDefault: boolean; // Default concurrent employment setting
-  email: string; // User's QLD Health email address
   recipientEmail?: string; // Custom recipient email address for AVAC submissions (overrides department lookup)
   emailTemplate?: string; // Customisable email body template
   emailSubmissionMethod?: 'apple-mail' | 'share-sheet'; // Preferred email submission method

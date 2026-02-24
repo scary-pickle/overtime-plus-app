@@ -30,7 +30,9 @@ export class ProfileStorage {
       });
       
       // Encrypt PII fields before storing
-      const profileToSave = { ...profile };
+      const profileToSave: Profile & { email?: unknown } = { ...profile };
+      // Strip deprecated user-email field if present in older in-memory objects.
+      delete profileToSave.email;
       if (profileToSave.employeeInitial) {
         try {
           profileToSave.employeeInitial = await encrypt(profileToSave.employeeInitial);
@@ -39,15 +41,6 @@ export class ProfileStorage {
           throw new Error('Could not securely store profile data. Please try again.');
         }
       }
-      if (profileToSave.email) {
-        try {
-          profileToSave.email = await encrypt(profileToSave.email);
-        } catch (encryptError) {
-          debug.error('Failed to encrypt email (blocking save):', encryptError);
-          throw new Error('Could not securely store profile data. Please try again.');
-        }
-      }
-      
       const profileJson = JSON.stringify(profileToSave);
       await SecureStore.setItemAsync(profileKey, profileJson);
       debug.debug('Profile saved successfully to storage');
@@ -76,10 +69,6 @@ export class ProfileStorage {
       if (profile.employeeInitial) {
         profile.employeeInitial = await decrypt(profile.employeeInitial);
       }
-      if (profile.email) {
-        profile.email = await decrypt(profile.email);
-      }
-      
       // Migration: Convert old profile format to new format
       if (profile.delegateSignatureUri !== undefined && profile.employeeInitial === undefined) {
         debug.debug('Migrating profile from old format');
@@ -107,10 +96,10 @@ export class ProfileStorage {
         await this.saveProfile(profile as Profile, userId);
       }
       
-      // Migration: Add email field if missing
-      if (profile.email === undefined) {
-        profile.email = '';
-        // Save the updated profile (will encrypt PII fields)
+      // Migration: User email is no longer collected/stored.
+      // Remove any previously saved value on the next load.
+      if (Object.prototype.hasOwnProperty.call(profile, 'email')) {
+        delete profile.email;
         await this.saveProfile(profile as Profile, userId);
       }
       
@@ -175,13 +164,14 @@ export class ProfileStorage {
     return names.map(name => name.charAt(0)).join('').toUpperCase().substring(0, 3);
   }
 
-  // Helper to validate profile completeness
-  // Note: Delegate information is optional (only required for PDF generation)
+  // Helper to validate profile completeness for app usage/home access
+  // Note: Delegate information is optional here.
+  // - Delegate info + org unit no are required later for AVAC PDF generation.
   isProfileComplete(profile: Profile): boolean {
-    // Base required fields for all users (excluding delegate info)
+    // Base required fields for app usage (excluding delegate info)
     const baseRequiredFields: (keyof Profile)[] = [
       'fullName', 'payrollNumber', 'orgUnitName', 'location',
-      'employeeInitial', 'email', 'isSMO'
+      'employeeInitial', 'isSMO'
     ];
 
     // For SMO users, payLevel is optional
@@ -198,13 +188,13 @@ export class ProfileStorage {
     });
   }
 
-  // Helper to get missing fields with user-friendly names
-  // Note: Delegate information is optional (only required for PDF generation)
+  // Helper to get missing fields for app usage/home access
+  // Note: Delegate information is optional here.
   getMissingFields(profile: Profile): { field: keyof Profile; label: string; section: string }[] {
-    // Base required fields for all users (excluding delegate info)
+    // Base required fields for app usage (excluding delegate info)
     const baseRequiredFields: (keyof Profile)[] = [
       'fullName', 'payrollNumber', 'orgUnitName', 'location',
-      'employeeInitial', 'email', 'isSMO'
+      'employeeInitial', 'isSMO'
     ];
 
     // For SMO users, payLevel is optional
@@ -224,7 +214,6 @@ export class ProfileStorage {
       delegateAreaCode: 'Area Code',
       delegatePhone: 'Phone Number',
       employeeInitial: 'Employee Initial',
-      email: 'Email Address',
       payLevel: 'Pay Level',
       serviceEnquiryNumber: 'Service Enquiry Number',
       pdfTemplateVersion: 'PDF Template Version',
@@ -248,7 +237,6 @@ export class ProfileStorage {
       delegateAreaCode: 'Delegate Details',
       delegatePhone: 'Delegate Details',
       employeeInitial: 'Employee Details',
-      email: 'Employee Details',
       payLevel: 'Employee Details',
       serviceEnquiryNumber: 'Organisation',
       pdfTemplateVersion: 'Settings',
@@ -303,7 +291,6 @@ export class ProfileStorage {
       pdfTemplateVersion: 'qld_avac_v8.5',
       timezone: 'Australia/Brisbane',
       concurrentEmploymentDefault: false, // Default to off/empty
-      email: '',
       emailTemplate: undefined, // Will use default template
       isSMO: false // Default to non-SMO
     };

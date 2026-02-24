@@ -14,6 +14,7 @@ import {
   Platform,
   Keyboard,
   TouchableWithoutFeedback,
+  findNodeHandle,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +24,7 @@ import { Profile } from '../../types';
 import { validateOnboardingProfile } from '../../lib/validation/onboardingValidation';
 import { HospitalDropdown } from '../../components/HospitalDropdown';
 import { DepartmentDropdown } from '../../components/DepartmentDropdown';
+import { OnboardingHeader } from '../../components/OnboardingHeader';
 import { QUEENSLAND_HOSPITALS, getDepartmentsForHospital, getDelegateForDepartment } from '../../lib/data/hospitalDepartments';
 import { profileStorage } from '../../lib/storage/profile';
 import { createScopedLogger } from '../../lib/utils/logger';
@@ -37,6 +39,7 @@ export default function OnboardingProfileSetup() {
   const { saveProfile } = useProfileStore();
 
   const scrollViewRef = useRef<ScrollView>(null);
+  const contentWrapperRef = useRef<View>(null);
   const fullNameInputRef = useRef<TextInput>(null);
   const payrollNumberInputRef = useRef<TextInput>(null);
   const orgUnitNoInputRef = useRef<TextInput>(null);
@@ -46,10 +49,7 @@ export default function OnboardingProfileSetup() {
   const delegateAreaCodeInputRef = useRef<TextInput>(null);
   const delegatePhoneInputRef = useRef<TextInput>(null);
 
-  const fieldPositions = useRef<{ [key: string]: number }>({});
-
   const [formData, setFormData] = useState<Partial<Profile>>({
-    email: '',
     fullName: '',
     payrollNumber: '',
     orgUnitNo: '',
@@ -81,24 +81,26 @@ export default function OnboardingProfileSetup() {
     return names.map(name => name.charAt(0)).join('').toUpperCase().substring(0, 3);
   };
 
-  const scrollToInput = (inputRef: React.RefObject<TextInput>, fieldKey: string) => {
-    // Use setTimeout to ensure keyboard is shown before scrolling
+  const scrollToInput = (inputRef: React.RefObject<TextInput | null>) => {
     setTimeout(() => {
-      const position = fieldPositions.current[fieldKey];
-      if (position !== undefined && scrollViewRef.current) {
-        // Scroll so the focused field sits at the top of the visible area (not just above keyboard)
-        const topOffset = 24;
-        scrollViewRef.current.scrollTo({
-          y: Math.max(0, position - topOffset),
-          animated: true,
-        });
-      }
-    }, 150); // Slightly longer delay to ensure keyboard is fully shown
-  };
-
-  const handleFieldLayout = (fieldKey: string, event: any) => {
-    const { y } = event.nativeEvent.layout;
-    fieldPositions.current[fieldKey] = y;
+      const input = inputRef.current;
+      const contentWrapper = contentWrapperRef.current;
+      const scrollView = scrollViewRef.current;
+      if (!input || !contentWrapper || !scrollView) return;
+      const contentNode = findNodeHandle(contentWrapper);
+      if (contentNode == null) return;
+      (input as any).measureLayout(
+        contentNode,
+        (_x: number, y: number) => {
+          const topOffset = 24;
+          scrollView.scrollTo({
+            y: Math.max(0, y - topOffset),
+            animated: true,
+          });
+        },
+        () => {}
+      );
+    }, 150);
   };
 
   const handleFullNameChange = (value: string) => {
@@ -184,7 +186,6 @@ export default function OnboardingProfileSetup() {
       pdfTemplateVersion: 'qld_avac_v8.5',
       timezone: 'Australia/Brisbane',
       concurrentEmploymentDefault: false,
-      email: formData.email || '',
       isSMO: formData.isSMO || false,
     };
 
@@ -216,40 +217,22 @@ export default function OnboardingProfileSetup() {
           keyboardDismissMode="interactive"
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View>
+            <View ref={contentWrapperRef} collapsable={false}>
         <View style={styles.header}>
-          <Text style={[styles.title, isDark && styles.darkTitle]}>Set Up Your Profile</Text>
-          <Text style={[styles.subtitle, isDark && styles.darkSubtitle]}>
-            Let's get your profile ready. We'll use this information to generate your AVAC forms.
-          </Text>
+          <OnboardingHeader
+            step={3}
+            title="Set Up Your Profile"
+            subtitle="Add the basics needed to use Overtime+. Optional export details can be added later in Profile."
+            onBack={() => router.back()}
+            align="center"
+          />
         </View>
 
         {/* Personal Information */}
         <View style={[styles.section, isDark && styles.darkSection]}>
           <Text style={[styles.sectionTitle, isDark && styles.darkSectionTitle]}>Personal Information</Text>
           
-          <View style={styles.field}>
-            <Text style={[styles.label, isDark && styles.darkLabel]}>
-              Email Address (Optional)
-            </Text>
-            <TextInput
-              style={[styles.input, isDark && styles.darkInput]}
-              value={formData.email}
-              onChangeText={(value) => setFormData(prev => ({ ...prev, email: value }))}
-              placeholder="your.email@health.qld.gov.au"
-              placeholderTextColor={isDark ? '#666' : '#999'}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
-              Used on AVAC forms — you can add this later in your profile
-            </Text>
-          </View>
-
-          <View 
-            style={styles.field}
-            onLayout={(e) => handleFieldLayout('fullName', e)}
-          >
+	          <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
               Full Name <Text style={styles.required}>*</Text>
             </Text>
@@ -261,17 +244,14 @@ export default function OnboardingProfileSetup() {
               placeholder="Enter your full name"
               placeholderTextColor={isDark ? '#666' : '#999'}
               autoFocus={true}
-              onFocus={() => scrollToInput(fullNameInputRef, 'fullName')}
+              onFocus={() => scrollToInput(fullNameInputRef)}
             />
             <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
-              {formData.fullName ? 'You can edit this if needed' : 'Auto-filled from your email'}
+              {formData.fullName ? 'We use this to generate your initials for logs and forms' : 'Enter your name to generate your initials'}
             </Text>
           </View>
 
-          <View 
-            style={styles.field}
-            onLayout={(e) => handleFieldLayout('payrollNumber', e)}
-          >
+          <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
               Payroll Number <Text style={styles.required}>*</Text>
             </Text>
@@ -282,7 +262,7 @@ export default function OnboardingProfileSetup() {
               onChangeText={(value) => setFormData(prev => ({ ...prev, payrollNumber: value }))}
               placeholder="Enter payroll number"
               placeholderTextColor={isDark ? '#666' : '#999'}
-              onFocus={() => scrollToInput(payrollNumberInputRef, 'payrollNumber')}
+              onFocus={() => scrollToInput(payrollNumberInputRef)}
             />
           </View>
 
@@ -340,10 +320,7 @@ export default function OnboardingProfileSetup() {
             />
           </View>
 
-          <View 
-            style={styles.field}
-            onLayout={(e) => handleFieldLayout('orgUnitNo', e)}
-          >
+          <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>
               Organisation Unit No (Optional)
             </Text>
@@ -356,7 +333,7 @@ export default function OnboardingProfileSetup() {
               placeholderTextColor={isDark ? '#666' : '#999'}
               maxLength={8}
               keyboardType="numeric"
-              onFocus={() => scrollToInput(orgUnitNoInputRef, 'orgUnitNo')}
+              onFocus={() => scrollToInput(orgUnitNoInputRef)}
             />
             <Text style={[styles.helperText, isDark && styles.darkHelperText]}>
               You can skip this for now. We'll remind you before exporting AVAC forms.
@@ -388,10 +365,7 @@ export default function OnboardingProfileSetup() {
 
           {/* Pay Level - only show when not SMO */}
           {!formData.isSMO && (
-            <View 
-              style={styles.field}
-              onLayout={(e) => handleFieldLayout('payLevel', e)}
-            >
+            <View style={styles.field}>
               <Text style={[styles.label, isDark && styles.darkLabel]}>
                 Pay Level <Text style={styles.required}>*</Text>
               </Text>
@@ -402,7 +376,7 @@ export default function OnboardingProfileSetup() {
                 onChangeText={(value) => setFormData(prev => ({ ...prev, payLevel: value }))}
                 placeholder="Enter pay level"
                 placeholderTextColor={isDark ? '#666' : '#999'}
-                onFocus={() => scrollToInput(payLevelInputRef, 'payLevel')}
+                onFocus={() => scrollToInput(payLevelInputRef)}
               />
             </View>
           )}
@@ -426,10 +400,7 @@ export default function OnboardingProfileSetup() {
             </View>
           )}
 
-          <View 
-            style={styles.field}
-            onLayout={(e) => handleFieldLayout('delegateName', e)}
-          >
+          <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>Delegate Name</Text>
             <TextInput
               ref={delegateNameInputRef}
@@ -441,14 +412,11 @@ export default function OnboardingProfileSetup() {
               }}
               placeholder="Enter delegate name"
               placeholderTextColor={isDark ? '#666' : '#999'}
-              onFocus={() => scrollToInput(delegateNameInputRef, 'delegateName')}
+              onFocus={() => scrollToInput(delegateNameInputRef)}
             />
           </View>
 
-          <View 
-            style={styles.field}
-            onLayout={(e) => handleFieldLayout('delegatePosition', e)}
-          >
+          <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>Delegate Position</Text>
             <TextInput
               ref={delegatePositionInputRef}
@@ -460,14 +428,11 @@ export default function OnboardingProfileSetup() {
               }}
               placeholder="Enter delegate position"
               placeholderTextColor={isDark ? '#666' : '#999'}
-              onFocus={() => scrollToInput(delegatePositionInputRef, 'delegatePosition')}
+              onFocus={() => scrollToInput(delegatePositionInputRef)}
             />
           </View>
 
-          <View 
-            style={styles.field}
-            onLayout={(e) => handleFieldLayout('delegateAreaCode', e)}
-          >
+          <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>Area Code</Text>
             <TextInput
               ref={delegateAreaCodeInputRef}
@@ -477,14 +442,11 @@ export default function OnboardingProfileSetup() {
               placeholder="(07)"
               placeholderTextColor={isDark ? '#666' : '#999'}
               keyboardType="phone-pad"
-              onFocus={() => scrollToInput(delegateAreaCodeInputRef, 'delegateAreaCode')}
+              onFocus={() => scrollToInput(delegateAreaCodeInputRef)}
             />
           </View>
 
-          <View 
-            style={styles.field}
-            onLayout={(e) => handleFieldLayout('delegatePhone', e)}
-          >
+          <View style={styles.field}>
             <Text style={[styles.label, isDark && styles.darkLabel]}>Phone Number</Text>
             <TextInput
               ref={delegatePhoneInputRef}
@@ -497,7 +459,7 @@ export default function OnboardingProfileSetup() {
               placeholder="Enter phone number"
               placeholderTextColor={isDark ? '#666' : '#999'}
               keyboardType="phone-pad"
-              onFocus={() => scrollToInput(delegatePhoneInputRef, 'delegatePhone')}
+              onFocus={() => scrollToInput(delegatePhoneInputRef)}
             />
           </View>
         </View>
@@ -538,6 +500,25 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 32,
+  },
+  stepPill: {
+    alignSelf: 'center',
+    backgroundColor: '#eaf2ff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 12,
+  },
+  darkStepPill: {
+    backgroundColor: '#10233f',
+  },
+  stepPillText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1d4ed8',
+  },
+  darkStepPillText: {
+    color: '#93c5fd',
   },
   title: {
     fontSize: 32,
@@ -696,10 +677,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-
-
-
-
 
 

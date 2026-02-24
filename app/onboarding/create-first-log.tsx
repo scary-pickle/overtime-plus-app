@@ -23,6 +23,7 @@ import { CalendarPicker } from '../../components/CalendarPicker';
 import { SharedTimePickerProvider } from '../../components/SharedTimePicker';
 import { NAButton } from '../../components/NAButton';
 import { StepIndicator, Hint, FieldHighlight } from '../../components/OnboardingGuidance';
+import { OnboardingHeader } from '../../components/OnboardingHeader';
 import { computeMinutes, formatMinutes, getCurrentDate } from '../../lib/time';
 import { OvertimeLog } from '../../types';
 import { createScopedLogger } from '../../lib/utils/logger';
@@ -52,7 +53,7 @@ const STEP_HINTS: Record<OnboardingStep, string> = {
   'category': 'Select the type of overtime you worked. This helps categorize your log for reporting.',
   'comments': 'Add any additional comments or notes about this log entry (optional).',
   'concurrent-employment': 'Indicate if you work in more than one job at the same time.',
-  'review': 'Review your log details and calculation. You can save as draft to complete later, or mark as ready.',
+  'review': 'Review your log details and overtime calculation, then save your first log and continue to Home.',
 };
 
 export default function OnboardingCreateFirstLog() {
@@ -305,7 +306,7 @@ export default function OnboardingCreateFirstLog() {
 
     Alert.alert(
       'Skip Creating Your First Log?',
-      'You can always create logs later from the Logs tab. Would you like to skip this step?',
+      'You can always create logs later from Home or the Logs tab. Would you like to skip this step?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -569,16 +570,16 @@ export default function OnboardingCreateFirstLog() {
         <View style={styles.mainContainer}>
           {/* Header */}
           <View style={[styles.header, isDark && styles.darkHeader]}>
-            <View style={styles.headerContent}>
-              <Text style={[styles.headerTitle, isDark && styles.darkHeaderTitle]}>
-                Create Your First Log
-              </Text>
-              <TouchableOpacity onPress={handleSkip} style={styles.skipButton}>
-                <Text style={[styles.skipButtonText, isDark && styles.darkSkipButtonText]}>
-                  Skip
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <OnboardingHeader
+              step={5}
+              title="Create Your First Log"
+              subtitle="Follow the guided steps to learn how logs are created and calculated."
+              onBack={() => router.back()}
+              rightActionLabel="Skip"
+              onRightAction={handleSkip}
+              align="left"
+              compact={true}
+            />
           </View>
 
           {/* Step Indicator */}
@@ -1065,7 +1066,7 @@ export default function OnboardingCreateFirstLog() {
                   styles.navButtonText,
                   styles.nextButtonText,
                 ]}>
-                  Next
+                  Save & Open Home
                 </Text>
                 <Ionicons 
                   name="chevron-forward" 
@@ -1109,6 +1110,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  headerMeta: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  darkHeaderMeta: {
+    color: '#9ca3af',
   },
   headerTitle: {
     fontSize: 20,
@@ -1639,4 +1649,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-
